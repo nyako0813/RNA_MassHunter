@@ -74,8 +74,8 @@ def _add_index_and_backlinks(writer: pd.ExcelWriter, sheet_names: list[str]) -> 
     workbook = writer.book
     index_sheet = workbook["Index"]
     for row_index, sheet_name in enumerate(sheet_names, start=2):
-        link_cell = index_sheet.cell(row=row_index, column=3)
-        link_cell.value = "Open sheet"
+        link_cell = index_sheet.cell(row=row_index, column=1)
+        link_cell.value = sheet_name
         link_cell.hyperlink = _sheet_link(sheet_name, "A1")
         link_cell.style = "Hyperlink"
 
@@ -161,14 +161,13 @@ def write_excel_report(
         {
             "Sheet": sheet_name,
             "Description": SHEET_DESCRIPTIONS.get(sheet_name, "Optional result sheet."),
-            "Link": "Open sheet",
             "Notes": "Data starts at A3.",
         }
         for sheet_name in sheets
     ]
 
     with pd.ExcelWriter(report_path, engine="openpyxl") as writer:
-        pd.DataFrame(index_rows, columns=["Sheet", "Description", "Link", "Notes"]).to_excel(writer, sheet_name="Index", index=False)
+        pd.DataFrame(index_rows, columns=["Sheet", "Description", "Notes"]).to_excel(writer, sheet_name="Index", index=False)
         for sheet_name, frame in sheets.items():
             frame.to_excel(writer, sheet_name=sheet_name, index=False, startrow=2)
         _add_index_and_backlinks(writer, list(sheets))
