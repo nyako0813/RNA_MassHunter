@@ -125,7 +125,7 @@ def write_excel_report(
         {"Item": "Project", "Value": config.project.get("name")},
         {"Item": "Generated", "Value": datetime.now().isoformat(timespec="seconds")},
         {"Item": "Modification dictionary entries", "Value": len(modifications or [])},
-        {"Item": "Rule set", "Value": (rule_set or {}).get("id") or (rule_set or {}).get("name")},
+        {"Item": "Rule set", "Value": config.organism.get("rule_set") or (rule_set or {}).get("id") or (rule_set or {}).get("name")},
         {"Item": "Pathway files", "Value": len(pathways or [])},
         {"Item": "Intact mass candidates", "Value": len(intact_results)},
         {"Item": "Warnings", "Value": len(warnings)},
