@@ -7,7 +7,7 @@ from rna_masshunter.models import RunConfig
 from rna_masshunter.warnings_manager import add_warning
 
 
-REQUIRED_PACKAGES = ["yaml", "pandas", "openpyxl", "numpy", "pyteomics", "tqdm"]
+REQUIRED_PACKAGES = ["yaml", "pandas", "openpyxl", "numpy", "pyteomics", "lxml", "tqdm"]
 
 
 def run_startup_check(project_root: str | Path, config: RunConfig, logger, warnings: list[dict[str, Any]]) -> None:

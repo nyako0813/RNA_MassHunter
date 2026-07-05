@@ -25,5 +25,5 @@ def validate_pathways(pathways: list[dict[str, Any]], warnings: list[dict[str, A
     if not pathways and warnings is not None:
         add_warning(warnings, "WARNING", "pathway_loader", "No pathway YAML files were loaded.")
     for pathway in pathways:
-        if not (pathway.get("id") or pathway.get("name")) and warnings is not None:
-            add_warning(warnings, "WARNING", "pathway_loader", "Pathway lacks id/name.", pathway.get("_file"))
+        if not (pathway.get("pathway_id") or pathway.get("id") or pathway.get("name")) and warnings is not None:
+            add_warning(warnings, "WARNING", "pathway_loader", "Pathway lacks pathway_id/id/name.", pathway.get("_file"))

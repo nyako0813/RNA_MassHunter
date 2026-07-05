@@ -18,19 +18,42 @@ def _merge_position_rules(parent: dict[str, Any], child: dict[str, Any]) -> dict
     return merged
 
 
-def resolve_rule_inheritance(rule_dir: str | Path, rule_data: dict[str, Any], warnings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    parent_name = rule_data.get("inherits")
-    if not parent_name:
+def _inherit_names(inherits: Any) -> list[str]:
+    if not inherits:
+        return []
+    if isinstance(inherits, str):
+        return [inherits]
+    if isinstance(inherits, list):
+        return [str(item) for item in inherits if item]
+    return [str(inherits)]
+
+
+def resolve_rule_inheritance(
+    rule_dir: str | Path,
+    rule_data: dict[str, Any],
+    warnings: list[dict[str, Any]] | None = None,
+    seen: set[str] | None = None,
+) -> dict[str, Any]:
+    parent_names = _inherit_names(rule_data.get("inherits"))
+    if not parent_names:
         return rule_data
-    parent_path = Path(rule_dir) / f"{parent_name}.yaml"
-    if not parent_path.exists():
-        if warnings is not None:
-            add_warning(warnings, "ERROR", "rule_loader", "Inherited rule_set was not found.", str(parent_path))
-        return rule_data
-    with parent_path.open("r", encoding="utf-8") as handle:
-        parent_data = yaml.safe_load(handle) or {}
-    parent_resolved = resolve_rule_inheritance(rule_dir, parent_data, warnings)
-    return _merge_position_rules(parent_resolved, rule_data)
+    seen = seen or set()
+    merged_parent: dict[str, Any] = {}
+    for parent_name in parent_names:
+        parent_path = Path(rule_dir) / f"{parent_name}.yaml"
+        if parent_name in seen:
+            if warnings is not None:
+                add_warning(warnings, "ERROR", "rule_loader", "Circular rule_set inheritance detected.", parent_name)
+            continue
+        if not parent_path.exists():
+            if warnings is not None:
+                add_warning(warnings, "ERROR", "rule_loader", "Inherited rule_set was not found.", str(parent_path))
+            continue
+        with parent_path.open("r", encoding="utf-8") as handle:
+            parent_data = yaml.safe_load(handle) or {}
+        parent_resolved = resolve_rule_inheritance(rule_dir, parent_data, warnings, seen | {parent_name})
+        merged_parent = _merge_position_rules(merged_parent, parent_resolved)
+    return _merge_position_rules(merged_parent, rule_data)
 
 
 def load_rule_set(rule_dir: str | Path, rule_set_name: str, warnings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
