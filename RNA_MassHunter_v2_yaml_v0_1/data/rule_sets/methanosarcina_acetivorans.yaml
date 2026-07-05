@@ -1,0 +1,63 @@
+rule_set_id: methanosarcina_acetivorans
+species: Methanosarcina acetivorans
+description: Safe initial M. acetivorans-focused rules. U34 and unknown intermediate search are prioritized but not forced.
+inherits:
+- archaea_general
+priority_positions:
+- standard_position: 34
+  base: U
+  label: U34_wobble_main_target
+  reason: Main research target; allow known U34 modifications and unknown candidates.
+  unknown_search_boost: 2.0
+- standard_position: 37
+  base: A
+  label: A37_anticodon_adjacent
+  reason: Common anticodon-loop modification site.
+  unknown_search_boost: 1.3
+position_rules:
+- id: ma_U34_main_target
+  standard_positions:
+  - 34
+  bases:
+  - U
+  preferred_modifications:
+  - cnm5U
+  - cmnm5U
+  - mnm5U
+  - mnm5s2U
+  - s2U
+  - s4U
+  - mcm5U
+  - mcm5s2U
+  - ncm5U
+  - ncm5Um
+  score_boost: 3.0
+  position_penalty_if_unlisted: 0.6
+  allow_unknown: true
+  unknown_score_boost: 2.0
+- id: ma_A37_t6A
+  standard_positions:
+  - 37
+  bases:
+  - A
+  preferred_modifications:
+  - t6A
+  - ms2t6A
+  - hn6A
+  - ms2hn6A
+  score_boost: 2.5
+  position_penalty_if_unlisted: 0.7
+  allow_unknown: true
+  unknown_score_boost: 1.3
+- id: ma_U55_pseudouridine_literature_rule
+  standard_positions:
+  - 55
+  bases:
+  - U
+  preferred_modifications:
+  - Y
+  score_boost: 1.8
+  position_penalty_if_unlisted: 0.8
+  allow_unknown: false
+  unknown_score_boost: 1.0
+  candidate_policy_note: Ψ is considered only if position rule/literature/user-specified prior supports it.

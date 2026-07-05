@@ -1,0 +1,80 @@
+rule_set_id: archaea_general
+description: Safe initial archaeal tRNA modification rules. These boost candidates but do not force calls.
+position_rules:
+- id: archaea_G15_archaeosine
+  standard_positions:
+  - 15
+  bases:
+  - G
+  preferred_modifications:
+  - archaeosine
+  - preQ0
+  - preQ1
+  - Gplus
+  score_boost: 2.0
+  position_penalty_if_unlisted: 0.8
+  allow_unknown: false
+  unknown_score_boost: 1.0
+  notes: Archaeosine-related rule; keep broad because exact species-specific status may require literature confirmation.
+- id: archaea_U34_wobble
+  standard_positions:
+  - 34
+  bases:
+  - U
+  preferred_modifications:
+  - cnm5U
+  - cmnm5U
+  - mnm5U
+  - mnm5s2U
+  - s2U
+  - s4U
+  - mcm5U
+  - mcm5s2U
+  - ncm5U
+  - ncm5Um
+  score_boost: 2.0
+  position_penalty_if_unlisted: 0.7
+  allow_unknown: true
+  unknown_score_boost: 1.5
+- id: archaea_A37_t6A
+  standard_positions:
+  - 37
+  bases:
+  - A
+  preferred_modifications:
+  - t6A
+  - ms2t6A
+  - hn6A
+  - ms2hn6A
+  - i6A
+  - ms2i6A
+  score_boost: 2.0
+  position_penalty_if_unlisted: 0.7
+  allow_unknown: true
+  unknown_score_boost: 1.2
+- id: universal_U55_pseudouridine
+  standard_positions:
+  - 55
+  bases:
+  - U
+  preferred_modifications:
+  - Y
+  score_boost: 1.8
+  position_penalty_if_unlisted: 0.8
+  allow_unknown: false
+  unknown_score_boost: 1.0
+  notes: Pseudouridine should not be proposed by blind MS1 search; include only through this kind of position/literature rule
+    or user specification.
+- id: archaea_A58_methylation
+  standard_positions:
+  - 58
+  bases:
+  - A
+  preferred_modifications:
+  - m1A
+  - m6A
+  - methylation
+  score_boost: 1.5
+  position_penalty_if_unlisted: 0.8
+  allow_unknown: false
+  unknown_score_boost: 1.0

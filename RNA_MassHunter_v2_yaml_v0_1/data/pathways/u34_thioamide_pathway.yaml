@@ -1,0 +1,33 @@
+pathway_id: u34_thioamide_pathway
+description: U34-related pathway including possible thioamide-like modification; gene IDs are placeholders until experimentally/literature
+  confirmed.
+base: U
+standard_positions:
+- 34
+steps:
+- order: 0
+  modification: unmodified
+  label: U
+  required_genes: []
+  status: precursor
+- order: 1
+  modification: cnm5U
+  label: cnm5U
+  required_genes:
+  - unknown_cnm5U_gene
+  status: intermediate
+- order: 2
+  modification: thioamide_cnm5U
+  label: thioamide-form candidate
+  required_genes:
+  - unknown_thioamide_gene
+  precursor:
+  - cnm5U
+  status: final_or_late_intermediate
+unknown_intermediate_policy:
+  enabled: true
+  allowed_at_positions:
+  - 34
+  mass_shift_min: -200.0
+  mass_shift_max: 500.0
+  score_boost_if_downstream_blocked: 2.0
