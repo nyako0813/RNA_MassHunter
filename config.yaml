@@ -1,0 +1,69 @@
+project:
+  name: RNA_MassHunter_v2
+  output_dir: output
+  log_dir: logs
+  cache_dir: .cache
+
+input:
+  raw_path: ""
+  mzml_path: ""
+  msconvert_path: ""
+
+organism:
+  group: archaea
+  species: Methanosarcina acetivorans
+  rule_set: methanosarcina_acetivorans
+
+sequence:
+  name: target_tRNA
+  type: RNA
+  sequence: ""
+  anticodon: "UUC"
+  wobble_position: 34
+
+experiment:
+  condition_name: wild_type
+  knocked_out_genes: []
+  complemented_genes: []
+  overexpressed_genes: []
+  artificial_modifications: []
+  genotype_effects: []
+
+instrument:
+  polarity: negative
+  ms1_tolerance_ppm: 10
+  ms2_tolerance_da: 0.02
+
+reconstruction:
+  enabled: true
+  rt_min: null
+  rt_max: null
+  mz_min: 500
+  mz_max: 3000
+  intensity_threshold: 1000
+  min_charge: 5
+  max_charge: 40
+  min_charge_states: 3
+  mass_cluster_tolerance_da: 1.0
+
+peak_filtering:
+  strategy: tiered
+  major_intensity_threshold: 25000
+  minor_intensity_threshold: 5000
+  trace_intensity_threshold: 1000
+  report_trace_peaks: true
+  use_trace_peaks_for_final_call: true
+  trace_peak_score_penalty: 0.3
+
+performance:
+  mode: balanced
+  n_workers: auto
+  cache_enabled: true
+  checkpoint_enabled: true
+  resume_from_checkpoint: true
+
+reporting:
+  excel_output: true
+  summary_top_n: 3
+  detail_top_n: 10
+  debug_all_candidates: false

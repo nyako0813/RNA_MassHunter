@@ -1,0 +1,12 @@
+mass_type: monoisotopic
+source: "Mongo Oligo compatible placeholder; verify before final quantitative use"
+
+constants:
+  proton: 1.007276466812
+  water: 18.010564684
+
+rna_residue_masses:
+  A: 329.0525
+  U: 306.0253
+  G: 345.0474
+  C: 305.0413

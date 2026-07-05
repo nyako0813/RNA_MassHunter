@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime outputs
+output/
+logs/
+.cache/
+
+# Backups
+_backup_before_mvp1/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
