@@ -7,6 +7,9 @@ from rna_masshunter.models import Fragment, RunConfig
 from rna_masshunter.warnings_manager import add_warning
 
 
+NO_DIGESTION_ENZYMES = {"", "none", "no_digestion", "intact", "full_length"}
+
+
 def digest_rna(*args, **kwargs):
     """Backward-compatible alias for MVP-2 digestion."""
     return digest_sequence(*args, **kwargs)
@@ -33,7 +36,18 @@ def digest_sequence(
     if not digestion_config.get("enabled", True):
         return []
 
-    enzyme = digestion_config.get("enzyme", "RNase_T1")
+    enzyme = str(digestion_config.get("enzyme", "RNase_T1") or "").strip()
+    if enzyme.lower() in NO_DIGESTION_ENZYMES:
+        if warnings is not None:
+            add_warning(
+                warnings,
+                "INFO",
+                "digestion",
+                "No digestion enzyme was selected; theoretical digestion fragments were not generated.",
+                {"target_id": target_id, "enzyme": enzyme},
+            )
+        return []
+
     allow_nonspecific = bool(digestion_config.get("allow_nonspecific_cleavage", False))
     try:
         rule = get_enzyme_rule(enzyme)
