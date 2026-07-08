@@ -1,6 +1,6 @@
 # RNA_MassHunter_v2
 
-RNA_MassHunter_v2 is an MVP workflow for RNA/tRNA LC-MS analysis. Current MVP-3.1 functionality includes YAML configuration loading, mzML diagnostics, MS1 peak extraction, intact mass reconstruction, RNase digestion fragment generation, MS1 fragment matching, filtered fragment summaries, and Excel output.
+RNA_MassHunter_v2 is an MVP workflow for RNA/tRNA LC-MS analysis. Current MVP-4 functionality includes YAML configuration loading, mzML diagnostics, MS1 peak extraction, intact mass reconstruction, RNase digestion fragment generation, MS1 fragment matching, filtered fragment summaries, known modification candidate search, and Excel output.
 
 ## Setup
 
@@ -117,11 +117,13 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 - Reconstructs intact masses from charge states.
 - Generates RNase theoretical fragments when digestion is enabled.
 - Matches theoretical fragments to MS1 peaks when fragment mapping is enabled.
-- Writes Excel output with `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, and `Warnings`.
+- Searches known modification candidates from `data/modifications.yaml` by comparing observed fragment neutral-mass shifts against curated modification mass shifts.
+- Prioritizes candidates that overlap configured standard positions such as tRNA wobble position 34.
+- Writes Excel output with `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, `Known_Modification_Candidates`, `Known_Modification_Summary`, and `Warnings`.
 
 ## Planned Later Features
 
-- modification candidate ranking
+- modified-fragment combination ranking beyond single known shifts
 - unknown modification candidate generation
 - MS2 annotation
 - mass balance check
@@ -129,6 +131,6 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 
 ## Data Notes
 
-`data/modifications.yaml` is treated as the user-confirmed PDF-derived modification dictionary when present. MVP-3.1 loads and validates it; full modification candidate search is planned for MVP-4.
+`data/modifications.yaml` is treated as the user-confirmed PDF-derived modification dictionary when present. MVP-4 loads and validates it, then reports known single-modification candidates when observed fragment masses can be explained by dictionary mass shifts. Unknown modification search is still deferred.
 
 `data/base_masses.yaml` contains Mongo Oligo-compatible placeholder masses. Confirm these values against the final Mongo Oligo settings before quantitative final analysis.

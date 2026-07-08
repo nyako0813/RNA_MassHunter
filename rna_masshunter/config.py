@@ -56,6 +56,18 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "filtered_confidence": ["High", "Medium"],
         "summary_best_match_by": "fragment_id",
     },
+    "modification_search": {
+        "enabled": True,
+        "source": {"use_fragments": True, "use_intact": False},
+        "mz_tolerance_ppm": 10,
+        "max_candidates_per_match": 10,
+        "prioritize_standard_positions": [34],
+        "require_base_compatibility": True,
+        "allow_unknown_position_within_fragment": True,
+        "report_unmodified_explained": False,
+        "min_peak_tier": ["Major", "Minor"],
+        "min_confidence": ["High", "Medium"],
+    },
     "peak_filtering": {
         "major_intensity_threshold": 25000,
         "minor_intensity_threshold": 5000,

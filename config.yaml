@@ -98,3 +98,21 @@ reporting:
   max_excel_rows_per_sheet: 100000
   truncate_large_sheets: true
   max_charge_state_peak_rows: 100000
+modification_search:
+  enabled: true
+  source:
+    use_fragments: true
+    use_intact: false
+  mz_tolerance_ppm: 10
+  max_candidates_per_match: 10
+  prioritize_standard_positions:
+    - 34
+  require_base_compatibility: true
+  allow_unknown_position_within_fragment: true
+  report_unmodified_explained: false
+  min_peak_tier:
+    - Major
+    - Minor
+  min_confidence:
+    - High
+    - Medium

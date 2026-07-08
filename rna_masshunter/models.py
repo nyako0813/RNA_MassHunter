@@ -14,6 +14,7 @@ class RunConfig:
     digestion: dict[str, Any] = field(default_factory=dict)
     alkaline_phosphatase: dict[str, Any] = field(default_factory=dict)
     fragment_mapping: dict[str, Any] = field(default_factory=dict)
+    modification_search: dict[str, Any] = field(default_factory=dict)
     peak_filtering: dict[str, Any] = field(default_factory=dict)
     performance: dict[str, Any] = field(default_factory=dict)
     reporting: dict[str, Any] = field(default_factory=dict)
@@ -111,4 +112,41 @@ class FragmentMS1Match:
     scan_id: str | None
     peak_tier: str | None
     confidence: str
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class KnownModificationCandidate:
+    candidate_id: str
+    source_type: str
+    source_id: str
+    target_id: str
+    sequence: str
+    start: int | None
+    end: int | None
+    standard_start: int | None
+    standard_end: int | None
+    observed_mz: float | None
+    theoretical_mz: float | None
+    observed_mass: float
+    unmodified_mass: float
+    mass_error_unmodified_da: float
+    mass_error_unmodified_ppm: float
+    modification_id: str
+    modification_symbol: str | None
+    modification_name: str
+    target_base: str
+    modification_mass_shift: float
+    modified_mass: float
+    mass_error_modified_da: float
+    mass_error_modified_ppm: float
+    charge: int | None
+    intensity: float
+    rt: float | None
+    peak_tier: str | None
+    confidence: str
+    position_overlap_score: float
+    wobble_overlap: bool
+    priority_score: float
+    notes: str = ""
     warnings: list[str] = field(default_factory=list)

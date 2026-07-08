@@ -7,6 +7,7 @@ from rna_masshunter.excel_report import write_excel_report
 from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
 from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masses
+from rna_masshunter.modification_search import known_modification_candidate_rows, search_known_modifications, summarize_known_modification_candidates
 from rna_masshunter.modifications import load_modifications, validate_modifications
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.position_mapper import build_position_map
@@ -31,7 +32,7 @@ def main() -> None:
     project_root = Path(__file__).resolve().parent
     logger = setup_logger(project_root / "logs")
     warnings = []
-    logger.info("RNA_MassHunter_v2 MVP-3.1 started")
+    logger.info("RNA_MassHunter_v2 MVP-4 started")
 
     config = load_config(project_root / "config.yaml", warnings=warnings)
     validate_config(config, warnings=warnings)
@@ -71,6 +72,8 @@ def main() -> None:
     theoretical_mass = None
     theoretical_fragments = []
     fragment_ms1_matches = []
+    known_modification_candidates = []
+    known_modification_summary = []
     sequence = (config.sequence.get("sequence", "") or "").upper().replace("T", "U")
     digestion_enabled = _as_bool(config.digestion.get("enabled"), True)
     fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
@@ -122,6 +125,16 @@ def main() -> None:
             warnings=warnings,
         )
 
+    if _as_bool(config.modification_search.get("enabled"), True):
+        known_modification_candidates = search_known_modifications(
+            fragment_ms1_matches=fragment_ms1_matches,
+            intact_results=intact_results,
+            modifications=modifications,
+            config=config,
+            warnings=warnings,
+        )
+        known_modification_summary = summarize_known_modification_candidates(known_modification_candidates)
+
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
         config=config,
@@ -134,9 +147,11 @@ def main() -> None:
         pathways=pathways,
         theoretical_fragments=theoretical_fragments,
         fragment_ms1_matches=fragment_ms1_matches,
+        known_modification_candidates=known_modification_candidate_rows(known_modification_candidates),
+        known_modification_summary=known_modification_summary,
     )
     logger.info("Excel report written: %s", report_path)
-    logger.info("RNA_MassHunter_v2 MVP-3.1 finished")
+    logger.info("RNA_MassHunter_v2 MVP-4 finished")
 
 
 if __name__ == "__main__":

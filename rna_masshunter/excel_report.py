@@ -126,6 +126,61 @@ FRAGMENT_MS1_SUMMARY_COLUMNS = [
     "Low_Count",
 ]
 
+KNOWN_MODIFICATION_CANDIDATE_COLUMNS = [
+    "candidate_id",
+    "source_type",
+    "source_id",
+    "target_id",
+    "sequence",
+    "start",
+    "end",
+    "standard_start",
+    "standard_end",
+    "observed_mz",
+    "theoretical_mz",
+    "observed_mass",
+    "unmodified_mass",
+    "mass_error_unmodified_da",
+    "mass_error_unmodified_ppm",
+    "modification_id",
+    "modification_symbol",
+    "modification_name",
+    "target_base",
+    "modification_mass_shift",
+    "modified_mass",
+    "mass_error_modified_da",
+    "mass_error_modified_ppm",
+    "charge",
+    "intensity",
+    "rt",
+    "peak_tier",
+    "confidence",
+    "position_overlap_score",
+    "wobble_overlap",
+    "priority_score",
+    "notes",
+    "warnings",
+]
+
+KNOWN_MODIFICATION_SUMMARY_COLUMNS = [
+    "Modification_ID",
+    "Modification_Name",
+    "Symbol",
+    "Target_Base",
+    "Wobble_Overlap",
+    "Candidate_Count",
+    "Wobble_Overlap_Count",
+    "Best_Source_ID",
+    "Best_Sequence",
+    "Best_Standard_Start",
+    "Best_Standard_End",
+    "Best_Mass_Error_Modified_ppm",
+    "Best_Intensity",
+    "Best_Peak_Tier",
+    "Best_Confidence",
+    "Best_Priority_Score",
+]
+
 SHEET_DESCRIPTIONS = {
     "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
     "Input_parameters": "Flattened parameters loaded from config.yaml.",
@@ -136,6 +191,8 @@ SHEET_DESCRIPTIONS = {
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
     "Fragment_MS1_summary": "Best MS1 match per fragment with match counts.",
+    "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
+    "Known_Modification_Summary": "Grouped summary of known modification candidates.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -441,6 +498,8 @@ def write_excel_report(
     pathways: list[dict[str, Any]] | None = None,
     theoretical_fragments: list[Any] | None = None,
     fragment_ms1_matches: list[Any] | None = None,
+    known_modification_candidates: list[dict[str, Any]] | None = None,
+    known_modification_summary: list[dict[str, Any]] | None = None,
     optional_results: dict[str, Any] | None = None,
 ) -> Path:
     out_dir = Path(output_dir)
@@ -489,6 +548,8 @@ def write_excel_report(
 
     theoretical_fragments = theoretical_fragments or []
     fragment_ms1_matches = fragment_ms1_matches or []
+    known_modification_candidates = known_modification_candidates or []
+    known_modification_summary = known_modification_summary or []
     fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
     fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
 
@@ -503,6 +564,7 @@ def write_excel_report(
         "digestion": config.digestion,
         "alkaline_phosphatase": config.alkaline_phosphatase,
         "fragment_mapping": config.fragment_mapping,
+        "modification_search": config.modification_search,
         "peak_filtering": config.peak_filtering,
         "performance": config.performance,
         "reporting": config.reporting,
@@ -517,6 +579,8 @@ def write_excel_report(
         "Fragment_MS1_matches": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_matches), columns=FRAGMENT_MS1_MATCH_COLUMNS),
         "Fragment_MS1_filtered": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_filtered, include_length=True), columns=FRAGMENT_MS1_FILTERED_COLUMNS),
         "Fragment_MS1_summary": pd.DataFrame(fragment_ms1_summary_rows, columns=FRAGMENT_MS1_SUMMARY_COLUMNS),
+        "Known_Modification_Candidates": pd.DataFrame(known_modification_candidates, columns=KNOWN_MODIFICATION_CANDIDATE_COLUMNS),
+        "Known_Modification_Summary": pd.DataFrame(known_modification_summary, columns=KNOWN_MODIFICATION_SUMMARY_COLUMNS),
     }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:
@@ -546,6 +610,8 @@ def write_excel_report(
         {"Item": "Fragment MS1 matches", "Value": len(fragment_ms1_matches)},
         {"Item": "Fragment MS1 filtered", "Value": len(fragment_ms1_filtered)},
         {"Item": "Fragment MS1 summary", "Value": len(fragment_ms1_summary_rows)},
+        {"Item": "Known modification candidates", "Value": len(known_modification_candidates)},
+        {"Item": "Known modification summary", "Value": len(known_modification_summary)},
         {"Item": "Truncated sheets", "Value": _truncation_summary(truncations)},
         {"Item": "Warnings", "Value": len(warnings)},
     ]
