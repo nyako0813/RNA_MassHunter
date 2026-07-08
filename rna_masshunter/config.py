@@ -37,7 +37,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "allow_nonspecific_cleavage": False,
     },
     "alkaline_phosphatase": {
-        "enabled": True,
+        "enabled": False,
         "assume_complete": False,
         "allow_residual_phosphate": True,
         "allow_cyclic_phosphate": True,
@@ -89,6 +89,14 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
     return merged
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_config(config_path: str | Path, warnings: list[dict[str, Any]] | None = None) -> RunConfig:
     path = Path(config_path)
     if not path.exists():
@@ -107,6 +115,34 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
         add_warning(warnings, "WARNING", "config", "input.mzml_path and input.raw_path are empty; sample config mode.")
     if not config.sequence.get("sequence") and warnings is not None:
         add_warning(warnings, "WARNING", "config", "sequence.sequence is empty; theoretical mass will be skipped.")
+
+    digestion_enabled = _as_bool(config.digestion.get("enabled"), True)
+    reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
+    fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
+    if not digestion_enabled and not reconstruction_enabled and warnings is not None:
+        add_warning(
+            warnings,
+            "WARNING",
+            "config",
+            "Both digestion.enabled and reconstruction.enabled are false; no fragment or intact-mass analysis will be performed.",
+        )
+    if not digestion_enabled and fragment_mapping_enabled and warnings is not None:
+        add_warning(
+            warnings,
+            "INFO",
+            "config",
+            "digestion.enabled is false, so fragment_mapping.enabled will be ignored for this run.",
+        )
+
+    ap_enabled = _as_bool(config.alkaline_phosphatase.get("enabled"), False)
+    ap_complete = _as_bool(config.alkaline_phosphatase.get("assume_complete"), False)
+    if not ap_enabled and ap_complete and warnings is not None:
+        add_warning(
+            warnings,
+            "WARNING",
+            "config",
+            "alkaline_phosphatase.assume_complete is true but alkaline_phosphatase.enabled is false; assume_complete will be ignored.",
+        )
 
 
 def resolve_paths(config: RunConfig, project_root: str | Path) -> RunConfig:
