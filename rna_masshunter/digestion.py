@@ -1,3 +1,152 @@
+from dataclasses import replace
+from typing import Any
+
+from rna_masshunter.enzymes import find_cleavage_sites, get_enzyme_rule
+from rna_masshunter.masses import calculate_unmodified_rna_mass
+from rna_masshunter.models import Fragment, RunConfig
+from rna_masshunter.warnings_manager import add_warning
+
+
 def digest_rna(*args, **kwargs):
-    """TODO(MVP-2): implement RNase digestion."""
-    return []
+    """Backward-compatible alias for MVP-2 digestion."""
+    return digest_sequence(*args, **kwargs)
+
+
+def _fragment_warning(fragment_warnings: list[str], message: str) -> None:
+    if message not in fragment_warnings:
+        fragment_warnings.append(message)
+
+
+def digest_sequence(
+    target_id: str,
+    sequence: str,
+    position_map: dict[int, int | None],
+    config: RunConfig,
+    base_masses: dict,
+    warnings: list[dict[str, Any]] | None = None,
+) -> list[Fragment]:
+    sequence = (sequence or "").upper().replace("T", "U")
+    if not sequence:
+        return []
+
+    digestion_config = config.digestion or {}
+    if not digestion_config.get("enabled", True):
+        return []
+
+    enzyme = digestion_config.get("enzyme", "RNase_T1")
+    allow_nonspecific = bool(digestion_config.get("allow_nonspecific_cleavage", False))
+    try:
+        rule = get_enzyme_rule(enzyme)
+    except ValueError as exc:
+        if warnings is not None:
+            add_warning(warnings, "ERROR", "digestion", str(exc), {"target_id": target_id})
+        return []
+
+    if not rule.get("specific", True) and not allow_nonspecific:
+        if warnings is not None:
+            add_warning(warnings, "WARNING", "digestion", "Nonspecific cleavage enzyme selected but allow_nonspecific_cleavage is false; no theoretical fragments were generated.", {"enzyme": enzyme})
+        return []
+    if not rule.get("specific", True) and allow_nonspecific and len(sequence) > 50 and warnings is not None:
+        add_warning(warnings, "WARNING", "digestion", "Nonspecific cleavage is enabled and may generate many candidates.", {"enzyme": enzyme, "sequence_length": len(sequence)})
+
+    ap_config = config.alkaline_phosphatase or {}
+    if (
+        warnings is not None
+        and ap_config.get("enabled", False)
+        and not ap_config.get("assume_complete", False)
+        and digestion_config.get("include_terminal_forms", True)
+    ):
+        add_warning(
+            warnings,
+            "WARNING",
+            "digestion",
+            "alkaline_phosphatase.enabled is true but assume_complete is false; residual phosphate and cyclic phosphate forms may be included.",
+            {"target_id": target_id},
+        )
+
+    try:
+        cleavage_sites = find_cleavage_sites(sequence, enzyme, warnings=warnings)
+    except ValueError:
+        return []
+
+    boundaries = [0] + sorted(set(cleavage_sites))
+    if boundaries[-1] != len(sequence):
+        boundaries.append(len(sequence))
+
+    max_missed = max(0, int(digestion_config.get("missed_cleavages", 0) or 0))
+    min_length = max(1, int(digestion_config.get("min_length", 1) or 1))
+    fragments: list[Fragment] = []
+
+    for start_boundary_index in range(len(boundaries) - 1):
+        for missed in range(max_missed + 1):
+            end_boundary_index = start_boundary_index + missed + 1
+            if end_boundary_index >= len(boundaries):
+                continue
+            start = boundaries[start_boundary_index] + 1
+            end = boundaries[end_boundary_index]
+            fragment_sequence = sequence[start - 1:end]
+            if len(fragment_sequence) < min_length:
+                continue
+
+            fragment_warnings: list[str] = []
+            mass = calculate_unmodified_rna_mass(fragment_sequence, base_masses, warnings=warnings, terminal_form="default")
+            if mass is None:
+                _fragment_warning(fragment_warnings, "unmodified mass could not be calculated")
+                mass = 0.0
+
+            fragment = Fragment(
+                fragment_id=f"{target_id}_{enzyme}_{start}_{end}_mc{missed}_default",
+                target_id=target_id,
+                sequence=fragment_sequence,
+                start=start,
+                end=end,
+                standard_start=position_map.get(start),
+                standard_end=position_map.get(end),
+                enzyme=enzyme,
+                missed_cleavages=missed,
+                terminal_form="default",
+                unmodified_mass=float(mass),
+                warnings=fragment_warnings,
+            )
+            fragments.extend(generate_terminal_forms(fragment, config, base_masses, warnings=warnings))
+    return fragments
+
+
+def generate_terminal_forms(
+    fragment: Fragment,
+    config: RunConfig,
+    base_masses: dict,
+    warnings: list[dict[str, Any]] | None = None,
+) -> list[Fragment]:
+    digestion_config = config.digestion or {}
+    if not digestion_config.get("include_terminal_forms", True):
+        return [fragment]
+
+    ap_config = config.alkaline_phosphatase or {}
+    if not ap_config.get("enabled", False):
+        return [fragment]
+
+    forms = ["dephosphorylated"]
+    if not ap_config.get("assume_complete", False):
+        if ap_config.get("allow_residual_phosphate", True):
+            forms.append("residual_phosphate")
+        if ap_config.get("allow_cyclic_phosphate", True):
+            forms.append("cyclic_phosphate")
+
+    terminal_fragments: list[Fragment] = []
+    for terminal_form in forms:
+        mass = calculate_unmodified_rna_mass(fragment.sequence, base_masses, warnings=warnings, terminal_form=terminal_form)
+        fragment_warnings = list(fragment.warnings)
+        if mass is None:
+            _fragment_warning(fragment_warnings, "unmodified mass could not be calculated")
+            mass = 0.0
+        terminal_fragments.append(
+            replace(
+                fragment,
+                fragment_id=f"{fragment.target_id}_{fragment.enzyme}_{fragment.start}_{fragment.end}_mc{fragment.missed_cleavages}_{terminal_form}",
+                terminal_form=terminal_form,
+                unmodified_mass=float(mass),
+                warnings=fragment_warnings,
+            )
+        )
+    return terminal_fragments

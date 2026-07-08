@@ -26,6 +26,21 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "min_charge_states": 3,
         "mass_cluster_tolerance_da": 1.0,
     },
+    "digestion": {
+        "enabled": True,
+        "enzyme": "RNase_T1",
+        "missed_cleavages": 1,
+        "min_length": 2,
+        "include_terminal_forms": True,
+        "allow_partial_digestion": True,
+        "allow_nonspecific_cleavage": False,
+    },
+    "alkaline_phosphatase": {
+        "enabled": True,
+        "assume_complete": False,
+        "allow_residual_phosphate": True,
+        "allow_cyclic_phosphate": True,
+    },
     "peak_filtering": {
         "major_intensity_threshold": 25000,
         "minor_intensity_threshold": 5000,

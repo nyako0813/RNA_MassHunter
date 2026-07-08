@@ -46,6 +46,21 @@ reconstruction:
   min_charge_states: 3
   mass_cluster_tolerance_da: 1.0
 
+digestion:
+  enabled: true
+  enzyme: RNase_T1
+  missed_cleavages: 1
+  min_length: 2
+  include_terminal_forms: true
+  allow_partial_digestion: true
+  allow_nonspecific_cleavage: false
+
+alkaline_phosphatase:
+  enabled: true
+  assume_complete: false
+  allow_residual_phosphate: true
+  allow_cyclic_phosphate: true
+
 peak_filtering:
   strategy: tiered
   major_intensity_threshold: 25000

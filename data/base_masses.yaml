@@ -4,6 +4,7 @@ source: "Mongo Oligo compatible placeholder; verify before final quantitative us
 constants:
   proton: 1.007276466812
   water: 18.010564684
+  phosphate: 79.966331
 
 rna_residue_masses:
   A: 329.0525
