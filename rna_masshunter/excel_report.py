@@ -70,6 +70,62 @@ FRAGMENT_MS1_MATCH_COLUMNS = [
     "Warnings",
 ]
 
+FRAGMENT_MS1_FILTERED_COLUMNS = [
+    "Match_ID",
+    "Fragment_ID",
+    "Target_ID",
+    "Sequence",
+    "Length",
+    "Start",
+    "End",
+    "Standard_Start",
+    "Standard_End",
+    "Enzyme",
+    "Missed_Cleavages",
+    "Terminal_Form",
+    "Fragment_Mass",
+    "Charge",
+    "Theoretical_mz",
+    "Observed_mz",
+    "Mass_Error_Da",
+    "Mass_Error_ppm",
+    "Intensity",
+    "RT",
+    "Scan_ID",
+    "Peak_Tier",
+    "Confidence",
+    "Warnings",
+]
+
+FRAGMENT_MS1_SUMMARY_COLUMNS = [
+    "Fragment_ID",
+    "Target_ID",
+    "Sequence",
+    "Length",
+    "Start",
+    "End",
+    "Standard_Start",
+    "Standard_End",
+    "Enzyme",
+    "Missed_Cleavages",
+    "Terminal_Form",
+    "Best_Charge",
+    "Best_Theoretical_mz",
+    "Best_Observed_mz",
+    "Best_Mass_Error_ppm",
+    "Best_Intensity",
+    "Best_RT",
+    "Best_Peak_Tier",
+    "Best_Confidence",
+    "Match_Count",
+    "Major_Count",
+    "Minor_Count",
+    "Trace_Count",
+    "High_Count",
+    "Medium_Count",
+    "Low_Count",
+]
+
 SHEET_DESCRIPTIONS = {
     "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
     "Input_parameters": "Flattened parameters loaded from config.yaml.",
@@ -78,6 +134,8 @@ SHEET_DESCRIPTIONS = {
     "Charge_state_peaks": "Peak and charge-state evidence supporting reconstructed masses.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
+    "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
+    "Fragment_MS1_summary": "Best MS1 match per fragment with match counts.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -162,41 +220,149 @@ def _fragment_rows(theoretical_fragments: list[Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _fragment_ms1_match_rows(fragment_ms1_matches: list[Any]) -> list[dict[str, Any]]:
+def _match_raw(item: Any) -> dict[str, Any]:
+    return asdict(item) if is_dataclass(item) else dict(item)
+
+
+def _normalize_filter_values(values: Any) -> set[str]:
+    if values is None:
+        return set()
+    if isinstance(values, str):
+        return {values.lower()}
+    return {str(value).lower() for value in values}
+
+
+def _fragment_ms1_match_rows(fragment_ms1_matches: list[Any], include_length: bool = False) -> list[dict[str, Any]]:
     rows = []
     for item in fragment_ms1_matches:
-        raw = asdict(item) if is_dataclass(item) else dict(item)
+        raw = _match_raw(item)
         match_warnings = raw.get("warnings", [])
         if isinstance(match_warnings, list):
             match_warnings = "; ".join(map(str, match_warnings))
+        row = {
+            "Match_ID": raw.get("match_id"),
+            "Fragment_ID": raw.get("fragment_id"),
+            "Target_ID": raw.get("target_id"),
+            "Sequence": raw.get("sequence"),
+            "Start": raw.get("start"),
+            "End": raw.get("end"),
+            "Standard_Start": raw.get("standard_start"),
+            "Standard_End": raw.get("standard_end"),
+            "Enzyme": raw.get("enzyme"),
+            "Missed_Cleavages": raw.get("missed_cleavages"),
+            "Terminal_Form": raw.get("terminal_form"),
+            "Fragment_Mass": raw.get("fragment_mass"),
+            "Charge": raw.get("charge"),
+            "Theoretical_mz": raw.get("theoretical_mz"),
+            "Observed_mz": raw.get("observed_mz"),
+            "Mass_Error_Da": raw.get("mass_error_da"),
+            "Mass_Error_ppm": raw.get("mass_error_ppm"),
+            "Intensity": raw.get("intensity"),
+            "RT": raw.get("rt"),
+            "Scan_ID": raw.get("scan_id"),
+            "Peak_Tier": raw.get("peak_tier"),
+            "Confidence": raw.get("confidence"),
+            "Warnings": match_warnings,
+        }
+        if include_length:
+            row["Length"] = len(raw.get("sequence") or "")
+        rows.append(row)
+    return rows
+
+
+def _filter_fragment_ms1_matches(fragment_ms1_matches: list[Any], mapping_config: dict[str, Any]) -> list[Any]:
+    min_length = _as_positive_int(mapping_config.get("min_fragment_length_for_filtered"), 3)
+    allowed_tiers = _normalize_filter_values(mapping_config.get("filtered_peak_tiers", ["Major", "Minor"]))
+    allowed_confidence = _normalize_filter_values(mapping_config.get("filtered_confidence", ["High", "Medium"]))
+    filtered = []
+    for item in fragment_ms1_matches:
+        raw = _match_raw(item)
+        if len(raw.get("sequence") or "") < min_length:
+            continue
+        if allowed_tiers and str(raw.get("peak_tier") or "").lower() not in allowed_tiers:
+            continue
+        if allowed_confidence and str(raw.get("confidence") or "").lower() not in allowed_confidence:
+            continue
+        filtered.append(item)
+    return filtered
+
+
+def _confidence_rank(value: Any) -> int:
+    return {"high": 3, "medium": 2, "low": 1}.get(str(value or "").lower(), 0)
+
+
+def _peak_tier_rank(value: Any) -> int:
+    return {"major": 3, "minor": 2, "trace": 1}.get(str(value or "").lower(), 0)
+
+
+def _best_match_sort_key(item: Any) -> tuple[int, int, float, float]:
+    raw = _match_raw(item)
+    return (
+        -_confidence_rank(raw.get("confidence")),
+        -_peak_tier_rank(raw.get("peak_tier")),
+        abs(float(raw.get("mass_error_ppm") or 0.0)),
+        -float(raw.get("intensity") or 0.0),
+    )
+
+
+def _fragment_ms1_summary_rows(fragment_ms1_matches: list[Any], mapping_config: dict[str, Any]) -> list[dict[str, Any]]:
+    group_key = str(mapping_config.get("summary_best_match_by", "fragment_id") or "fragment_id")
+    if group_key != "fragment_id":
+        group_key = "fragment_id"
+
+    grouped: dict[str, list[Any]] = {}
+    for item in fragment_ms1_matches:
+        raw = _match_raw(item)
+        key = str(raw.get(group_key) or "")
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(item)
+
+    rows = []
+    for fragment_id, matches in grouped.items():
+        best = min(matches, key=_best_match_sort_key)
+        best_raw = _match_raw(best)
+        tier_counts = {"Major": 0, "Minor": 0, "Trace": 0}
+        confidence_counts = {"High": 0, "Medium": 0, "Low": 0}
+        for item in matches:
+            raw = _match_raw(item)
+            tier = str(raw.get("peak_tier") or "")
+            confidence = str(raw.get("confidence") or "")
+            if tier in tier_counts:
+                tier_counts[tier] += 1
+            if confidence in confidence_counts:
+                confidence_counts[confidence] += 1
         rows.append(
             {
-                "Match_ID": raw.get("match_id"),
-                "Fragment_ID": raw.get("fragment_id"),
-                "Target_ID": raw.get("target_id"),
-                "Sequence": raw.get("sequence"),
-                "Start": raw.get("start"),
-                "End": raw.get("end"),
-                "Standard_Start": raw.get("standard_start"),
-                "Standard_End": raw.get("standard_end"),
-                "Enzyme": raw.get("enzyme"),
-                "Missed_Cleavages": raw.get("missed_cleavages"),
-                "Terminal_Form": raw.get("terminal_form"),
-                "Fragment_Mass": raw.get("fragment_mass"),
-                "Charge": raw.get("charge"),
-                "Theoretical_mz": raw.get("theoretical_mz"),
-                "Observed_mz": raw.get("observed_mz"),
-                "Mass_Error_Da": raw.get("mass_error_da"),
-                "Mass_Error_ppm": raw.get("mass_error_ppm"),
-                "Intensity": raw.get("intensity"),
-                "RT": raw.get("rt"),
-                "Scan_ID": raw.get("scan_id"),
-                "Peak_Tier": raw.get("peak_tier"),
-                "Confidence": raw.get("confidence"),
-                "Warnings": match_warnings,
+                "Fragment_ID": fragment_id,
+                "Target_ID": best_raw.get("target_id"),
+                "Sequence": best_raw.get("sequence"),
+                "Length": len(best_raw.get("sequence") or ""),
+                "Start": best_raw.get("start"),
+                "End": best_raw.get("end"),
+                "Standard_Start": best_raw.get("standard_start"),
+                "Standard_End": best_raw.get("standard_end"),
+                "Enzyme": best_raw.get("enzyme"),
+                "Missed_Cleavages": best_raw.get("missed_cleavages"),
+                "Terminal_Form": best_raw.get("terminal_form"),
+                "Best_Charge": best_raw.get("charge"),
+                "Best_Theoretical_mz": best_raw.get("theoretical_mz"),
+                "Best_Observed_mz": best_raw.get("observed_mz"),
+                "Best_Mass_Error_ppm": best_raw.get("mass_error_ppm"),
+                "Best_Intensity": best_raw.get("intensity"),
+                "Best_RT": best_raw.get("rt"),
+                "Best_Peak_Tier": best_raw.get("peak_tier"),
+                "Best_Confidence": best_raw.get("confidence"),
+                "Match_Count": len(matches),
+                "Major_Count": tier_counts["Major"],
+                "Minor_Count": tier_counts["Minor"],
+                "Trace_Count": tier_counts["Trace"],
+                "High_Count": confidence_counts["High"],
+                "Medium_Count": confidence_counts["Medium"],
+                "Low_Count": confidence_counts["Low"],
             }
         )
-    return rows
+    return sorted(rows, key=lambda row: (row["Start"] or 0, row["End"] or 0, row["Fragment_ID"]))
 
 
 def _as_bool(value: Any, default: bool = True) -> bool:
@@ -323,6 +489,8 @@ def write_excel_report(
 
     theoretical_fragments = theoretical_fragments or []
     fragment_ms1_matches = fragment_ms1_matches or []
+    fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
+    fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
 
     input_parameters = {
         "project": config.project,
@@ -347,6 +515,8 @@ def write_excel_report(
         "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
         "Theoretical_fragments": pd.DataFrame(_fragment_rows(theoretical_fragments), columns=THEORETICAL_FRAGMENT_COLUMNS),
         "Fragment_MS1_matches": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_matches), columns=FRAGMENT_MS1_MATCH_COLUMNS),
+        "Fragment_MS1_filtered": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_filtered, include_length=True), columns=FRAGMENT_MS1_FILTERED_COLUMNS),
+        "Fragment_MS1_summary": pd.DataFrame(fragment_ms1_summary_rows, columns=FRAGMENT_MS1_SUMMARY_COLUMNS),
     }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:
@@ -374,6 +544,8 @@ def write_excel_report(
         {"Item": "Intact mass candidates", "Value": len(intact_results)},
         {"Item": "Theoretical fragments", "Value": len(theoretical_fragments)},
         {"Item": "Fragment MS1 matches", "Value": len(fragment_ms1_matches)},
+        {"Item": "Fragment MS1 filtered", "Value": len(fragment_ms1_filtered)},
+        {"Item": "Fragment MS1 summary", "Value": len(fragment_ms1_summary_rows)},
         {"Item": "Truncated sheets", "Value": _truncation_summary(truncations)},
         {"Item": "Warnings", "Value": len(warnings)},
     ]

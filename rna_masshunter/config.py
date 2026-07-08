@@ -51,6 +51,10 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "use_peak_tiers": True,
         "include_trace_peaks": True,
         "max_matches_per_fragment": 20,
+        "min_fragment_length_for_filtered": 3,
+        "filtered_peak_tiers": ["Major", "Minor"],
+        "filtered_confidence": ["High", "Medium"],
+        "summary_best_match_by": "fragment_id",
     },
     "peak_filtering": {
         "major_intensity_threshold": 25000,
