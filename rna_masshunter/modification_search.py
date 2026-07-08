@@ -84,20 +84,21 @@ def _base_compatible(sequence: str, modification: Modification) -> bool:
     return any(base in sequence for base in bases)
 
 
-def _position_overlap(standard_start: int | None, standard_end: int | None, prioritized_positions: list[int]) -> tuple[float, bool]:
-    if standard_start is None or standard_end is None:
-        return 0.0, False
-    start = min(standard_start, standard_end)
-    end = max(standard_start, standard_end)
-    overlap = any(start <= position <= end for position in prioritized_positions)
-    wobble_overlap = start <= 34 <= end
-    return (1.0 if overlap else 0.0), wobble_overlap
+def _is_isobaric_shift(shift: float, search_config: dict[str, Any]) -> bool:
+    tolerance_da = _as_float(search_config.get("isobaric_mass_shift_tolerance_da"), 1e-6)
+    return abs(shift) <= tolerance_da
+
+
+def _should_skip_isobaric_shift(shift: float, search_config: dict[str, Any]) -> bool:
+    include_isobaric = _as_bool(search_config.get("include_isobaric_modifications"), False)
+    if not _is_isobaric_shift(shift, search_config):
+        return False
+    return not include_isobaric
 
 
 def _priority_score(
     confidence: str,
     peak_tier: str | None,
-    position_overlap_score: float,
     mass_error_modified_ppm: float,
     tolerance_ppm: float,
 ) -> float:
@@ -105,7 +106,6 @@ def _priority_score(
     return (
         _confidence_score(confidence)
         + _peak_tier_score(peak_tier)
-        + position_overlap_score
         - abs(mass_error_modified_ppm) / tolerance
     )
 
@@ -126,20 +126,18 @@ def known_modification_candidate_rows(candidates: list[KnownModificationCandidat
 
 
 def summarize_known_modification_candidates(candidates: list[KnownModificationCandidate]) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str, str, str, bool], list[KnownModificationCandidate]] = {}
+    grouped: dict[tuple[str, str, str, str], list[KnownModificationCandidate]] = {}
     for candidate in candidates:
-        target_base = candidate.target_base
         key = (
             candidate.modification_id,
             candidate.modification_name,
             candidate.modification_symbol or "",
-            target_base,
-            candidate.wobble_overlap,
+            candidate.target_base,
         )
         grouped.setdefault(key, []).append(candidate)
 
     rows = []
-    for (mod_id, mod_name, symbol, target_base, wobble_overlap), items in grouped.items():
+    for (mod_id, mod_name, symbol, target_base), items in grouped.items():
         best = sorted(items, key=lambda item: (-item.priority_score, abs(item.mass_error_modified_ppm), -item.intensity))[0]
         rows.append(
             {
@@ -147,9 +145,7 @@ def summarize_known_modification_candidates(candidates: list[KnownModificationCa
                 "Modification_Name": mod_name,
                 "Symbol": symbol,
                 "Target_Base": target_base,
-                "Wobble_Overlap": wobble_overlap,
                 "Candidate_Count": len(items),
-                "Wobble_Overlap_Count": sum(1 for item in items if item.wobble_overlap),
                 "Best_Source_ID": best.source_id,
                 "Best_Sequence": best.sequence,
                 "Best_Standard_Start": best.standard_start,
@@ -161,7 +157,7 @@ def summarize_known_modification_candidates(candidates: list[KnownModificationCa
                 "Best_Priority_Score": best.priority_score,
             }
         )
-    return sorted(rows, key=lambda row: (-row["Best_Priority_Score"], row["Modification_ID"], str(row["Wobble_Overlap"])))
+    return sorted(rows, key=lambda row: (-row["Best_Priority_Score"], row["Modification_ID"]))
 
 
 def _fragment_candidates(
@@ -173,7 +169,6 @@ def _fragment_candidates(
     search_config = config.modification_search or {}
     tolerance_ppm = _as_float(search_config.get("mz_tolerance_ppm"), 10.0)
     max_candidates = _as_positive_int(search_config.get("max_candidates_per_match"), 10)
-    prioritized = [int(value) for value in search_config.get("prioritize_standard_positions", [34]) or []]
     require_base = _as_bool(search_config.get("require_base_compatibility"), True)
     allowed_tiers = _normalize_values(search_config.get("min_peak_tier", ["Major", "Minor"]))
     allowed_confidence = _normalize_values(search_config.get("min_confidence", ["High", "Medium"]))
@@ -191,11 +186,12 @@ def _fragment_candidates(
         unmodified_mass = match.fragment_mass
         mass_error_unmodified_da = observed_mass - unmodified_mass
         mass_error_unmodified_ppm = _ppm_error(observed_mass, unmodified_mass)
-        position_score, wobble_overlap = _position_overlap(match.standard_start, match.standard_end, prioritized)
         per_match: list[KnownModificationCandidate] = []
         for modification in modifications:
             shift = modification.mass_shift_from_unmodified
             if not isfinite(shift):
+                continue
+            if _should_skip_isobaric_shift(shift, search_config):
                 continue
             if require_base and not _base_compatible(match.sequence, modification):
                 continue
@@ -204,7 +200,8 @@ def _fragment_candidates(
             mass_error_modified_ppm = _ppm_error(observed_mass, modified_mass)
             if abs(mass_error_modified_ppm) > tolerance_ppm:
                 continue
-            priority = _priority_score(match.confidence, match.peak_tier, position_score, mass_error_modified_ppm, tolerance_ppm)
+            priority = _priority_score(match.confidence, match.peak_tier, mass_error_modified_ppm, tolerance_ppm)
+            compatible = _base_compatible(match.sequence, modification)
             per_match.append(
                 KnownModificationCandidate(
                     candidate_id="",
@@ -235,10 +232,8 @@ def _fragment_candidates(
                     rt=match.rt,
                     peak_tier=match.peak_tier,
                     confidence=match.confidence,
-                    position_overlap_score=position_score,
-                    wobble_overlap=wobble_overlap,
                     priority_score=priority,
-                    notes="base compatible" if _base_compatible(match.sequence, modification) else "base compatibility not required",
+                    notes="base compatible" if compatible else "base compatibility not required",
                 )
             )
         per_match.sort(key=lambda item: (-item.priority_score, abs(item.mass_error_modified_ppm), -item.intensity))
@@ -275,12 +270,14 @@ def _intact_candidates(
             shift = modification.mass_shift_from_unmodified
             if not isfinite(shift):
                 continue
+            if _should_skip_isobaric_shift(shift, search_config):
+                continue
             modified_mass = theoretical + shift
             error_da = observed - modified_mass
             error_ppm = _ppm_error(observed, modified_mass)
             if abs(error_ppm) > tolerance_ppm:
                 continue
-            priority = _priority_score(result.confidence, None, 0.0, error_ppm, tolerance_ppm)
+            priority = _priority_score(result.confidence, None, error_ppm, tolerance_ppm)
             per_result.append(
                 KnownModificationCandidate(
                     candidate_id="",
@@ -311,8 +308,6 @@ def _intact_candidates(
                     rt=None,
                     peak_tier=None,
                     confidence=result.confidence,
-                    position_overlap_score=0.0,
-                    wobble_overlap=False,
                     priority_score=priority,
                     notes="intact mode preliminary candidate",
                 )

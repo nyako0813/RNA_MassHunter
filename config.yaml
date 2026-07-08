@@ -105,8 +105,8 @@ modification_search:
     use_intact: false
   mz_tolerance_ppm: 10
   max_candidates_per_match: 10
-  prioritize_standard_positions:
-    - 34
+  include_isobaric_modifications: false
+  isobaric_mass_shift_tolerance_da: 1e-6
   require_base_compatibility: true
   allow_unknown_position_within_fragment: true
   report_unmodified_explained: false

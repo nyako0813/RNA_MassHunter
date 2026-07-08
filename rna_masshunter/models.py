@@ -145,8 +145,6 @@ class KnownModificationCandidate:
     rt: float | None
     peak_tier: str | None
     confidence: str
-    position_overlap_score: float
-    wobble_overlap: bool
     priority_score: float
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
