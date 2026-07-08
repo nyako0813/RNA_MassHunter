@@ -25,6 +25,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "max_charge": 40,
         "min_charge_states": 3,
         "mass_cluster_tolerance_da": 1.0,
+        "max_charge_state_peak_rows": 100000,
     },
     "digestion": {
         "enabled": True,
@@ -59,7 +60,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "use_trace_peaks_for_final_call": True,
     },
     "performance": {"cache_enabled": True, "checkpoint_enabled": True},
-    "reporting": {"excel_output": True},
+    "reporting": {
+        "excel_output": True,
+        "max_excel_rows_per_sheet": 100000,
+        "truncate_large_sheets": True,
+        "max_charge_state_peak_rows": 100000,
+    },
 }
 
 

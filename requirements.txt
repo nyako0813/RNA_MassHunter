@@ -5,3 +5,4 @@ numpy
 pyteomics
 tqdm
 lxml
+psims

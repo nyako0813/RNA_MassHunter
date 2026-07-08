@@ -7,6 +7,11 @@ import pandas as pd
 from openpyxl.utils import get_column_letter
 
 
+EXCEL_MAX_ROWS = 1_048_576
+DATA_START_ROW = 3
+EXCEL_DATA_ROW_LIMIT = EXCEL_MAX_ROWS - DATA_START_ROW
+
+
 INTACT_COLUMNS = [
     "Observed_Mass",
     "Charge_State_Count",
@@ -194,6 +199,70 @@ def _fragment_ms1_match_rows(fragment_ms1_matches: list[Any]) -> list[dict[str, 
     return rows
 
 
+def _as_bool(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _append_excel_warning(
+    warnings: list[dict[str, Any]],
+    sheet_name: str,
+    original_rows: int,
+    written_rows: int,
+) -> None:
+    warnings.append(
+        {
+            "Timestamp": datetime.now().isoformat(timespec="seconds"),
+            "Level": "WARNING",
+            "Source": "excel_report",
+            "Message": "Excel sheet was truncated because it exceeded max_excel_rows_per_sheet.",
+            "Context": {"sheet": sheet_name, "original_rows": original_rows, "written_rows": written_rows},
+        }
+    )
+
+
+def _truncate_frame_if_needed(
+    sheet_name: str,
+    frame: pd.DataFrame,
+    max_rows: int,
+    truncate_large_sheets: bool,
+    warnings: list[dict[str, Any]],
+    truncations: list[dict[str, Any]],
+) -> pd.DataFrame:
+    original_rows = len(frame)
+    safe_limit = min(max_rows, EXCEL_DATA_ROW_LIMIT)
+    if original_rows <= safe_limit:
+        return frame
+
+    if truncate_large_sheets:
+        written_rows = safe_limit
+    else:
+        written_rows = EXCEL_DATA_ROW_LIMIT
+    written_rows = min(written_rows, original_rows)
+    _append_excel_warning(warnings, sheet_name, original_rows, written_rows)
+    truncations.append({"sheet": sheet_name, "original_rows": original_rows, "written_rows": written_rows})
+    return frame.head(written_rows).copy()
+
+
+def _truncation_summary(truncations: list[dict[str, Any]]) -> str:
+    if not truncations:
+        return "None"
+    return "; ".join(
+        f"{item['sheet']}: {item['original_rows']} -> {item['written_rows']}" for item in truncations
+    )
+
+
 def write_excel_report(
     output_dir: str | Path,
     config,
@@ -211,6 +280,15 @@ def write_excel_report(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / f"RNA_MassHunter_MVP3_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    reporting = config.reporting or {}
+    max_excel_rows = _as_positive_int(reporting.get("max_excel_rows_per_sheet"), 100000)
+    truncate_large_sheets = _as_bool(reporting.get("truncate_large_sheets"), True)
+    max_charge_state_peak_rows = _as_positive_int(
+        reporting.get("max_charge_state_peak_rows", config.reconstruction.get("max_charge_state_peak_rows")),
+        max_excel_rows,
+    )
+    truncations: list[dict[str, Any]] = []
 
     intact_rows = []
     for item in intact_results:
@@ -231,19 +309,20 @@ def write_excel_report(
             }
         )
 
+    charge_state_peak_rows = charge_state_peaks
+    if len(charge_state_peaks) > max_charge_state_peak_rows and truncate_large_sheets:
+        _append_excel_warning(warnings, "Charge_state_peaks", len(charge_state_peaks), max_charge_state_peak_rows)
+        truncations.append(
+            {
+                "sheet": "Charge_state_peaks",
+                "original_rows": len(charge_state_peaks),
+                "written_rows": max_charge_state_peak_rows,
+            }
+        )
+        charge_state_peak_rows = charge_state_peaks[:max_charge_state_peak_rows]
+
     theoretical_fragments = theoretical_fragments or []
     fragment_ms1_matches = fragment_ms1_matches or []
-    summary_rows = [
-        {"Item": "Project", "Value": config.project.get("name")},
-        {"Item": "Generated", "Value": datetime.now().isoformat(timespec="seconds")},
-        {"Item": "Modification dictionary entries", "Value": len(modifications or [])},
-        {"Item": "Rule set", "Value": config.organism.get("rule_set") or (rule_set or {}).get("id") or (rule_set or {}).get("name")},
-        {"Item": "Pathway files", "Value": len(pathways or [])},
-        {"Item": "Intact mass candidates", "Value": len(intact_results)},
-        {"Item": "Theoretical fragments", "Value": len(theoretical_fragments)},
-        {"Item": "Fragment MS1 matches", "Value": len(fragment_ms1_matches)},
-        {"Item": "Warnings", "Value": len(warnings)},
-    ]
 
     input_parameters = {
         "project": config.project,
@@ -261,20 +340,62 @@ def write_excel_report(
         "reporting": config.reporting,
     }
 
-    sheets: dict[str, pd.DataFrame] = {
-        "Run_summary": pd.DataFrame(summary_rows),
+    data_sheets: dict[str, pd.DataFrame] = {
         "Input_parameters": pd.DataFrame(_flatten_dict(input_parameters)),
         "mzML_diagnostics": pd.DataFrame([diagnostics] if diagnostics else [{}]),
         "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
-        "Charge_state_peaks": pd.DataFrame(charge_state_peaks, columns=CHARGE_COLUMNS),
+        "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
         "Theoretical_fragments": pd.DataFrame(_fragment_rows(theoretical_fragments), columns=THEORETICAL_FRAGMENT_COLUMNS),
         "Fragment_MS1_matches": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_matches), columns=FRAGMENT_MS1_MATCH_COLUMNS),
-        "Warnings": pd.DataFrame(warnings, columns=["Timestamp", "Level", "Source", "Message", "Context"]),
     }
     for sheet_name, value in (optional_results or {}).items():
-        if sheet_name == "Index":
+        if sheet_name in {"Index", "Run_summary", "Warnings"}:
             continue
-        sheets[sheet_name[:31]] = _coerce_to_frame(value)
+        data_sheets[sheet_name[:31]] = _coerce_to_frame(value)
+
+    truncated_data_sheets = {
+        sheet_name: _truncate_frame_if_needed(
+            sheet_name,
+            frame,
+            max_excel_rows,
+            truncate_large_sheets,
+            warnings,
+            truncations,
+        )
+        for sheet_name, frame in data_sheets.items()
+    }
+
+    summary_rows = [
+        {"Item": "Project", "Value": config.project.get("name")},
+        {"Item": "Generated", "Value": datetime.now().isoformat(timespec="seconds")},
+        {"Item": "Modification dictionary entries", "Value": len(modifications or [])},
+        {"Item": "Rule set", "Value": config.organism.get("rule_set") or (rule_set or {}).get("id") or (rule_set or {}).get("name")},
+        {"Item": "Pathway files", "Value": len(pathways or [])},
+        {"Item": "Intact mass candidates", "Value": len(intact_results)},
+        {"Item": "Theoretical fragments", "Value": len(theoretical_fragments)},
+        {"Item": "Fragment MS1 matches", "Value": len(fragment_ms1_matches)},
+        {"Item": "Truncated sheets", "Value": _truncation_summary(truncations)},
+        {"Item": "Warnings", "Value": len(warnings)},
+    ]
+
+    sheets: dict[str, pd.DataFrame] = {
+        "Run_summary": pd.DataFrame(summary_rows),
+        **truncated_data_sheets,
+        "Warnings": pd.DataFrame(warnings, columns=["Timestamp", "Level", "Source", "Message", "Context"]),
+    }
+    sheets = {
+        sheet_name: _truncate_frame_if_needed(
+            sheet_name,
+            frame,
+            max_excel_rows,
+            truncate_large_sheets,
+            warnings,
+            truncations,
+        )
+        if sheet_name == "Warnings"
+        else frame
+        for sheet_name, frame in sheets.items()
+    }
 
     index_rows = [
         {
