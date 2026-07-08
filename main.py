@@ -19,11 +19,19 @@ from rna_masshunter.startup_check import run_startup_check
 from rna_masshunter.warnings_manager import add_warning
 
 
+def _as_bool(value, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> None:
     project_root = Path(__file__).resolve().parent
     logger = setup_logger(project_root / "logs")
     warnings = []
-    logger.info("RNA_MassHunter_v2 MVP-3 started")
+    logger.info("RNA_MassHunter_v2 MVP-3.1 started")
 
     config = load_config(project_root / "config.yaml", warnings=warnings)
     validate_config(config, warnings=warnings)
@@ -64,10 +72,13 @@ def main() -> None:
     theoretical_fragments = []
     fragment_ms1_matches = []
     sequence = (config.sequence.get("sequence", "") or "").upper().replace("T", "U")
+    digestion_enabled = _as_bool(config.digestion.get("enabled"), True)
+    fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
+
     if sequence:
         theoretical_mass = calculate_unmodified_rna_mass(sequence, base_masses, warnings=warnings)
         position_map = build_position_map(sequence, config.sequence.get("wobble_position", 34))
-        if config.digestion.get("enabled", True):
+        if digestion_enabled:
             theoretical_fragments = digest_sequence(
                 target_id=config.sequence.get("name", "target_tRNA"),
                 sequence=sequence,
@@ -76,17 +87,25 @@ def main() -> None:
                 base_masses=base_masses,
                 warnings=warnings,
             )
+        else:
+            add_warning(
+                warnings,
+                "INFO",
+                "main",
+                "digestion.enabled is false; theoretical fragments and Fragment_MS1 mapping were skipped. Intact mass reconstruction can still run.",
+                {"target_id": config.sequence.get("name", "target_tRNA"), "sequence_length": len(sequence)},
+            )
     else:
         add_warning(warnings, "WARNING", "masses", "config.sequence.sequence is empty; theoretical mass and theoretical fragments were not calculated.")
 
-    if theoretical_fragments and peaks and config.fragment_mapping.get("enabled", True):
+    if digestion_enabled and theoretical_fragments and peaks and fragment_mapping_enabled:
         fragment_ms1_matches = map_fragments_to_ms1_peaks(
             theoretical_fragments,
             peaks,
             config,
             warnings=warnings,
         )
-    elif config.fragment_mapping.get("enabled", True):
+    elif digestion_enabled and fragment_mapping_enabled:
         fragment_ms1_matches = map_fragments_to_ms1_peaks(
             theoretical_fragments,
             peaks,
@@ -117,7 +136,7 @@ def main() -> None:
         fragment_ms1_matches=fragment_ms1_matches,
     )
     logger.info("Excel report written: %s", report_path)
-    logger.info("RNA_MassHunter_v2 MVP-3 finished")
+    logger.info("RNA_MassHunter_v2 MVP-3.1 finished")
 
 
 if __name__ == "__main__":
