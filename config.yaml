@@ -61,6 +61,16 @@ alkaline_phosphatase:
   allow_residual_phosphate: true
   allow_cyclic_phosphate: true
 
+fragment_mapping:
+  enabled: true
+  mz_tolerance_ppm: 10
+  min_charge: 1
+  max_charge: 8
+  polarity: auto
+  use_peak_tiers: true
+  include_trace_peaks: true
+  max_matches_per_fragment: 20
+
 peak_filtering:
   strategy: tiered
   major_intensity_threshold: 25000

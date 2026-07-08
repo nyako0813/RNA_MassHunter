@@ -8,6 +8,7 @@ from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
 from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masses
 from rna_masshunter.modifications import load_modifications, validate_modifications
+from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
@@ -22,7 +23,7 @@ def main() -> None:
     project_root = Path(__file__).resolve().parent
     logger = setup_logger(project_root / "logs")
     warnings = []
-    logger.info("RNA_MassHunter_v2 MVP-2 started")
+    logger.info("RNA_MassHunter_v2 MVP-3 started")
 
     config = load_config(project_root / "config.yaml", warnings=warnings)
     validate_config(config, warnings=warnings)
@@ -55,12 +56,13 @@ def main() -> None:
         peaks = extract_ms1_peaks(mzml_path, config.reconstruction, warnings=warnings)
         tier_result = classify_peak_tiers(peaks, config.peak_filtering, warnings=warnings)
     else:
-        add_warning(warnings, "WARNING", "main", "No mzML input was provided; MVP-2 report will be written without mzML-derived results.")
+        add_warning(warnings, "WARNING", "main", "No mzML input was provided; MVP-3 report will be written without mzML-derived results.")
         diagnostics = {"Warnings": "No mzML input was provided."}
 
     base_masses = load_base_masses(project_root / "data" / "base_masses.yaml", warnings=warnings)
     theoretical_mass = None
     theoretical_fragments = []
+    fragment_ms1_matches = []
     sequence = (config.sequence.get("sequence", "") or "").upper().replace("T", "U")
     if sequence:
         theoretical_mass = calculate_unmodified_rna_mass(sequence, base_masses, warnings=warnings)
@@ -76,6 +78,21 @@ def main() -> None:
             )
     else:
         add_warning(warnings, "WARNING", "masses", "config.sequence.sequence is empty; theoretical mass and theoretical fragments were not calculated.")
+
+    if theoretical_fragments and peaks and config.fragment_mapping.get("enabled", True):
+        fragment_ms1_matches = map_fragments_to_ms1_peaks(
+            theoretical_fragments,
+            peaks,
+            config,
+            warnings=warnings,
+        )
+    elif config.fragment_mapping.get("enabled", True):
+        fragment_ms1_matches = map_fragments_to_ms1_peaks(
+            theoretical_fragments,
+            peaks,
+            config,
+            warnings=warnings,
+        )
 
     if config.reconstruction.get("enabled", True):
         intact_results, charge_state_peaks = reconstruct_intact_masses(
@@ -97,9 +114,10 @@ def main() -> None:
         rule_set=rule_set,
         pathways=pathways,
         theoretical_fragments=theoretical_fragments,
+        fragment_ms1_matches=fragment_ms1_matches,
     )
     logger.info("Excel report written: %s", report_path)
-    logger.info("RNA_MassHunter_v2 MVP-2 finished")
+    logger.info("RNA_MassHunter_v2 MVP-3 finished")
 
 
 if __name__ == "__main__":

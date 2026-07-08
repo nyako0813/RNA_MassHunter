@@ -41,6 +41,16 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "allow_residual_phosphate": True,
         "allow_cyclic_phosphate": True,
     },
+    "fragment_mapping": {
+        "enabled": True,
+        "mz_tolerance_ppm": 10,
+        "min_charge": 1,
+        "max_charge": 8,
+        "polarity": "auto",
+        "use_peak_tiers": True,
+        "include_trace_peaks": True,
+        "max_matches_per_fragment": 20,
+    },
     "peak_filtering": {
         "major_intensity_threshold": 25000,
         "minor_intensity_threshold": 5000,

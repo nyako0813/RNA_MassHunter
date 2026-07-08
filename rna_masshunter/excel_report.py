@@ -39,13 +39,40 @@ THEORETICAL_FRAGMENT_COLUMNS = [
     "Warnings",
 ]
 
+FRAGMENT_MS1_MATCH_COLUMNS = [
+    "Match_ID",
+    "Fragment_ID",
+    "Target_ID",
+    "Sequence",
+    "Start",
+    "End",
+    "Standard_Start",
+    "Standard_End",
+    "Enzyme",
+    "Missed_Cleavages",
+    "Terminal_Form",
+    "Fragment_Mass",
+    "Charge",
+    "Theoretical_mz",
+    "Observed_mz",
+    "Mass_Error_Da",
+    "Mass_Error_ppm",
+    "Intensity",
+    "RT",
+    "Scan_ID",
+    "Peak_Tier",
+    "Confidence",
+    "Warnings",
+]
+
 SHEET_DESCRIPTIONS = {
-    "Run_summary": "Run-level summary for this RNA_MassHunter MVP-2 report.",
+    "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
     "Input_parameters": "Flattened parameters loaded from config.yaml.",
     "mzML_diagnostics": "mzML scan counts, ranges, precursor metadata, and warnings.",
     "Intact_mass_reconstruction": "Reconstructed intact mass clusters and mass errors.",
     "Charge_state_peaks": "Peak and charge-state evidence supporting reconstructed masses.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
+    "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -130,6 +157,43 @@ def _fragment_rows(theoretical_fragments: list[Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _fragment_ms1_match_rows(fragment_ms1_matches: list[Any]) -> list[dict[str, Any]]:
+    rows = []
+    for item in fragment_ms1_matches:
+        raw = asdict(item) if is_dataclass(item) else dict(item)
+        match_warnings = raw.get("warnings", [])
+        if isinstance(match_warnings, list):
+            match_warnings = "; ".join(map(str, match_warnings))
+        rows.append(
+            {
+                "Match_ID": raw.get("match_id"),
+                "Fragment_ID": raw.get("fragment_id"),
+                "Target_ID": raw.get("target_id"),
+                "Sequence": raw.get("sequence"),
+                "Start": raw.get("start"),
+                "End": raw.get("end"),
+                "Standard_Start": raw.get("standard_start"),
+                "Standard_End": raw.get("standard_end"),
+                "Enzyme": raw.get("enzyme"),
+                "Missed_Cleavages": raw.get("missed_cleavages"),
+                "Terminal_Form": raw.get("terminal_form"),
+                "Fragment_Mass": raw.get("fragment_mass"),
+                "Charge": raw.get("charge"),
+                "Theoretical_mz": raw.get("theoretical_mz"),
+                "Observed_mz": raw.get("observed_mz"),
+                "Mass_Error_Da": raw.get("mass_error_da"),
+                "Mass_Error_ppm": raw.get("mass_error_ppm"),
+                "Intensity": raw.get("intensity"),
+                "RT": raw.get("rt"),
+                "Scan_ID": raw.get("scan_id"),
+                "Peak_Tier": raw.get("peak_tier"),
+                "Confidence": raw.get("confidence"),
+                "Warnings": match_warnings,
+            }
+        )
+    return rows
+
+
 def write_excel_report(
     output_dir: str | Path,
     config,
@@ -141,11 +205,12 @@ def write_excel_report(
     rule_set: dict[str, Any] | None = None,
     pathways: list[dict[str, Any]] | None = None,
     theoretical_fragments: list[Any] | None = None,
+    fragment_ms1_matches: list[Any] | None = None,
     optional_results: dict[str, Any] | None = None,
 ) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = out_dir / f"RNA_MassHunter_MVP2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    report_path = out_dir / f"RNA_MassHunter_MVP3_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     intact_rows = []
     for item in intact_results:
@@ -167,6 +232,7 @@ def write_excel_report(
         )
 
     theoretical_fragments = theoretical_fragments or []
+    fragment_ms1_matches = fragment_ms1_matches or []
     summary_rows = [
         {"Item": "Project", "Value": config.project.get("name")},
         {"Item": "Generated", "Value": datetime.now().isoformat(timespec="seconds")},
@@ -175,6 +241,7 @@ def write_excel_report(
         {"Item": "Pathway files", "Value": len(pathways or [])},
         {"Item": "Intact mass candidates", "Value": len(intact_results)},
         {"Item": "Theoretical fragments", "Value": len(theoretical_fragments)},
+        {"Item": "Fragment MS1 matches", "Value": len(fragment_ms1_matches)},
         {"Item": "Warnings", "Value": len(warnings)},
     ]
 
@@ -188,6 +255,7 @@ def write_excel_report(
         "reconstruction": config.reconstruction,
         "digestion": config.digestion,
         "alkaline_phosphatase": config.alkaline_phosphatase,
+        "fragment_mapping": config.fragment_mapping,
         "peak_filtering": config.peak_filtering,
         "performance": config.performance,
         "reporting": config.reporting,
@@ -200,6 +268,7 @@ def write_excel_report(
         "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
         "Charge_state_peaks": pd.DataFrame(charge_state_peaks, columns=CHARGE_COLUMNS),
         "Theoretical_fragments": pd.DataFrame(_fragment_rows(theoretical_fragments), columns=THEORETICAL_FRAGMENT_COLUMNS),
+        "Fragment_MS1_matches": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_matches), columns=FRAGMENT_MS1_MATCH_COLUMNS),
         "Warnings": pd.DataFrame(warnings, columns=["Timestamp", "Level", "Source", "Message", "Context"]),
     }
     for sheet_name, value in (optional_results or {}).items():

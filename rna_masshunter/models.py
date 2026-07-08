@@ -13,6 +13,7 @@ class RunConfig:
     reconstruction: dict[str, Any] = field(default_factory=dict)
     digestion: dict[str, Any] = field(default_factory=dict)
     alkaline_phosphatase: dict[str, Any] = field(default_factory=dict)
+    fragment_mapping: dict[str, Any] = field(default_factory=dict)
     peak_filtering: dict[str, Any] = field(default_factory=dict)
     performance: dict[str, Any] = field(default_factory=dict)
     reporting: dict[str, Any] = field(default_factory=dict)
@@ -83,4 +84,31 @@ class Fragment:
     missed_cleavages: int
     terminal_form: str
     unmodified_mass: float
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class FragmentMS1Match:
+    match_id: str
+    fragment_id: str
+    target_id: str
+    sequence: str
+    start: int
+    end: int
+    standard_start: int | None
+    standard_end: int | None
+    enzyme: str
+    missed_cleavages: int
+    terminal_form: str
+    fragment_mass: float
+    charge: int
+    theoretical_mz: float
+    observed_mz: float
+    mass_error_da: float
+    mass_error_ppm: float
+    intensity: float
+    rt: float | None
+    scan_id: str | None
+    peak_tier: str | None
+    confidence: str
     warnings: list[str] = field(default_factory=list)
