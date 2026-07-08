@@ -55,7 +55,7 @@ def main() -> None:
         peaks = extract_ms1_peaks(mzml_path, config.reconstruction, warnings=warnings)
         tier_result = classify_peak_tiers(peaks, config.peak_filtering, warnings=warnings)
     else:
-        add_warning(warnings, "WARNING", "main", "No mzML input was provided; empty MVP-1 report will be written.")
+        add_warning(warnings, "WARNING", "main", "No mzML input was provided; MVP-2 report will be written without mzML-derived results.")
         diagnostics = {"Warnings": "No mzML input was provided."}
 
     base_masses = load_base_masses(project_root / "data" / "base_masses.yaml", warnings=warnings)
