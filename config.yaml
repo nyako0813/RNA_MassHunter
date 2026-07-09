@@ -95,14 +95,23 @@ p1_annotation:
 ms2_annotation:
   enabled: true
   mz_tolerance_ppm: 20
-  min_peak_intensity: 0
+  min_peak_intensity: 10
+  min_relative_intensity_percent: 1.0
   max_peaks_per_spectrum: 500
   precursor_match_tolerance_ppm: 20
+  constrain_by_precursor: true
+  fallback_to_all_ions_if_no_precursor_match: false
   use_theoretical_fragments: true
   include_neutral_loss: false
   include_base_loss: false
   min_ion_length: 1
   max_ion_length: null
+  min_ion_length_for_evidence: 2
+  max_ms2_match_rows: 100000
+  max_unmatched_peaks: 50000
+  output_unmatched_peaks: true
+  output_low_intensity_peaks: false
+  output_all_peak_annotations: false
 
 peak_filtering:
   strategy: tiered

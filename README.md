@@ -1,6 +1,6 @@
 # RNA_MassHunter_v2
 
-RNA_MassHunter_v2 is an MVP workflow for RNA/tRNA LC-MS analysis. Current MVP-5 functionality includes YAML configuration loading, mzML diagnostics, MS1 peak extraction, intact mass reconstruction, RNase digestion fragment generation, MS1 fragment matching, filtered fragment summaries, known modification candidate search, P1 peak annotation, MS2 theoretical ion annotation, and Excel output.
+RNA_MassHunter_v2 is an MVP workflow for RNA/tRNA LC-MS analysis. Current MVP-5.1 functionality includes YAML configuration loading, mzML diagnostics, MS1 peak extraction, intact mass reconstruction, RNase digestion fragment generation, MS1 fragment matching, filtered fragment summaries, known modification candidate search, P1 peak annotation, precursor-constrained MS2 theoretical ion annotation, and Excel output.
 
 ## Setup
 
@@ -86,20 +86,23 @@ modification_search:
 
 In this mode, the Excel report focuses on theoretical fragments, MS1 fragment matches, filtered fragment summaries, and known modification candidates. Full-length intact reconstruction sheets are omitted when `reconstruction.enabled` is false.
 
-### MVP-5 MS2 annotation
+### MVP-5.1 MS2 annotation
 
-MS2 annotation is an evidence table, not de novo sequencing. RNA_MassHunter reads MS2 spectra from mzML and matches observed MS2 peaks against theoretical RNA fragment ions generated from the known sequence and digestion fragments. The initial MVP-5 ion series is unmodified `c`/`y` ions. Neutral losses, base losses, and strict modification-site localization are deferred to later MVPs.
+MS2 annotation is an evidence table, not de novo sequencing. RNA_MassHunter reads MS2 spectra from mzML, first matches each precursor against theoretical digestion fragments, then matches observed MS2 peaks against unmodified `c`/`y` ions from the precursor-compatible parent fragment. Neutral losses, base losses, and strict modification-site localization are deferred to later MVPs.
 
 ```yaml
 ms2_annotation:
   enabled: true
   mz_tolerance_ppm: 20
-  min_peak_intensity: 0
+  min_peak_intensity: 10
+  min_relative_intensity_percent: 1.0
   max_peaks_per_spectrum: 500
-  use_theoretical_fragments: true
+  constrain_by_precursor: true
+  fallback_to_all_ions_if_no_precursor_match: false
+  output_all_peak_annotations: false
 ```
 
-When an mzML file has no MS2 spectra, the run still succeeds and the Excel report records `Total_MS2_Spectra = 0` with annotation skipped/no MS2 status.
+`MS2_Ion_Matches` reports only matched or multiple-candidate peaks. Unmatched peaks are kept in `MS2_Unmatched_Peaks` and capped by `ms2_annotation.max_unmatched_peaks`. One-nucleotide ions are marked as low-information evidence with `Informative_Ion = false`; parent-fragment evidence is summarized in `MS2_Fragment_Evidence`. When an mzML file has no MS2 spectra, the run still succeeds and the Excel report records `Total_MS2_Spectra = 0` with annotation skipped/no MS2 status.
 
 ## Alkaline phosphatase setting
 
@@ -154,8 +157,8 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 - Generates RNase theoretical fragments when digestion is enabled.
 - Matches theoretical fragments to MS1 peaks when fragment mapping is enabled.
 - Searches known modification candidates from `data/modifications.yaml` by comparing observed fragment neutral-mass shifts against curated modification mass shifts.
-- Annotates MS2 spectra against theoretical unmodified c/y fragment ions when `ms2_annotation.enabled` is true.
-- Writes Excel output with applicable sheets such as `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, `Known_Modification_Candidates`, `Known_Modification_Summary`, `P1_*`, `MS2_Summary`, `MS2_Spectra`, `MS2_Theoretical_Ions`, `MS2_Ion_Matches`, `MS2_Unmatched_Peaks`, and `Warnings`.
+- Annotates MS2 spectra against precursor-compatible theoretical unmodified c/y fragment ions when `ms2_annotation.enabled` is true.
+- Writes Excel output with applicable sheets such as `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, `Known_Modification_Candidates`, `Known_Modification_Summary`, `P1_*`, `MS2_Summary`, `MS2_Spectra`, `MS2_Parent_Candidates`, `MS2_Theoretical_Ions`, `MS2_Ion_Matches`, `MS2_Unmatched_Peaks`, `MS2_Fragment_Evidence`, and `Warnings`.
 
 ## Planned Later Features
 

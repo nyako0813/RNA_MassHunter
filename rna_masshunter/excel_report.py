@@ -7,7 +7,9 @@ import pandas as pd
 from openpyxl.utils import get_column_letter
 
 from rna_masshunter.ms2_annotation import (
+    MS2_FRAGMENT_EVIDENCE_COLUMNS,
     MS2_ION_MATCH_COLUMNS,
+    MS2_PARENT_CANDIDATE_COLUMNS,
     MS2_SPECTRA_COLUMNS,
     MS2_SUMMARY_COLUMNS,
     MS2_THEORETICAL_ION_COLUMNS,
@@ -197,9 +199,12 @@ SHEET_DESCRIPTIONS = {
     "P1_Unmatched_Peaks": "Observed P1 peaks outside tolerance retained for unknown/adduct/phosphate review.",
     "MS2_Summary": "Run-level summary of MS2 c/y ion annotation.",
     "MS2_Spectra": "MS2 spectrum metadata, peak counts, and annotation status.",
+    "MS2_Parent_Candidates": "Precursor m/z matches between MS2 spectra and theoretical digestion fragments.",
     "MS2_Theoretical_Ions": "Theoretical c/y RNA fragment ions generated from digestion fragments.",
-    "MS2_Ion_Matches": "Observed MS2 peaks matched to theoretical fragment ions.",
+    "MS2_Ion_Matches": "Matched observed MS2 peaks only; unmatched peaks are reported separately.",
     "MS2_Unmatched_Peaks": "Observed MS2 peaks outside tolerance retained for review.",
+    "MS2_Fragment_Evidence": "Spectrum-parent fragment evidence summary from matched MS2 ions.",
+    "MS2_Peak_Annotations": "Optional all-peak MS2 annotation sheet, disabled by default.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -611,9 +616,12 @@ def write_excel_report(
         "P1_Unmatched_Peaks": P1_UNMATCHED_COLUMNS,
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
+        "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,
         "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
         "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
         "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,
+        "MS2_Fragment_Evidence": MS2_FRAGMENT_EVIDENCE_COLUMNS,
+        "MS2_Peak_Annotations": MS2_ION_MATCH_COLUMNS,
     }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:
