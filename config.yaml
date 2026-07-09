@@ -92,6 +92,18 @@ p1_annotation:
   min_intensity: 0
   charge_states: [1]
 
+ms2_annotation:
+  enabled: true
+  mz_tolerance_ppm: 20
+  min_peak_intensity: 0
+  max_peaks_per_spectrum: 500
+  precursor_match_tolerance_ppm: 20
+  use_theoretical_fragments: true
+  include_neutral_loss: false
+  include_base_loss: false
+  min_ion_length: 1
+  max_ion_length: null
+
 peak_filtering:
   strategy: tiered
   major_intensity_threshold: 25000

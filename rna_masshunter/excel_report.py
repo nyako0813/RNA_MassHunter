@@ -6,6 +6,13 @@ from typing import Any
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from rna_masshunter.ms2_annotation import (
+    MS2_ION_MATCH_COLUMNS,
+    MS2_SPECTRA_COLUMNS,
+    MS2_SUMMARY_COLUMNS,
+    MS2_THEORETICAL_ION_COLUMNS,
+    MS2_UNMATCHED_COLUMNS,
+)
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -188,6 +195,11 @@ SHEET_DESCRIPTIONS = {
     "P1_Theoretical_Structures": "P1 monomer and short oligonucleotide theoretical structure candidates.",
     "P1_Peak_Annotations": "Observed P1 peaks matched to theoretical structure candidates, retaining unmatched peaks.",
     "P1_Unmatched_Peaks": "Observed P1 peaks outside tolerance retained for unknown/adduct/phosphate review.",
+    "MS2_Summary": "Run-level summary of MS2 c/y ion annotation.",
+    "MS2_Spectra": "MS2 spectrum metadata, peak counts, and annotation status.",
+    "MS2_Theoretical_Ions": "Theoretical c/y RNA fragment ions generated from digestion fragments.",
+    "MS2_Ion_Matches": "Observed MS2 peaks matched to theoretical fragment ions.",
+    "MS2_Unmatched_Peaks": "Observed MS2 peaks outside tolerance retained for review.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -505,7 +517,7 @@ def write_excel_report(
 ) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = out_dir / f"RNA_MassHunter_MVP3_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    report_path = out_dir / f"RNA_MassHunter_MVP5_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     reporting = config.reporting or {}
     max_excel_rows = _as_positive_int(reporting.get("max_excel_rows_per_sheet"), 100000)
@@ -569,6 +581,7 @@ def write_excel_report(
         "modification_search": config.modification_search,
         "peak_filtering": config.peak_filtering,
         "p1_annotation": config.p1_annotation,
+        "ms2_annotation": config.ms2_annotation,
         "performance": config.performance,
         "reporting": config.reporting,
     }
@@ -596,6 +609,11 @@ def write_excel_report(
         "P1_Theoretical_Structures": P1_THEORETICAL_COLUMNS,
         "P1_Peak_Annotations": P1_ANNOTATION_COLUMNS,
         "P1_Unmatched_Peaks": P1_UNMATCHED_COLUMNS,
+        "MS2_Summary": MS2_SUMMARY_COLUMNS,
+        "MS2_Spectra": MS2_SPECTRA_COLUMNS,
+        "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
+        "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
+        "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,
     }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:

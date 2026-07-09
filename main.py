@@ -10,6 +10,7 @@ from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masse
 from rna_masshunter.modification_search import known_modification_candidate_rows, search_known_modifications, summarize_known_modification_candidates
 from rna_masshunter.modifications import load_modifications, validate_modifications
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
+from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
@@ -33,7 +34,7 @@ def main() -> None:
     project_root = Path(__file__).resolve().parent
     logger = setup_logger(project_root / "logs")
     warnings = []
-    logger.info("RNA_MassHunter_v2 MVP-4 started")
+    logger.info("RNA_MassHunter_v2 MVP-5 started")
 
     config = load_config(project_root / "config.yaml", warnings=warnings)
     validate_config(config, warnings=warnings)
@@ -137,6 +138,13 @@ def main() -> None:
         known_modification_summary = summarize_known_modification_candidates(known_modification_candidates)
 
     optional_results = {}
+    optional_results.update(annotate_ms2(
+        mzml_path=str(mzml_path) if mzml_path else None,
+        theoretical_fragments=theoretical_fragments,
+        config=config,
+        base_masses=base_masses,
+        warnings=warnings,
+    ))
     if is_p1_enabled(config):
         optional_results.update(build_p1_optional_results(config, tier_result, base_masses, modifications))
 
@@ -157,7 +165,7 @@ def main() -> None:
         optional_results=optional_results,
     )
     logger.info("Excel report written: %s", report_path)
-    logger.info("RNA_MassHunter_v2 MVP-4 finished")
+    logger.info("RNA_MassHunter_v2 MVP-5 finished")
 
 
 if __name__ == "__main__":

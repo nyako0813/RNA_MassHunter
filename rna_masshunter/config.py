@@ -80,6 +80,18 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "min_intensity": 0,
         "charge_states": [1],
     },
+    "ms2_annotation": {
+        "enabled": True,
+        "mz_tolerance_ppm": 20,
+        "min_peak_intensity": 0,
+        "max_peaks_per_spectrum": 500,
+        "precursor_match_tolerance_ppm": 20,
+        "use_theoretical_fragments": True,
+        "include_neutral_loss": False,
+        "include_base_loss": False,
+        "min_ion_length": 1,
+        "max_ion_length": None,
+    },
     "peak_filtering": {
         "major_intensity_threshold": 25000,
         "minor_intensity_threshold": 5000,
