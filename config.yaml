@@ -29,6 +29,8 @@ instrument:
   ms1_tolerance_ppm: 10
   ms2_tolerance_da: 0.02
 reconstruction:
+  # For RNase_T1 / RNase digestion fragment analysis, set enabled: false
+  # to omit full-length intact reconstruction sheets from the Excel report.
   enabled: true
   rt_min: null
   rt_max: null
@@ -44,6 +46,7 @@ reconstruction:
 # In that mode, theoretical fragments and Fragment_MS1 sheets are skipped,
 # while intact mass reconstruction still runs when reconstruction.enabled is true.
 digestion:
+  # For T1 digestion fragment analysis, use enabled: true with enzyme: RNase_T1.
   enabled: true
   enzyme: RNase_T1
   missed_cleavages: 1
@@ -60,6 +63,7 @@ alkaline_phosphatase:
   allow_residual_phosphate: true
   allow_cyclic_phosphate: true
 fragment_mapping:
+  # Keep enabled for RNase digestion fragment MS1 matching.
   enabled: true
   mz_tolerance_ppm: 10
   min_charge: 1
@@ -99,6 +103,7 @@ reporting:
   truncate_large_sheets: true
   max_charge_state_peak_rows: 100000
 modification_search:
+  # Keep enabled for known modification candidate search from fragment MS1 matches.
   enabled: true
   source:
     use_fragments: true

@@ -65,6 +65,27 @@ fragment_mapping:
 
 Supported built-in enzyme names currently include `RNase_T1`, `RNase_A`, `RNase_T2`, `Nuclease_P1`, `Benzonase`, and `U_specific_RNase`.
 
+### T1 digestion fragment analysis
+
+Use this when RNase_T1 digestion fragments are the primary analysis target and full-length intact reconstruction is not needed.
+
+```yaml
+reconstruction:
+  enabled: false
+
+digestion:
+  enabled: true
+  enzyme: RNase_T1
+
+fragment_mapping:
+  enabled: true
+
+modification_search:
+  enabled: true
+```
+
+In this mode, the Excel report focuses on theoretical fragments, MS1 fragment matches, filtered fragment summaries, and known modification candidates. Full-length intact reconstruction sheets are omitted when `reconstruction.enabled` is false.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.
@@ -118,14 +139,13 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 - Generates RNase theoretical fragments when digestion is enabled.
 - Matches theoretical fragments to MS1 peaks when fragment mapping is enabled.
 - Searches known modification candidates from `data/modifications.yaml` by comparing observed fragment neutral-mass shifts against curated modification mass shifts.
-- Prioritizes candidates that overlap configured standard positions such as tRNA wobble position 34.
-- Writes Excel output with `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, `Known_Modification_Candidates`, `Known_Modification_Summary`, and `Warnings`.
+- Writes Excel output with applicable sheets such as `Run_summary`, `Input_parameters`, `mzML_diagnostics`, `Intact_mass_reconstruction`, `Charge_state_peaks`, `Theoretical_fragments`, `Fragment_MS1_matches`, `Fragment_MS1_filtered`, `Fragment_MS1_summary`, `Known_Modification_Candidates`, `Known_Modification_Summary`, and `Warnings`.
 
 ## Planned Later Features
 
 - modified-fragment combination ranking beyond single known shifts
 - unknown modification candidate generation
-- MS2 annotation
+- MS2 annotation. MS2 annotation is not implemented yet.
 - mass balance check
 - manual comparison
 
@@ -133,6 +153,6 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 
 `data/modifications.yaml` is treated as the user-confirmed PDF-derived modification dictionary when present. MVP-4 loads and validates it, then reports known single-modification candidates when observed fragment masses can be explained by dictionary mass shifts. Unknown modification search is still deferred.
 
-MS1 mass differences alone cannot distinguish isobaric modifications such as pseudouridine. By default, modifications with `mass_shift_from_unmodified = 0` are excluded from `Known_Modification_Candidates`. Set `modification_search.include_isobaric_modifications: true` only when you explicitly want to report those mass-neutral candidates. RNA_MassHunter does not use special priority logic for standard position 34; start/end and standard-position columns are displayed for review but are not used in the priority score.
+MS1 mass differences alone cannot distinguish isobaric modifications such as pseudouridine. By default, modifications with `mass_shift_from_unmodified = 0` are excluded from `Known_Modification_Candidates`. Set `modification_search.include_isobaric_modifications: true` only when you explicitly want to report those mass-neutral candidates. RNA_MassHunter does not use special priority logic for standard position 34; Excel reports use sequence start/end positions for fragment review.
 
 `data/base_masses.yaml` contains Mongo Oligo-compatible placeholder masses. Confirm these values against the final Mongo Oligo settings before quantitative final analysis.

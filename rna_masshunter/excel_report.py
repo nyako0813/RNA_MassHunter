@@ -35,8 +35,6 @@ THEORETICAL_FRAGMENT_COLUMNS = [
     "Length",
     "Start",
     "End",
-    "Standard_Start",
-    "Standard_End",
     "Enzyme",
     "Missed_Cleavages",
     "Terminal_Form",
@@ -51,8 +49,6 @@ FRAGMENT_MS1_MATCH_COLUMNS = [
     "Sequence",
     "Start",
     "End",
-    "Standard_Start",
-    "Standard_End",
     "Enzyme",
     "Missed_Cleavages",
     "Terminal_Form",
@@ -78,8 +74,6 @@ FRAGMENT_MS1_FILTERED_COLUMNS = [
     "Length",
     "Start",
     "End",
-    "Standard_Start",
-    "Standard_End",
     "Enzyme",
     "Missed_Cleavages",
     "Terminal_Form",
@@ -104,8 +98,6 @@ FRAGMENT_MS1_SUMMARY_COLUMNS = [
     "Length",
     "Start",
     "End",
-    "Standard_Start",
-    "Standard_End",
     "Enzyme",
     "Missed_Cleavages",
     "Terminal_Form",
@@ -134,8 +126,6 @@ KNOWN_MODIFICATION_CANDIDATE_COLUMNS = [
     "sequence",
     "start",
     "end",
-    "standard_start",
-    "standard_end",
     "observed_mz",
     "theoretical_mz",
     "observed_mass",
@@ -168,8 +158,6 @@ KNOWN_MODIFICATION_SUMMARY_COLUMNS = [
     "Candidate_Count",
     "Best_Source_ID",
     "Best_Sequence",
-    "Best_Standard_Start",
-    "Best_Standard_End",
     "Best_Mass_Error_Modified_ppm",
     "Best_Intensity",
     "Best_Peak_Tier",
@@ -230,6 +218,18 @@ def _coerce_to_frame(value: Any) -> pd.DataFrame:
     return pd.DataFrame([{"Value": value}])
 
 
+def _analysis_mode(config) -> str:
+    reconstruction_enabled = _as_bool((config.reconstruction or {}).get("enabled"), True)
+    digestion_enabled = _as_bool((config.digestion or {}).get("enabled"), True)
+    if reconstruction_enabled and digestion_enabled:
+        return "Intact + digested fragment analysis"
+    if reconstruction_enabled:
+        return "Intact reconstruction only"
+    if digestion_enabled:
+        return "Digested fragment MS1 mapping"
+    return "No active mass analysis"
+
+
 def _add_index_and_backlinks(writer: pd.ExcelWriter, sheet_names: list[str]) -> None:
     workbook = writer.book
     index_sheet = workbook["Index"]
@@ -261,8 +261,6 @@ def _fragment_rows(theoretical_fragments: list[Any]) -> list[dict[str, Any]]:
                 "Length": len(raw.get("sequence") or ""),
                 "Start": raw.get("start"),
                 "End": raw.get("end"),
-                "Standard_Start": raw.get("standard_start"),
-                "Standard_End": raw.get("standard_end"),
                 "Enzyme": raw.get("enzyme"),
                 "Missed_Cleavages": raw.get("missed_cleavages"),
                 "Terminal_Form": raw.get("terminal_form"),
@@ -299,8 +297,6 @@ def _fragment_ms1_match_rows(fragment_ms1_matches: list[Any], include_length: bo
             "Sequence": raw.get("sequence"),
             "Start": raw.get("start"),
             "End": raw.get("end"),
-            "Standard_Start": raw.get("standard_start"),
-            "Standard_End": raw.get("standard_end"),
             "Enzyme": raw.get("enzyme"),
             "Missed_Cleavages": raw.get("missed_cleavages"),
             "Terminal_Form": raw.get("terminal_form"),
@@ -393,8 +389,6 @@ def _fragment_ms1_summary_rows(fragment_ms1_matches: list[Any], mapping_config: 
                 "Length": len(best_raw.get("sequence") or ""),
                 "Start": best_raw.get("start"),
                 "End": best_raw.get("end"),
-                "Standard_Start": best_raw.get("standard_start"),
-                "Standard_End": best_raw.get("standard_end"),
                 "Enzyme": best_raw.get("enzyme"),
                 "Missed_Cleavages": best_raw.get("missed_cleavages"),
                 "Terminal_Form": best_raw.get("terminal_form"),
@@ -548,6 +542,7 @@ def write_excel_report(
     known_modification_summary = known_modification_summary or []
     fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
     fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
+    reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
 
     input_parameters = {
         "project": config.project,
@@ -569,8 +564,6 @@ def write_excel_report(
     data_sheets: dict[str, pd.DataFrame] = {
         "Input_parameters": pd.DataFrame(_flatten_dict(input_parameters)),
         "mzML_diagnostics": pd.DataFrame([diagnostics] if diagnostics else [{}]),
-        "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
-        "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
         "Theoretical_fragments": pd.DataFrame(_fragment_rows(theoretical_fragments), columns=THEORETICAL_FRAGMENT_COLUMNS),
         "Fragment_MS1_matches": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_matches), columns=FRAGMENT_MS1_MATCH_COLUMNS),
         "Fragment_MS1_filtered": pd.DataFrame(_fragment_ms1_match_rows(fragment_ms1_filtered, include_length=True), columns=FRAGMENT_MS1_FILTERED_COLUMNS),
@@ -578,6 +571,14 @@ def write_excel_report(
         "Known_Modification_Candidates": pd.DataFrame(known_modification_candidates, columns=KNOWN_MODIFICATION_CANDIDATE_COLUMNS),
         "Known_Modification_Summary": pd.DataFrame(known_modification_summary, columns=KNOWN_MODIFICATION_SUMMARY_COLUMNS),
     }
+    if reconstruction_enabled:
+        data_sheets = {
+            "Input_parameters": data_sheets["Input_parameters"],
+            "mzML_diagnostics": data_sheets["mzML_diagnostics"],
+            "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
+            "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
+            **{key: value for key, value in data_sheets.items() if key not in {"Input_parameters", "mzML_diagnostics"}},
+        }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:
             continue
@@ -598,6 +599,7 @@ def write_excel_report(
     summary_rows = [
         {"Item": "Project", "Value": config.project.get("name")},
         {"Item": "Generated", "Value": datetime.now().isoformat(timespec="seconds")},
+        {"Item": "Analysis mode", "Value": _analysis_mode(config)},
         {"Item": "Modification dictionary entries", "Value": len(modifications or [])},
         {"Item": "Rule set", "Value": config.organism.get("rule_set") or (rule_set or {}).get("id") or (rule_set or {}).get("name")},
         {"Item": "Pathway files", "Value": len(pathways or [])},

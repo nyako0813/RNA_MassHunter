@@ -148,8 +148,6 @@ def summarize_known_modification_candidates(candidates: list[KnownModificationCa
                 "Candidate_Count": len(items),
                 "Best_Source_ID": best.source_id,
                 "Best_Sequence": best.sequence,
-                "Best_Standard_Start": best.standard_start,
-                "Best_Standard_End": best.standard_end,
                 "Best_Mass_Error_Modified_ppm": best.mass_error_modified_ppm,
                 "Best_Intensity": best.intensity,
                 "Best_Peak_Tier": best.peak_tier,
