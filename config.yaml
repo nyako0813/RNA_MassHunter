@@ -49,8 +49,10 @@ digestion:
   # For T1 digestion fragment analysis, use enabled: true with enzyme: RNase_T1.
   enabled: true
   enzyme: RNase_T1
+  digestion_mode: specific
   missed_cleavages: 1
   min_length: 2
+  max_length: null
   include_terminal_forms: true
   allow_partial_digestion: true
   allow_nonspecific_cleavage: false
@@ -80,6 +82,16 @@ fragment_mapping:
     - High
     - Medium
   summary_best_match_by: fragment_id
+p1_annotation:
+  # Used only when digestion.enzyme is P1 / Nuclease_P1.
+  enabled: true
+  include_unmatched_peaks: true
+  include_modified_monomers: true
+  include_phosphate_forms: true
+  mz_tolerance_ppm: 10
+  min_intensity: 0
+  charge_states: [1]
+
 peak_filtering:
   strategy: tiered
   major_intensity_threshold: 25000

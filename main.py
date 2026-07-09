@@ -13,6 +13,7 @@ from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
+from rna_masshunter.p1_annotation import build_p1_optional_results, is_p1_enabled
 from rna_masshunter.peak_filtering import classify_peak_tiers
 from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
@@ -135,6 +136,10 @@ def main() -> None:
         )
         known_modification_summary = summarize_known_modification_candidates(known_modification_candidates)
 
+    optional_results = {}
+    if is_p1_enabled(config):
+        optional_results.update(build_p1_optional_results(config, tier_result, base_masses, modifications))
+
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
         config=config,
@@ -149,6 +154,7 @@ def main() -> None:
         fragment_ms1_matches=fragment_ms1_matches,
         known_modification_candidates=known_modification_candidate_rows(known_modification_candidates),
         known_modification_summary=known_modification_summary,
+        optional_results=optional_results,
     )
     logger.info("Excel report written: %s", report_path)
     logger.info("RNA_MassHunter_v2 MVP-4 finished")

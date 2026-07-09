@@ -30,8 +30,10 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
     "digestion": {
         "enabled": True,
         "enzyme": "RNase_T1",
+        "digestion_mode": None,
         "missed_cleavages": 1,
         "min_length": 2,
+        "max_length": None,
         "include_terminal_forms": True,
         "allow_partial_digestion": True,
         "allow_nonspecific_cleavage": False,
@@ -68,6 +70,15 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "report_unmodified_explained": False,
         "min_peak_tier": ["Major", "Minor"],
         "min_confidence": ["High", "Medium"],
+    },
+    "p1_annotation": {
+        "enabled": True,
+        "include_unmatched_peaks": True,
+        "include_modified_monomers": True,
+        "include_phosphate_forms": True,
+        "mz_tolerance_ppm": 10,
+        "min_intensity": 0,
+        "charge_states": [1],
     },
     "peak_filtering": {
         "major_intensity_threshold": 25000,

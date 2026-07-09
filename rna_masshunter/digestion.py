@@ -1,7 +1,7 @@
 from dataclasses import replace
 from typing import Any
 
-from rna_masshunter.enzymes import find_cleavage_sites, get_enzyme_rule
+from rna_masshunter.enzymes import find_cleavage_sites, get_enzyme_rule, normalize_enzyme_name
 from rna_masshunter.masses import calculate_unmodified_rna_mass
 from rna_masshunter.models import Fragment, RunConfig
 from rna_masshunter.warnings_manager import add_warning
@@ -36,7 +36,7 @@ def digest_sequence(
     if not digestion_config.get("enabled", True):
         return []
 
-    enzyme = str(digestion_config.get("enzyme", "RNase_T1") or "").strip()
+    enzyme = normalize_enzyme_name(digestion_config.get("enzyme", "RNase_T1"))
     if enzyme.lower() in NO_DIGESTION_ENZYMES:
         if warnings is not None:
             add_warning(
@@ -48,7 +48,8 @@ def digest_sequence(
             )
         return []
 
-    allow_nonspecific = bool(digestion_config.get("allow_nonspecific_cleavage", False))
+    digestion_mode = str(digestion_config.get("digestion_mode") or ("complete" if enzyme == "Nuclease_P1" else "specific")).lower()
+    allow_nonspecific = bool(digestion_config.get("allow_nonspecific_cleavage", False)) or digestion_mode in {"complete", "nonspecific"}
     try:
         rule = get_enzyme_rule(enzyme)
     except ValueError as exc:
@@ -89,40 +90,52 @@ def digest_sequence(
 
     max_missed = max(0, int(digestion_config.get("missed_cleavages", 0) or 0))
     min_length = max(1, int(digestion_config.get("min_length", 1) or 1))
+    max_length_value = digestion_config.get("max_length")
+    max_length = int(max_length_value) if max_length_value not in (None, "") else None
     fragments: list[Fragment] = []
 
-    for start_boundary_index in range(len(boundaries) - 1):
-        for missed in range(max_missed + 1):
-            end_boundary_index = start_boundary_index + missed + 1
-            if end_boundary_index >= len(boundaries):
-                continue
-            start = boundaries[start_boundary_index] + 1
-            end = boundaries[end_boundary_index]
-            fragment_sequence = sequence[start - 1:end]
-            if len(fragment_sequence) < min_length:
-                continue
+    fragment_ranges: list[tuple[int, int, int]] = []
+    if digestion_mode in {"complete", "nonspecific"}:
+        effective_max_length = max_length or len(sequence)
+        for start in range(1, len(sequence) + 1):
+            for end in range(start, min(len(sequence), start + effective_max_length - 1) + 1):
+                fragment_ranges.append((start, end, 0))
+    else:
+        for start_boundary_index in range(len(boundaries) - 1):
+            for missed in range(max_missed + 1):
+                end_boundary_index = start_boundary_index + missed + 1
+                if end_boundary_index >= len(boundaries):
+                    continue
+                fragment_ranges.append((boundaries[start_boundary_index] + 1, boundaries[end_boundary_index], missed))
 
-            fragment_warnings: list[str] = []
-            mass = calculate_unmodified_rna_mass(fragment_sequence, base_masses, warnings=warnings, terminal_form="default")
-            if mass is None:
-                _fragment_warning(fragment_warnings, "unmodified mass could not be calculated")
-                mass = 0.0
+    for start, end, missed in fragment_ranges:
+        fragment_sequence = sequence[start - 1:end]
+        if len(fragment_sequence) < min_length:
+            continue
+        if max_length is not None and len(fragment_sequence) > max_length:
+            continue
 
-            fragment = Fragment(
-                fragment_id=f"{target_id}_{enzyme}_{start}_{end}_mc{missed}_default",
-                target_id=target_id,
-                sequence=fragment_sequence,
-                start=start,
-                end=end,
-                standard_start=position_map.get(start),
-                standard_end=position_map.get(end),
-                enzyme=enzyme,
-                missed_cleavages=missed,
-                terminal_form="default",
-                unmodified_mass=float(mass),
-                warnings=fragment_warnings,
-            )
-            fragments.extend(generate_terminal_forms(fragment, config, base_masses, warnings=warnings))
+        fragment_warnings: list[str] = []
+        mass = calculate_unmodified_rna_mass(fragment_sequence, base_masses, warnings=warnings, terminal_form="default")
+        if mass is None:
+            _fragment_warning(fragment_warnings, "unmodified mass could not be calculated")
+            mass = 0.0
+
+        fragment = Fragment(
+            fragment_id=f"{target_id}_{enzyme}_{start}_{end}_mc{missed}_default",
+            target_id=target_id,
+            sequence=fragment_sequence,
+            start=start,
+            end=end,
+            standard_start=position_map.get(start),
+            standard_end=position_map.get(end),
+            enzyme=enzyme,
+            missed_cleavages=missed,
+            terminal_form="default",
+            unmodified_mass=float(mass),
+            warnings=fragment_warnings,
+        )
+        fragments.extend(generate_terminal_forms(fragment, config, base_masses, warnings=warnings))
     return fragments
 
 

@@ -16,6 +16,7 @@ class RunConfig:
     fragment_mapping: dict[str, Any] = field(default_factory=dict)
     modification_search: dict[str, Any] = field(default_factory=dict)
     peak_filtering: dict[str, Any] = field(default_factory=dict)
+    p1_annotation: dict[str, Any] = field(default_factory=dict)
     performance: dict[str, Any] = field(default_factory=dict)
     reporting: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)

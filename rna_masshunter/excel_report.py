@@ -6,6 +6,13 @@ from typing import Any
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from rna_masshunter.p1_annotation import (
+    P1_ANNOTATION_COLUMNS,
+    P1_SUMMARY_COLUMNS,
+    P1_THEORETICAL_COLUMNS,
+    P1_UNMATCHED_COLUMNS,
+)
+
 
 EXCEL_MAX_ROWS = 1_048_576
 DATA_START_ROW = 3
@@ -177,6 +184,10 @@ SHEET_DESCRIPTIONS = {
     "Fragment_MS1_summary": "Best MS1 match per fragment with match counts.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
+    "P1_Summary": "Summary of P1 observed peak annotation results.",
+    "P1_Theoretical_Structures": "P1 monomer and short oligonucleotide theoretical structure candidates.",
+    "P1_Peak_Annotations": "Observed P1 peaks matched to theoretical structure candidates, retaining unmatched peaks.",
+    "P1_Unmatched_Peaks": "Observed P1 peaks outside tolerance retained for unknown/adduct/phosphate review.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
 }
 
@@ -557,6 +568,7 @@ def write_excel_report(
         "fragment_mapping": config.fragment_mapping,
         "modification_search": config.modification_search,
         "peak_filtering": config.peak_filtering,
+        "p1_annotation": config.p1_annotation,
         "performance": config.performance,
         "reporting": config.reporting,
     }
@@ -579,10 +591,20 @@ def write_excel_report(
             "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
             **{key: value for key, value in data_sheets.items() if key not in {"Input_parameters", "mzML_diagnostics"}},
         }
+    optional_columns = {
+        "P1_Summary": P1_SUMMARY_COLUMNS,
+        "P1_Theoretical_Structures": P1_THEORETICAL_COLUMNS,
+        "P1_Peak_Annotations": P1_ANNOTATION_COLUMNS,
+        "P1_Unmatched_Peaks": P1_UNMATCHED_COLUMNS,
+    }
     for sheet_name, value in (optional_results or {}).items():
         if sheet_name in {"Index", "Run_summary", "Warnings"}:
             continue
-        data_sheets[sheet_name[:31]] = _coerce_to_frame(value)
+        frame = _coerce_to_frame(value)
+        columns = optional_columns.get(sheet_name)
+        if columns:
+            frame = pd.DataFrame(frame, columns=columns)
+        data_sheets[sheet_name[:31]] = frame
 
     truncated_data_sheets = {
         sheet_name: _truncate_frame_if_needed(
