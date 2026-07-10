@@ -112,6 +112,13 @@ ms2_annotation:
   output_unmatched_peaks: true
   output_low_intensity_peaks: false
   output_all_peak_annotations: false
+  include_modified_precursor_candidates: true
+  modified_precursor_source: known_modifications
+  modified_precursor_max_mods_per_fragment: 1
+  modified_precursor_require_base_compatibility: true
+  modified_precursor_include_isobaric: false
+  modified_precursor_mass_shift_tolerance_da: 1.0e-6
+  modified_precursor_max_candidates_per_spectrum: 20
 
 peak_filtering:
   strategy: tiered

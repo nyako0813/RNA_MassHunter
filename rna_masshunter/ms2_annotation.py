@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 
 from rna_masshunter.masses import calculate_unmodified_rna_mass
+from rna_masshunter.modified_precursor import find_modified_parent_candidates
 from rna_masshunter.models import Fragment, MS2IonMatch, MS2SpectrumInfo, TheoreticalMS2Ion
 from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 from rna_masshunter.mzml_diagnostics import _rt_minutes
@@ -18,6 +19,11 @@ MS2_SUMMARY_COLUMNS = [
     "Total_Theoretical_Ions",
     "Spectra_With_Precursor_Parent_Match",
     "Spectra_Without_Precursor_Parent_Match",
+    "Spectra_With_Unmodified_Precursor_Match",
+    "Spectra_With_Modified_Precursor_Match",
+    "Spectra_Rescued_By_Modified_Precursor",
+    "Total_Modified_Parent_Candidates",
+    "Top_Modification_Candidates_For_Precursors",
     "Total_Parent_Candidates",
     "Total_Matched_Ion_Rows",
     "Total_Unmatched_Output_Rows",
@@ -42,6 +48,10 @@ MS2_SPECTRA_COLUMNS = [
     "Num_Matched_Peaks",
     "Num_Unmatched_Peaks",
     "Annotation_Status",
+    "Num_Parent_Candidates",
+    "Num_Unmodified_Parent_Candidates",
+    "Num_Modified_Parent_Candidates",
+    "Precursor_Annotation_Status",
     "Comment",
 ]
 
@@ -116,11 +126,20 @@ MS2_PARENT_CANDIDATE_COLUMNS = [
     "Candidate_Parent_Sequence",
     "Candidate_Parent_Start",
     "Candidate_Parent_End",
+    "Candidate_Type",
+    "Modification_ID",
+    "Modification_Name",
+    "Modification_Target_Base",
+    "Modification_Mass_Shift",
+    "Parent_Unmodified_Mass",
+    "Parent_Modified_Mass",
     "Parent_Charge",
     "Parent_Theoretical_mz",
     "Precursor_Error_Da",
     "Precursor_Error_ppm",
     "Parent_Match_Status",
+    "Modified_Precursor_Rescue",
+    "Parent_Candidate_Rank",
     "Comment",
 ]
 
@@ -133,6 +152,13 @@ MS2_FRAGMENT_EVIDENCE_COLUMNS = [
     "Parent_Start",
     "Parent_End",
     "Parent_Charge",
+    "Candidate_Type",
+    "Modification_ID",
+    "Modification_Name",
+    "Modification_Mass_Shift",
+    "Parent_Modified_Mass",
+    "Modified_Precursor_Rescue",
+    "Match_Approximation",
     "Num_Matched_Ions",
     "Num_Informative_Ions",
     "Num_c_Ions",
@@ -146,12 +172,22 @@ MS2_FRAGMENT_EVIDENCE_COLUMNS = [
     "Notes",
 ]
 
+MS2_MODIFIED_PRECURSOR_COLUMNS = [
+    "Spectrum_ID", "Scan_Index", "RT", "Precursor_mz", "Precursor_Charge",
+    "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start", "Parent_End",
+    "Modification_ID", "Modification_Name", "Modification_Target_Base",
+    "Modification_Mass_Shift", "Parent_Unmodified_Mass", "Parent_Modified_Mass",
+    "Parent_Charge", "Parent_Theoretical_mz", "Precursor_Error_Da",
+    "Precursor_Error_ppm", "Modified_Precursor_Rescue", "Candidate_Rank", "Comment",
+]
+
 
 def annotate_ms2(
     mzml_path: str | None,
     theoretical_fragments: list[Fragment],
     config: Any,
     base_masses: dict[str, Any],
+    modifications: list[Any] | None = None,
     warnings: list[dict[str, Any]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     ms2_config = getattr(config, "ms2_annotation", {}) or {}
@@ -160,8 +196,8 @@ def annotate_ms2(
 
     spectra = extract_ms2_spectra(mzml_path, ms2_config, warnings) if mzml_path else []
     ions = generate_theoretical_ms2_ions(theoretical_fragments, config, base_masses, warnings)
-    matches, unmatched, spectrum_rows, parent_rows = match_ms2_spectra(spectra, ions, theoretical_fragments, config)
-    evidence_rows = build_fragment_evidence(matches, theoretical_fragments, config)
+    matches, unmatched, spectrum_rows, parent_rows = match_ms2_spectra(spectra, ions, theoretical_fragments, config, modifications or [])
+    evidence_rows = build_fragment_evidence(matches, theoretical_fragments, config, parent_rows)
 
     if not spectra:
         spectrum_rows = [{
@@ -197,6 +233,7 @@ def annotate_ms2(
         "MS2_Summary": build_ms2_summary(spectra, ions, matches, unmatched_rows, parent_rows, evidence_rows),
         "MS2_Spectra": spectrum_rows,
         "MS2_Parent_Candidates": parent_rows,
+        "MS2_Modified_Precursor_Candidates": modified_precursor_rows(parent_rows),
         "MS2_Theoretical_Ions": [theoretical_ion_row(ion, config) for ion in ions],
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,
@@ -325,6 +362,7 @@ def match_ms2_spectra(
     ions: list[TheoreticalMS2Ion],
     theoretical_fragments: list[Fragment],
     config: Any,
+    modifications: list[Any] | None = None,
 ) -> tuple[list[MS2IonMatch], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     ms2_config = getattr(config, "ms2_annotation", {}) or {}
     tolerance_ppm = float(ms2_config.get("mz_tolerance_ppm", 20) or 20)
@@ -337,7 +375,7 @@ def match_ms2_spectra(
     parent_rows: list[dict[str, Any]] = []
 
     for spectrum in spectra:
-        candidates = find_parent_candidates(spectrum, theoretical_fragments, config)
+        candidates = find_parent_candidates(spectrum, theoretical_fragments, config, modifications or [])
         parent_rows.extend(parent_candidate_rows(spectrum, candidates))
         if constrain_by_precursor:
             if candidates:
@@ -409,12 +447,17 @@ def match_ms2_spectra(
             status = "annotated"
         else:
             status = initial_status if initial_status != "annotated" else "skipped"
-        spectrum_rows.append(spectrum_row(spectrum, spectrum_match_count, spectrum_unmatched_count, status))
+        spectrum_rows.append(spectrum_row(spectrum, spectrum_match_count, spectrum_unmatched_count, status, candidates))
 
     return matches, unmatched_rows, spectrum_rows, parent_rows
 
 
-def find_parent_candidates(spectrum: MS2SpectrumInfo, theoretical_fragments: list[Fragment], config: Any) -> list[dict[str, Any]]:
+def find_parent_candidates(
+    spectrum: MS2SpectrumInfo,
+    theoretical_fragments: list[Fragment],
+    config: Any,
+    modifications: list[Any] | None = None,
+) -> list[dict[str, Any]]:
     if spectrum.precursor_mz is None:
         return []
     ms2_config = getattr(config, "ms2_annotation", {}) or {}
@@ -433,8 +476,21 @@ def find_parent_candidates(spectrum: MS2SpectrumInfo, theoretical_fragments: lis
                     "theoretical_mz": theoretical_mz,
                     "error_da": float(spectrum.precursor_mz) - theoretical_mz,
                     "error_ppm": error_ppm,
+                    "candidate_type": "unmodified",
+                    "modification_id": "", "modification_name": "", "modification_target_base": "",
+                    "modification_mass_shift": 0.0, "unmodified_mass": float(fragment.unmodified_mass),
+                    "modified_mass": float(fragment.unmodified_mass), "comment": "",
                 })
-    return sorted(candidates, key=lambda row: abs(row["error_ppm"]))
+    unmodified_found = bool(candidates)
+    candidates.extend(find_modified_parent_candidates(spectrum, theoretical_fragments, modifications or [], config))
+    candidates = sorted(candidates, key=lambda row: abs(row["error_ppm"]))
+    limit = _optional_positive_int(ms2_config.get("modified_precursor_max_candidates_per_spectrum"), 20)
+    if limit is not None:
+        candidates = candidates[:limit]
+    for rank, candidate in enumerate(candidates, start=1):
+        candidate["rank"] = rank
+        candidate["modified_rescue"] = candidate["candidate_type"] == "modified" and not unmodified_found
+    return candidates
 
 
 def parent_candidate_rows(spectrum: MS2SpectrumInfo, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -449,14 +505,20 @@ def parent_candidate_rows(spectrum: MS2SpectrumInfo, candidates: list[dict[str, 
             "Candidate_Parent_Sequence": "",
             "Candidate_Parent_Start": "",
             "Candidate_Parent_End": "",
+            "Candidate_Type": "", "Modification_ID": "", "Modification_Name": "",
+            "Modification_Target_Base": "", "Modification_Mass_Shift": "",
+            "Parent_Unmodified_Mass": "", "Parent_Modified_Mass": "",
             "Parent_Charge": "",
             "Parent_Theoretical_mz": "",
             "Precursor_Error_Da": "",
             "Precursor_Error_ppm": "",
             "Parent_Match_Status": "no_precursor_parent_match",
+            "Modified_Precursor_Rescue": False, "Parent_Candidate_Rank": "",
             "Comment": "No theoretical fragment matched the precursor m/z within tolerance.",
         }]
     rows = []
+    types = {candidate["candidate_type"] for candidate in candidates}
+    match_status = "matched_both" if len(types) > 1 else "matched_modified" if "modified" in types else "matched_unmodified"
     for candidate in candidates:
         fragment = candidate["fragment"]
         rows.append({
@@ -469,26 +531,82 @@ def parent_candidate_rows(spectrum: MS2SpectrumInfo, candidates: list[dict[str, 
             "Candidate_Parent_Sequence": fragment.sequence,
             "Candidate_Parent_Start": fragment.start,
             "Candidate_Parent_End": fragment.end,
+            "Candidate_Type": candidate["candidate_type"],
+            "Modification_ID": candidate["modification_id"],
+            "Modification_Name": candidate["modification_name"],
+            "Modification_Target_Base": candidate["modification_target_base"],
+            "Modification_Mass_Shift": candidate["modification_mass_shift"],
+            "Parent_Unmodified_Mass": candidate["unmodified_mass"],
+            "Parent_Modified_Mass": candidate["modified_mass"],
             "Parent_Charge": candidate["charge"],
             "Parent_Theoretical_mz": candidate["theoretical_mz"],
             "Precursor_Error_Da": candidate["error_da"],
             "Precursor_Error_ppm": candidate["error_ppm"],
-            "Parent_Match_Status": "matched",
-            "Comment": "",
+            "Parent_Match_Status": match_status,
+            "Modified_Precursor_Rescue": candidate["modified_rescue"],
+            "Parent_Candidate_Rank": candidate["rank"],
+            "Comment": candidate.get("comment", ""),
         })
     return rows
 
 
-def build_fragment_evidence(matches: list[MS2IonMatch], theoretical_fragments: list[Fragment], config: Any) -> list[dict[str, Any]]:
+def modified_precursor_rows(parent_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for row in parent_rows:
+        if row.get("Candidate_Type") != "modified":
+            continue
+        rows.append({
+            "Spectrum_ID": row.get("Spectrum_ID"), "Scan_Index": row.get("Scan_Index"),
+            "RT": row.get("RT"), "Precursor_mz": row.get("Precursor_mz"),
+            "Precursor_Charge": row.get("Precursor_Charge"),
+            "Parent_Fragment_ID": row.get("Candidate_Parent_Fragment_ID"),
+            "Parent_Sequence": row.get("Candidate_Parent_Sequence"),
+            "Parent_Start": row.get("Candidate_Parent_Start"), "Parent_End": row.get("Candidate_Parent_End"),
+            "Modification_ID": row.get("Modification_ID"), "Modification_Name": row.get("Modification_Name"),
+            "Modification_Target_Base": row.get("Modification_Target_Base"),
+            "Modification_Mass_Shift": row.get("Modification_Mass_Shift"),
+            "Parent_Unmodified_Mass": row.get("Parent_Unmodified_Mass"),
+            "Parent_Modified_Mass": row.get("Parent_Modified_Mass"), "Parent_Charge": row.get("Parent_Charge"),
+            "Parent_Theoretical_mz": row.get("Parent_Theoretical_mz"),
+            "Precursor_Error_Da": row.get("Precursor_Error_Da"), "Precursor_Error_ppm": row.get("Precursor_Error_ppm"),
+            "Modified_Precursor_Rescue": row.get("Modified_Precursor_Rescue"),
+            "Candidate_Rank": row.get("Parent_Candidate_Rank"),
+            "Comment": row.get("Comment") or "modified precursor candidate; fragment ions are unmodified MVP-5.2 approximation",
+        })
+    return rows
+
+
+def _top_precursor_modifications(rows: list[dict[str, Any]]) -> str:
+    counts: dict[tuple[str, str], int] = {}
+    for row in rows:
+        if row.get("Candidate_Type") != "modified":
+            continue
+        key = (str(row.get("Modification_ID") or ""), str(row.get("Modification_Name") or ""))
+        counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    return "; ".join(f"{mod_id}/{name}/{count}" for (mod_id, name), count in ranked)
+
+
+def build_fragment_evidence(
+    matches: list[MS2IonMatch], theoretical_fragments: list[Fragment], config: Any,
+    parent_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     fragment_lookup = {fragment.fragment_id: fragment for fragment in theoretical_fragments or []}
     grouped: dict[tuple[str, str], list[MS2IonMatch]] = {}
     for match in matches:
         grouped.setdefault((match.spectrum_id, match.parent_fragment_id), []).append(match)
 
     rows = []
+    candidate_lookup: dict[tuple[str, str], dict[str, Any]] = {}
+    for candidate in parent_rows or []:
+        key = (str(candidate.get("Spectrum_ID") or ""), str(candidate.get("Candidate_Parent_Fragment_ID") or ""))
+        if key[1] and (key not in candidate_lookup or int(candidate.get("Parent_Candidate_Rank") or 999999) < int(candidate_lookup[key].get("Parent_Candidate_Rank") or 999999)):
+            candidate_lookup[key] = candidate
     for (spectrum_id, parent_id), group in grouped.items():
         first = group[0]
         fragment = fragment_lookup.get(parent_id)
+        candidate = candidate_lookup.get((spectrum_id, parent_id), {})
+        modified = candidate.get("Candidate_Type") == "modified"
         informative = [match for match in group if _is_informative_ion(match.best_ion_sequence, config)]
         ion_types = {match.best_ion_type for match in informative}
         abs_errors = [abs(match.mass_error_ppm) for match in group]
@@ -506,6 +624,13 @@ def build_fragment_evidence(matches: list[MS2IonMatch], theoretical_fragments: l
             "Parent_Start": fragment.start if fragment else "",
             "Parent_End": fragment.end if fragment else "",
             "Parent_Charge": first.precursor_charge or "",
+            "Candidate_Type": candidate.get("Candidate_Type", "unmodified"),
+            "Modification_ID": candidate.get("Modification_ID", ""),
+            "Modification_Name": candidate.get("Modification_Name", ""),
+            "Modification_Mass_Shift": candidate.get("Modification_Mass_Shift", 0.0),
+            "Parent_Modified_Mass": candidate.get("Parent_Modified_Mass", fragment.unmodified_mass if fragment else ""),
+            "Modified_Precursor_Rescue": candidate.get("Modified_Precursor_Rescue", False),
+            "Match_Approximation": "modified_parent_unmodified_ions_approximation" if modified else "unmodified_parent_ions",
             "Num_Matched_Ions": len(group),
             "Num_Informative_Ions": len(informative),
             "Num_c_Ions": sum(1 for match in group if match.best_ion_type == "c"),
@@ -516,7 +641,7 @@ def build_fragment_evidence(matches: list[MS2IonMatch], theoretical_fragments: l
             "Sequence_Coverage": coverage,
             "Evidence_Score": score,
             "Evidence_Level": level,
-            "Notes": "1 nt ion dominated" if level == "Weak" and not informative else "",
+            "Notes": ("modified precursor candidate; fragment ions are unmodified MVP-5.2 approximation" if modified else "") or ("1 nt ion dominated" if level == "Weak" and not informative else ""),
         })
     return sorted(rows, key=lambda row: (-float(row["Evidence_Score"]), row["Spectrum_ID"], row["Parent_Fragment_ID"]))
 
@@ -533,7 +658,8 @@ def build_ms2_summary(
     for match in matches:
         parent_counts[match.parent_fragment_id] = parent_counts.get(match.parent_fragment_id, 0) + 1
     best_parents = sorted(parent_counts.items(), key=lambda item: (-item[1], item[0]))[:10]
-    spectra_with_parent = {row["Spectrum_ID"] for row in parent_rows if row.get("Parent_Match_Status") == "matched"}
+    matched_rows = [row for row in parent_rows if str(row.get("Parent_Match_Status", "")).startswith("matched_")]
+    spectra_with_parent = {row["Spectrum_ID"] for row in matched_rows}
     spectra_without_parent = {row["Spectrum_ID"] for row in parent_rows if row.get("Parent_Match_Status") == "no_precursor_parent_match"}
     if not spectra:
         notes = "MS2 spectra: 0; MS2 annotation skipped."
@@ -550,7 +676,12 @@ def build_ms2_summary(
         "Total_Theoretical_Ions": len(ions),
         "Spectra_With_Precursor_Parent_Match": len(spectra_with_parent),
         "Spectra_Without_Precursor_Parent_Match": len(spectra_without_parent),
-        "Total_Parent_Candidates": sum(1 for row in parent_rows if row.get("Parent_Match_Status") == "matched"),
+        "Spectra_With_Unmodified_Precursor_Match": len({row["Spectrum_ID"] for row in matched_rows if row.get("Candidate_Type") == "unmodified"}),
+        "Spectra_With_Modified_Precursor_Match": len({row["Spectrum_ID"] for row in matched_rows if row.get("Candidate_Type") == "modified"}),
+        "Spectra_Rescued_By_Modified_Precursor": len({row["Spectrum_ID"] for row in matched_rows if row.get("Modified_Precursor_Rescue")}),
+        "Total_Modified_Parent_Candidates": sum(1 for row in matched_rows if row.get("Candidate_Type") == "modified"),
+        "Top_Modification_Candidates_For_Precursors": _top_precursor_modifications(matched_rows),
+        "Total_Parent_Candidates": len(matched_rows),
         "Total_Matched_Ion_Rows": len(matches),
         "Total_Unmatched_Output_Rows": len(unmatched_rows),
         "Strong_Evidence_Fragments": sum(1 for row in evidence_rows if row.get("Evidence_Level") == "Strong"),
@@ -561,7 +692,11 @@ def build_ms2_summary(
     }]
 
 
-def spectrum_row(spectrum: MS2SpectrumInfo, matched: int, unmatched: int, status: str) -> dict[str, Any]:
+def spectrum_row(spectrum: MS2SpectrumInfo, matched: int, unmatched: int, status: str, candidates: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    candidates = candidates or []
+    unmodified = sum(1 for item in candidates if item.get("candidate_type") == "unmodified")
+    modified = sum(1 for item in candidates if item.get("candidate_type") == "modified")
+    precursor_status = "no_precursor_mz" if spectrum.precursor_mz is None else "unmodified_and_modified_parent_match" if unmodified and modified else "unmodified_parent_match" if unmodified else "modified_parent_match" if modified else "no_precursor_parent_match"
     return {
         "Spectrum_ID": spectrum.spectrum_id,
         "Scan_Index": spectrum.scan_index,
@@ -576,6 +711,10 @@ def spectrum_row(spectrum: MS2SpectrumInfo, matched: int, unmatched: int, status
         "Num_Matched_Peaks": matched,
         "Num_Unmatched_Peaks": unmatched,
         "Annotation_Status": status,
+        "Num_Parent_Candidates": len(candidates),
+        "Num_Unmodified_Parent_Candidates": unmodified,
+        "Num_Modified_Parent_Candidates": modified,
+        "Precursor_Annotation_Status": precursor_status,
         "Comment": "" if status == "annotated" else "MS2 annotation skipped or produced no matches.",
     }
 

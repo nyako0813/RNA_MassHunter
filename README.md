@@ -104,6 +104,8 @@ ms2_annotation:
 
 `MS2_Ion_Matches` reports only matched or multiple-candidate peaks. Unmatched peaks are kept in `MS2_Unmatched_Peaks` and capped by `ms2_annotation.max_unmatched_peaks`. One-nucleotide ions are marked as low-information evidence with `Informative_Ion = false`; parent-fragment evidence is summarized in `MS2_Fragment_Evidence`. When an mzML file has no MS2 spectra, the run still succeeds and the Excel report records `Total_MS2_Spectra = 0` with annotation skipped/no MS2 status.
 
+MVP-5.2 can also match an MS2 precursor to a theoretical digestion fragment plus one compatible known-modification mass shift. Enable this with `ms2_annotation.include_modified_precursor_candidates`. Base compatibility is required and mass-neutral/isobaric modifications are excluded by default; at most one modification is considered per fragment. These candidates indicate that the precursor mass may be explained by a modification, but do not localize that modification. Fragment-ion matching remains an unmodified c/y-ion approximation in MVP-5.2, and this limitation is recorded in the candidate and evidence sheets.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.

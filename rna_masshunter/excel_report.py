@@ -9,6 +9,7 @@ from openpyxl.utils import get_column_letter
 from rna_masshunter.ms2_annotation import (
     MS2_FRAGMENT_EVIDENCE_COLUMNS,
     MS2_ION_MATCH_COLUMNS,
+    MS2_MODIFIED_PRECURSOR_COLUMNS,
     MS2_PARENT_CANDIDATE_COLUMNS,
     MS2_SPECTRA_COLUMNS,
     MS2_SUMMARY_COLUMNS,
@@ -617,6 +618,7 @@ def write_excel_report(
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
         "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,
+        "MS2_Modified_Precursor_Candidates": MS2_MODIFIED_PRECURSOR_COLUMNS,
         "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
         "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
         "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,

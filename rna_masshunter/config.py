@@ -100,6 +100,13 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "output_unmatched_peaks": True,
         "output_low_intensity_peaks": False,
         "output_all_peak_annotations": False,
+        "include_modified_precursor_candidates": True,
+        "modified_precursor_source": "known_modifications",
+        "modified_precursor_max_mods_per_fragment": 1,
+        "modified_precursor_require_base_compatibility": True,
+        "modified_precursor_include_isobaric": False,
+        "modified_precursor_mass_shift_tolerance_da": 1e-6,
+        "modified_precursor_max_candidates_per_spectrum": 20,
     },
     "peak_filtering": {
         "major_intensity_threshold": 25000,

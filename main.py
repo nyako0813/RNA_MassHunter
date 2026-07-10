@@ -143,6 +143,7 @@ def main() -> None:
         theoretical_fragments=theoretical_fragments,
         config=config,
         base_masses=base_masses,
+        modifications=modifications,
         warnings=warnings,
     ))
     if is_p1_enabled(config):
