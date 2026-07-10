@@ -128,6 +128,7 @@ ms2_annotation:
   modified_fragment_min_ion_length_for_localization: 2
   modified_fragment_output_all_position_candidates: true
   modified_fragment_max_rows: 100000
+  annotate_position_discriminating_ions: true
 
 modification_evidence_ranking:
   enabled: true
@@ -139,6 +140,15 @@ modification_evidence_ranking:
   use_organism_rules: true
   use_trna_context: true
   require_ms2_evidence_for_high_confidence: true
+  enable_ambiguity_grouping: true
+  ambiguity_group_by:
+    - Spectrum_ID
+    - Parent_Fragment_ID
+    - Modification_ID
+  require_position_discriminating_ions_for_localization_confidence: true
+  min_discriminating_ions_for_position_support: 1
+  min_informative_discriminating_ions_for_high: 2
+  collapse_ambiguous_positions_in_summary: true
   min_final_score_to_report: 0
   max_ranked_candidates: 10000
   weights:
@@ -154,6 +164,8 @@ modification_evidence_ranking:
     low_information_penalty: -1.0
     ambiguous_position_penalty: -1.0
     isobaric_precursor_penalty: -2.0
+    ambiguity_penalty: -1.5
+    non_discriminating_ion_penalty: -0.5
 
 peak_filtering:
   strategy: tiered

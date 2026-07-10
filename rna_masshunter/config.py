@@ -116,6 +116,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "modified_fragment_min_ion_length_for_localization": 2,
         "modified_fragment_output_all_position_candidates": True,
         "modified_fragment_max_rows": 100000,
+        "annotate_position_discriminating_ions": True,
     },
     "modification_evidence_ranking": {
         "enabled": True,
@@ -127,6 +128,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "use_organism_rules": True,
         "use_trna_context": True,
         "require_ms2_evidence_for_high_confidence": True,
+        "enable_ambiguity_grouping": True,
+        "ambiguity_group_by": ["Spectrum_ID", "Parent_Fragment_ID", "Modification_ID"],
+        "require_position_discriminating_ions_for_localization_confidence": True,
+        "min_discriminating_ions_for_position_support": 1,
+        "min_informative_discriminating_ions_for_high": 2,
+        "collapse_ambiguous_positions_in_summary": True,
         "min_final_score_to_report": 0,
         "max_ranked_candidates": 10000,
         "weights": {
@@ -136,6 +143,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "organism_rule_supported": 1.5, "trna_context_supported": 1.0,
             "low_information_penalty": -1.0, "ambiguous_position_penalty": -1.0,
             "isobaric_precursor_penalty": -2.0,
+            "ambiguity_penalty": -1.5, "non_discriminating_ion_penalty": -0.5,
         },
     },
     "peak_filtering": {

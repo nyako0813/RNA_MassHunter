@@ -153,8 +153,52 @@ def match_modified_ions(spectra: list[Any], ions: list[dict[str, Any]], config: 
                 "Comment": ion["Comment"],
             })
             if len(rows) >= max_rows:
-                return rows
-    return rows
+                return annotate_position_discrimination(rows, ions, config)
+    return annotate_position_discrimination(rows, ions, config)
+
+
+def annotate_position_discrimination(
+    matches: list[dict[str, Any]], ions: list[dict[str, Any]], config: Any,
+) -> list[dict[str, Any]]:
+    ms2 = getattr(config, "ms2_annotation", {}) or {}
+    enabled = _as_bool(ms2.get("annotate_position_discriminating_ions"), True)
+    positions_by_group: dict[tuple[str, str, str], set[int]] = {}
+    starts_by_group: dict[tuple[str, str, str], Any] = {}
+    for ion in ions:
+        key = (str(ion.get("Spectrum_ID") or ""), str(ion.get("Parent_Fragment_ID") or ""), str(ion.get("Modification_ID") or ""))
+        positions_by_group.setdefault(key, set()).add(int(ion["Candidate_Modification_Position_In_Parent"]))
+        starts_by_group[key] = ion.get("Parent_Start")
+    for row in matches:
+        key = (str(row.get("Spectrum_ID") or ""), str(row.get("Parent_Fragment_ID") or ""), str(row.get("Modification_ID") or ""))
+        positions = sorted(positions_by_group.get(key, set()))
+        current = int(row.get("Candidate_Modification_Position_In_Parent") or 0)
+        covered = [position for position in positions if int(row.get("Ion_Start") or 0) <= position <= int(row.get("Ion_End") or 0)]
+        also = [position for position in covered if position != current]
+        informative = bool(row.get("Informative_Ion"))
+        contains = bool(row.get("Ion_Contains_Modification"))
+        discriminating = enabled and len(positions) > 1 and contains and informative and covered == [current]
+        parent_start = starts_by_group.get(key)
+        try:
+            trna_current = int(parent_start) + current - 1
+            also_trna = [int(parent_start) + position - 1 for position in also]
+        except (TypeError, ValueError):
+            trna_current = current if discriminating else ""
+            also_trna = also
+        if len(positions) <= 1:
+            reason = "single-candidate-position"
+        elif not informative:
+            reason = "low-information-1nt-ion"
+        elif len(covered) > 1:
+            reason = "ion-covers-multiple-candidate-positions"
+        elif not discriminating:
+            reason = "ion-does-not-separate-candidate-positions"
+        else:
+            reason = ""
+        row["Position_Discriminating_Ion"] = discriminating
+        row["Discriminates_Position"] = trna_current if discriminating else ""
+        row["Also_Explains_Positions"] = ";".join(map(str, also_trna))
+        row["Non_Discriminating_Reason"] = reason
+    return matches
 
 
 def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -172,6 +216,9 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
         modified = [row for row in group if row["Ion_Contains_Modification"]]
         counterparts = [row for row in group if not row["Ion_Contains_Modification"]]
         informative = [row for row in modified if row["Informative_Ion"]]
+        discriminating = [row for row in modified if row.get("Position_Discriminating_Ion")]
+        informative_discriminating = [row for row in discriminating if row.get("Informative_Ion")]
+        non_discriminating = [row for row in modified if not row.get("Position_Discriminating_Ion")]
         types = {row["Ion_Type"] for row in informative}
         errors = [abs(float(row["Mass_Error_ppm"])) for row in modified]
         if len(informative) >= 3 and {"c", "y"} <= types:
@@ -182,6 +229,16 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
             level = "Weak"
         else:
             level = "None"
+        discrimination_types = {row["Ion_Type"] for row in informative_discriminating}
+        discrimination_cuts = {(row.get("Ion_Type"), row.get("Ion_Start"), row.get("Ion_End")) for row in informative_discriminating}
+        if len(informative_discriminating) >= 2 and ({"c", "y"} <= discrimination_types or len(discrimination_cuts) >= 2):
+            discrimination_level = "Strong"
+        elif informative_discriminating:
+            discrimination_level = "Moderate"
+        elif modified:
+            discrimination_level = "Weak"
+        else:
+            discrimination_level = "None"
         score = len(informative) * 2.0 + (len(modified) - len(informative)) * 0.25 + (1.0 if {"c", "y"} <= types else 0.0) - len(counterparts) * 0.1
         parent_start = ion.get("Parent_Start")
         try:
@@ -201,6 +258,11 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
             "Num_Informative_Modified_Ion_Matches": len(informative),
             "Num_c_Modified_Ions": sum(row["Ion_Type"] == "c" for row in modified),
             "Num_y_Modified_Ions": sum(row["Ion_Type"] == "y" for row in modified),
+            "Num_Position_Discriminating_Modified_Ions": len(discriminating),
+            "Num_Informative_Position_Discriminating_Modified_Ions": len(informative_discriminating),
+            "Num_Non_Discriminating_Modified_Ions": len(non_discriminating),
+            "Has_Position_Discriminating_Evidence": bool(discriminating),
+            "Position_Discrimination_Level": discrimination_level,
             "Best_Modified_Ion_Error_ppm": min(errors) if errors else "",
             "Median_Abs_Modified_Ion_Error_ppm": float(np.median(errors)) if errors else "",
             "Total_Modified_Ion_Intensity": sum(float(row["Observed_Intensity"]) for row in modified),
@@ -216,4 +278,8 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
         if len(supported) > 1:
             for row in supported:
                 row["Localization_Interpretation"] = "ambiguous-multiple-positions"
+        elif len(group) > 1 and not any(row["Has_Position_Discriminating_Evidence"] for row in group) and any(row["Num_Modified_Ion_Matches"] for row in group):
+            for row in group:
+                if row["Num_Modified_Ion_Matches"]:
+                    row["Localization_Interpretation"] = "position-ambiguous-non-discriminating-ions"
     return sorted(rows, key=lambda row: (row["Spectrum_ID"], row["Parent_Fragment_ID"], -float(row["Localization_Score"]), row["Candidate_Modification_Position_In_Parent"]))

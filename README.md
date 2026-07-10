@@ -112,6 +112,8 @@ MVP-5.4 adds evidence ranking for review prioritization, not definitive modifica
 
 MVP-5.4.1 calibrates confidence conservatively. High confidence requires Moderate/Strong localization or at least two informative modified-ion matches with both c- and y-series support. A precursor plus a single informative modified ion with Weak localization is retained as a Medium review candidate. `Confidence_Limiting_Factor` explains restrictions such as weak localization, single-ion support, one-sided ion series, or precursor-only evidence. Very High additionally requires Strong localization, at least three informative ions, both ion series, and good precursor/fragment-ion mass errors.
 
+MVP-5.4.2 groups candidate positions that share a spectrum, parent fragment, and modification. `Modification_Ambiguity_Groups` distinguishes resolved, partially resolved, ambiguous, and unsupported groups without deleting individual candidates. Modified-ion matches are marked as position-discriminating only when their ion range supports one candidate position and excludes the alternatives; ions covering multiple candidate positions do not localize the modification. Ranking confidence therefore requires position-discriminating evidence, and unresolved groups receive explicit score penalties and limiting factors. Evidence ranking remains candidate prioritization rather than modification or site confirmation.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.

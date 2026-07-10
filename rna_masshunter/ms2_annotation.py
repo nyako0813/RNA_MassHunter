@@ -208,6 +208,8 @@ MS2_MODIFIED_ION_MATCH_COLUMNS = [
     "Observed_Intensity", "Ion_ID", "Ion_Type", "Ion_Sequence", "Ion_Start", "Ion_End", "Ion_Length",
     "Informative_Ion", "Ion_Contains_Modification", "Modification_Mass_Shift_Applied", "Theoretical_mz",
     "Mass_Error_Da", "Mass_Error_ppm", "Match_Status", "Confidence", "Comment",
+    "Position_Discriminating_Ion", "Discriminates_Position", "Also_Explains_Positions",
+    "Non_Discriminating_Reason",
 ]
 
 MS2_LOCALIZATION_EVIDENCE_COLUMNS = [
@@ -216,6 +218,9 @@ MS2_LOCALIZATION_EVIDENCE_COLUMNS = [
     "Candidate_Modification_Position_In_tRNA", "Candidate_Modification_Base", "Num_Modified_Ion_Matches",
     "Num_Unmodified_Counterpart_Matches", "Num_Informative_Modified_Ion_Matches", "Num_c_Modified_Ions",
     "Num_y_Modified_Ions", "Best_Modified_Ion_Error_ppm", "Median_Abs_Modified_Ion_Error_ppm",
+    "Num_Position_Discriminating_Modified_Ions", "Num_Informative_Position_Discriminating_Modified_Ions",
+    "Num_Non_Discriminating_Modified_Ions", "Has_Position_Discriminating_Evidence",
+    "Position_Discrimination_Level",
     "Total_Modified_Ion_Intensity", "Localization_Score", "Localization_Level",
     "Localization_Interpretation", "Notes",
 ]

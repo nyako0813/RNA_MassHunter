@@ -4,7 +4,7 @@ from rna_masshunter.config import load_config, validate_config, resolve_paths
 from rna_masshunter.conversion import prepare_input_file
 from rna_masshunter.digestion import digest_sequence
 from rna_masshunter.excel_report import write_excel_report
-from rna_masshunter.evidence_ranking import build_modification_evidence_ranking
+from rna_masshunter.evidence_ranking import build_ambiguity_groups, build_modification_evidence_ranking
 from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
 from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masses
@@ -149,6 +149,13 @@ def main() -> None:
     ))
     if is_p1_enabled(config):
         optional_results.update(build_p1_optional_results(config, tier_result, base_masses, modifications))
+    if _as_bool(config.modification_evidence_ranking.get("enable_ambiguity_grouping"), True):
+        optional_results["Modification_Ambiguity_Groups"] = build_ambiguity_groups(
+            optional_results.get("MS2_Modification_Localization_Evidence", []),
+            optional_results.get("MS2_Modified_Ion_Matches", []),
+        )
+    else:
+        optional_results["Modification_Ambiguity_Groups"] = []
     ranking_rows, ranking_summary = build_modification_evidence_ranking(
         config=config,
         modifications=modifications,

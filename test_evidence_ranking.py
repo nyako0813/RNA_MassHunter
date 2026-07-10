@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from rna_masshunter.evidence_ranking import (
     _confidence_limiting_factor,
     _final_confidence,
+    build_ambiguity_groups,
     build_modification_evidence_ranking,
 )
 from rna_masshunter.models import Fragment, Modification
@@ -49,7 +50,9 @@ def test_integrated_candidate_ranks_first_and_penalties_apply():
          "Candidate_Modification_Position_In_Parent": 1, "Candidate_Modification_Position_In_tRNA": 10,
          "Candidate_Modification_Base": "A", "Parent_Sequence": "AAC", "Parent_Start": 10, "Parent_End": 12,
          "Localization_Level": "Moderate", "Localization_Score": 5.0,
-         "Localization_Interpretation": "modification-supported-on-position", "Num_c_Modified_Ions": 1, "Num_y_Modified_Ions": 1},
+         "Localization_Interpretation": "modification-supported-on-position", "Num_c_Modified_Ions": 1, "Num_y_Modified_Ions": 1,
+         "Has_Position_Discriminating_Evidence": True, "Num_Position_Discriminating_Modified_Ions": 1,
+         "Num_Informative_Position_Discriminating_Modified_Ions": 1},
         {"Modification_ID": "mC", "Modification_Name": "C modification", "Parent_Fragment_ID": "F1",
          "Candidate_Modification_Position_In_Parent": 3, "Candidate_Modification_Position_In_tRNA": 12,
          "Candidate_Modification_Base": "C", "Parent_Sequence": "AAC", "Parent_Start": 10, "Parent_End": 12,
@@ -93,27 +96,55 @@ def test_confidence_calibration_for_weak_and_multi_ion_support():
     config = {"require_ms2_evidence_for_high_confidence": True}
     weak_single = _final_confidence(
         8.0, True, True, "Weak", True, True, False,
-        1, 1, 0, 1.0, 1.0, config,
+        1, 1, 0, 1.0, 1.0, False, 0, "ambiguous", config,
     )
     assert weak_single == "Medium"
-    assert "weak-localization" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
-    assert "single-modified-ion" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
-    assert "one-sided-ion-series" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
+    factors = _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True, False, "ambiguous")
+    assert "weak-localization" in factors
+    assert "single-modified-ion" in factors
+    assert "one-sided-ion-series" in factors
+    assert "position-ambiguous" in factors
+    assert "no-position-discriminating-ion" in factors
 
     multi_series = _final_confidence(
         7.0, True, True, "Weak", True, True, False,
-        2, 1, 1, 2.0, 2.0, config,
+        2, 1, 1, 2.0, 2.0, True, 2, "resolved", config,
     )
     assert multi_series == "High"
 
     strong = _final_confidence(
         9.0, True, True, "Strong", True, True, False,
-        3, 2, 1, 2.0, 2.0, config,
+        3, 2, 1, 2.0, 2.0, True, 2, "resolved", config,
     )
     assert strong == "Very High"
+
+
+def test_ambiguity_groups_distinguish_shared_and_position_specific_evidence():
+    localization = []
+    for spectrum_id in ("AMB", "RES"):
+        for position in (1, 3):
+            localization.append({
+                "Spectrum_ID": spectrum_id, "Parent_Fragment_ID": "F1", "Modification_ID": "mA",
+                "Modification_Name": "A modification", "Parent_Sequence": "AUA", "Parent_Start": 10,
+                "Parent_End": 12, "Candidate_Modification_Position_In_Parent": position,
+                "Candidate_Modification_Position_In_tRNA": 9 + position, "Candidate_Modification_Base": "A",
+                "Localization_Score": 2.0 if spectrum_id == "AMB" else (4.0 if position == 1 else 1.0),
+                "RT": 1.0, "Precursor_mz": 500.0,
+            })
+    common = {"Parent_Fragment_ID": "F1", "Modification_ID": "mA", "Ion_Contains_Modification": True, "Informative_Ion": True}
+    matches = [
+        {**common, "Spectrum_ID": "AMB", "Candidate_Modification_Position_In_Parent": 1, "Position_Discriminating_Ion": False},
+        {**common, "Spectrum_ID": "AMB", "Candidate_Modification_Position_In_Parent": 3, "Position_Discriminating_Ion": False},
+        {**common, "Spectrum_ID": "RES", "Candidate_Modification_Position_In_Parent": 1, "Position_Discriminating_Ion": True},
+        {**common, "Spectrum_ID": "RES", "Candidate_Modification_Position_In_Parent": 3, "Position_Discriminating_Ion": False},
+    ]
+    groups = build_ambiguity_groups(localization, matches)
+    assert next(row for row in groups if row["Spectrum_ID"] == "AMB")["Position_Ambiguity_Status"] == "ambiguous"
+    assert next(row for row in groups if row["Spectrum_ID"] == "RES")["Position_Ambiguity_Status"] == "resolved"
 
 
 if __name__ == "__main__":
     test_integrated_candidate_ranks_first_and_penalties_apply()
     test_confidence_calibration_for_weak_and_multi_ion_support()
+    test_ambiguity_groups_distinguish_shared_and_position_specific_evidence()
     print("synthetic evidence ranking test: OK")

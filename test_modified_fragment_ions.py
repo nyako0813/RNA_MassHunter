@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from rna_masshunter.masses import load_base_masses
 from rna_masshunter.models import MS2SpectrumInfo
 from rna_masshunter.modified_fragment_ions import (
+    annotate_position_discrimination,
     build_localization_evidence,
     generate_modified_theoretical_ions,
     match_modified_ions,
@@ -91,7 +92,25 @@ def test_one_nt_support_is_not_strong_and_multiple_positions_are_ambiguous():
     assert weak[0]["Localization_Level"] == "Weak"
 
 
+def test_position_discriminating_ion_excludes_alternative_position():
+    ions = [
+        {"Spectrum_ID": "S3", "Parent_Fragment_ID": "F3", "Modification_ID": "mA",
+         "Candidate_Modification_Position_In_Parent": position, "Parent_Start": 10}
+        for position in (1, 3)
+    ]
+    matches = [{
+        "Spectrum_ID": "S3", "Parent_Fragment_ID": "F3", "Modification_ID": "mA",
+        "Candidate_Modification_Position_In_Parent": 1, "Ion_Start": 1, "Ion_End": 1,
+        "Informative_Ion": True, "Ion_Contains_Modification": True,
+    }]
+    annotated = annotate_position_discrimination(matches, ions, _config())
+    assert annotated[0]["Position_Discriminating_Ion"] is True
+    assert annotated[0]["Discriminates_Position"] == 10
+    assert annotated[0]["Also_Explains_Positions"] == ""
+
+
 if __name__ == "__main__":
     test_modified_ion_generation_matching_and_localization()
     test_one_nt_support_is_not_strong_and_multiple_positions_are_ambiguous()
+    test_position_discriminating_ion_excludes_alternative_position()
     print("synthetic modified fragment ion tests: OK")
