@@ -14,6 +14,7 @@ from rna_masshunter.modifications import load_modifications, validate_modificati
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.position_mapper import build_position_map
+from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
 from rna_masshunter.p1_annotation import build_p1_optional_results, is_p1_enabled
@@ -173,6 +174,7 @@ def main() -> None:
     optional_results["Context_Supported_Candidates"] = [
         row for row in ranking_rows if float(row.get("Biological_Context_Score") or 0.0) > 0
     ]
+    optional_results.update(build_review_dashboard_results(optional_results, config))
 
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
