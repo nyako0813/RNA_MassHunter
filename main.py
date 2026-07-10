@@ -4,6 +4,7 @@ from rna_masshunter.config import load_config, validate_config, resolve_paths
 from rna_masshunter.conversion import prepare_input_file
 from rna_masshunter.digestion import digest_sequence
 from rna_masshunter.excel_report import write_excel_report
+from rna_masshunter.evidence_ranking import build_modification_evidence_ranking
 from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
 from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masses
@@ -148,6 +149,17 @@ def main() -> None:
     ))
     if is_p1_enabled(config):
         optional_results.update(build_p1_optional_results(config, tier_result, base_masses, modifications))
+    ranking_rows, ranking_summary = build_modification_evidence_ranking(
+        config=config,
+        modifications=modifications,
+        theoretical_fragments=theoretical_fragments,
+        fragment_ms1_matches=fragment_ms1_matches,
+        known_candidates=known_modification_candidates,
+        ms2_results=optional_results,
+        rule_set=rule_set,
+    )
+    optional_results["Modification_Evidence_Summary"] = ranking_summary
+    optional_results["Modification_Evidence_Ranking"] = ranking_rows
 
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),

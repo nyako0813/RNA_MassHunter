@@ -19,6 +19,7 @@ from rna_masshunter.ms2_annotation import (
     MS2_THEORETICAL_ION_COLUMNS,
     MS2_UNMATCHED_COLUMNS,
 )
+from rna_masshunter.evidence_ranking import RANKING_COLUMNS, SUMMARY_COLUMNS
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -197,6 +198,8 @@ SHEET_DESCRIPTIONS = {
     "Fragment_MS1_summary": "Best MS1 match per fragment with match counts.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
+    "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
+    "Modification_Evidence_Ranking": "Integrated evidence scores for prioritizing modification candidates.",
     "P1_Summary": "Summary of P1 observed peak annotation results.",
     "P1_Theoretical_Structures": "P1 monomer and short oligonucleotide theoretical structure candidates.",
     "P1_Peak_Annotations": "Observed P1 peaks matched to theoretical structure candidates, retaining unmatched peaks.",
@@ -591,6 +594,7 @@ def write_excel_report(
         "peak_filtering": config.peak_filtering,
         "p1_annotation": config.p1_annotation,
         "ms2_annotation": config.ms2_annotation,
+        "modification_evidence_ranking": config.modification_evidence_ranking,
         "performance": config.performance,
         "reporting": config.reporting,
     }
@@ -625,6 +629,8 @@ def write_excel_report(
         "MS2_Modified_Theoretical_Ions": MS2_MODIFIED_THEORETICAL_ION_COLUMNS,
         "MS2_Modified_Ion_Matches": MS2_MODIFIED_ION_MATCH_COLUMNS,
         "MS2_Modification_Localization_Evidence": MS2_LOCALIZATION_EVIDENCE_COLUMNS,
+        "Modification_Evidence_Summary": SUMMARY_COLUMNS,
+        "Modification_Evidence_Ranking": RANKING_COLUMNS,
         "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
         "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
         "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,

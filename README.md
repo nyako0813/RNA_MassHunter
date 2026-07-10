@@ -108,6 +108,8 @@ MVP-5.2 can also match an MS2 precursor to a theoretical digestion fragment plus
 
 MVP-5.3 extends each modified precursor candidate into position-specific modified c/y ions. Candidate positions are the matching target bases in the parent fragment; ions containing a candidate position receive the known modification mass shift, while unmodified counterparts are retained for comparison. `MS2_Modification_Localization_Evidence` summarizes support for each possible position. This is localization evidence, not definitive site assignment: one-nucleotide ions are low-information, strong evidence requires at least three informative matches with both c- and y-ion support, and similarly supported positions are explicitly marked `ambiguous-multiple-positions`.
 
+MVP-5.4 adds evidence ranking for review prioritization, not definitive modification assignment. `Modification_Evidence_Ranking` integrates MS1 fragment matches, known-modification candidates, modified precursor evidence, modified-ion matches, localization evidence, and available organism/tRNA context into `Final_Score` and `Final_Confidence`. Isobaric candidates cannot become highly confident from precursor evidence alone; ambiguous localization and evidence dominated by one-nucleotide ions receive explicit penalties and warnings. `Modification_Evidence_Summary` provides run-level ranking counts.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.

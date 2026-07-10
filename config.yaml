@@ -129,6 +129,32 @@ ms2_annotation:
   modified_fragment_output_all_position_candidates: true
   modified_fragment_max_rows: 100000
 
+modification_evidence_ranking:
+  enabled: true
+  use_ms1_fragment_evidence: true
+  use_known_modification_candidates: true
+  use_ms2_precursor_evidence: true
+  use_ms2_modified_ion_evidence: true
+  use_localization_evidence: true
+  use_organism_rules: true
+  use_trna_context: true
+  require_ms2_evidence_for_high_confidence: true
+  min_final_score_to_report: 0
+  max_ranked_candidates: 10000
+  weights:
+    ms1_fragment_match: 1.0
+    known_modification_candidate: 1.0
+    ms2_precursor_rescue: 2.0
+    ms2_modified_ion_match: 2.0
+    localization_weak: 1.0
+    localization_moderate: 3.0
+    localization_strong: 5.0
+    organism_rule_supported: 1.5
+    trna_context_supported: 1.0
+    low_information_penalty: -1.0
+    ambiguous_position_penalty: -1.0
+    isobaric_precursor_penalty: -2.0
+
 peak_filtering:
   strategy: tiered
   major_intensity_threshold: 25000
