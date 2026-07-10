@@ -188,3 +188,24 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 MS1 mass differences alone cannot distinguish isobaric modifications such as pseudouridine. By default, modifications with `mass_shift_from_unmodified = 0` are excluded from `Known_Modification_Candidates`. Set `modification_search.include_isobaric_modifications: true` only when you explicitly want to report those mass-neutral candidates. RNA_MassHunter does not use special priority logic for standard position 34; Excel reports use sequence start/end positions for fragment review.
 
 `data/base_masses.yaml` contains Mongo Oligo-compatible placeholder masses. Confirm these values against the final Mongo Oligo settings before quantitative final analysis.
+
+## MVP-5.8: Candidate comparison report
+
+Multiple RNA_MassHunter Excel reports can be compared across experimental conditions using `tools/compare_reports.py`.
+
+```bash
+python tools/compare_reports.py --input Run1=output/RNA_MassHunter_MVP5_run1.xlsx --input Run2=output/RNA_MassHunter_MVP5_run2.xlsx --output output/RNA_MassHunter_Comparison.xlsx
+```
+
+Each input may be written as `Condition=path`. When a condition name is omitted, the input workbook filename is used.
+
+The comparison workbook contains:
+
+- `Comparison_Summary`
+- `Candidate_Comparison`
+- `Condition_Presence_Matrix`
+- `Review_Priority_Changes`
+- `Ambiguity_Comparison`
+- `Candidate_Delta_Summary`
+
+The report compares candidate presence, review priority, final confidence, final score, candidate positions, and ambiguity status between conditions. It is intended for review prioritization and does not establish modification identity or experimental causality.
