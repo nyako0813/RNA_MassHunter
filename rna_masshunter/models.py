@@ -80,6 +80,18 @@ class IntactMassCandidate:
     confidence: str = "Low"
     warnings: str = ""
     cluster_id: str = ""
+    reconstruction_status: str = ""
+    reconstruction_confidence: str = ""
+    num_supporting_charge_states: int = 0
+    charge_state_range: str = ""
+    charge_state_continuity: str = ""
+    neutral_mass_sd: float | None = None
+    neutral_mass_range: float | None = None
+    max_mass_error_ppm: float | None = None
+    total_supporting_intensity: float = 0.0
+    competing_envelope_count: int = 0
+    primary_limiting_factor: str = ""
+    comparison_ready: bool = False
 
 
 @dataclass

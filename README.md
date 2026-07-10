@@ -181,6 +181,13 @@ Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to
 - mass balance check
 - manual comparison
 
+
+## MVP-5.9 Intact Reconstruction QC
+
+MVP-5.9 adds quality-control diagnostics for full-length intact mass reconstruction. Existing intact reconstruction results are preserved, and additional QC columns plus `Intact_Reconstruction_QC` and `Intact_Reconstruction_Diag` sheets report charge-state support, charge continuity, neutral-mass spread, mass-error limits, intensity support, competing envelopes, limiting factors, reconstruction status, and a `Comparison_Ready` flag.
+
+`Comparison_Ready` means the intact mass candidate has sufficient reconstruction quality for cross-condition full-length mass comparison. It does not confirm modification identity, modification position, or biological causality.
+
 ## Data Notes
 
 `data/modifications.yaml` is treated as the user-confirmed PDF-derived modification dictionary when present. MVP-4 loads and validates it, then reports known single-modification candidates when observed fragment masses can be explained by dictionary mass shifts. Unknown modification search is still deferred.

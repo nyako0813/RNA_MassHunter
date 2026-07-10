@@ -26,6 +26,17 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "min_charge_states": 3,
         "mass_cluster_tolerance_da": 1.0,
         "max_charge_state_peak_rows": 100000,
+        "intact_reconstruction": {
+            "min_charge_states_for_reliable": 3,
+            "min_charge_states_for_review": 2,
+            "require_contiguous_charge_states": True,
+            "max_neutral_mass_sd_da": 0.5,
+            "max_neutral_mass_range_da": 1.5,
+            "max_mass_error_ppm": 20,
+            "min_relative_intensity_percent": 0.5,
+            "max_competing_envelopes": 3,
+            "comparison_ready_statuses": ["Reliable", "Review"],
+        },
     },
     "digestion": {
         "enabled": True,

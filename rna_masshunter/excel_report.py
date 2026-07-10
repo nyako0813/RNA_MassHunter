@@ -6,6 +6,11 @@ from typing import Any
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from rna_masshunter.intact_reconstruction import (
+    DIAGNOSTIC_COLUMNS as INTACT_DIAGNOSTIC_COLUMNS,
+    QC_COLUMNS as INTACT_QC_COLUMNS,
+    build_intact_reconstruction_qc,
+)
 from rna_masshunter.ms2_annotation import (
     MS2_FRAGMENT_EVIDENCE_COLUMNS,
     MS2_ION_MATCH_COLUMNS,
@@ -46,6 +51,18 @@ INTACT_COLUMNS = [
     "Assignment",
     "Confidence",
     "Warnings",
+    "Reconstruction_Status",
+    "Reconstruction_Confidence",
+    "Num_Supporting_Charge_States",
+    "Charge_State_Range",
+    "Charge_State_Continuity",
+    "Neutral_Mass_SD",
+    "Neutral_Mass_Range",
+    "Max_Mass_Error_ppm",
+    "Total_Supporting_Intensity",
+    "Competing_Envelope_Count",
+    "Primary_Limiting_Factor",
+    "Comparison_Ready",
 ]
 
 CHARGE_COLUMNS = ["Cluster_ID", "mz", "Intensity", "RT", "Scan_ID", "Charge", "Neutral_Mass", "Peak_Tier"]
@@ -191,8 +208,10 @@ SHEET_DESCRIPTIONS = {
     "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
     "Input_parameters": "Flattened parameters loaded from config.yaml.",
     "mzML_diagnostics": "mzML scan counts, ranges, precursor metadata, and warnings.",
-    "Intact_mass_reconstruction": "Reconstructed intact mass clusters and mass errors.",
+    "Intact_mass_reconstruction": "Reconstructed intact mass clusters, mass errors, and reconstruction QC fields.",
     "Charge_state_peaks": "Peak and charge-state evidence supporting reconstructed masses.",
+    "Intact_Reconstruction_QC": "Per-candidate intact mass reconstruction quality diagnostics.",
+    "Intact_Reconstruction_Diag": "Run-level intact reconstruction QC settings, status counts, and limiting reasons.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
@@ -543,6 +562,13 @@ def write_excel_report(
         max_excel_rows,
     )
     truncations: list[dict[str, Any]] = []
+    reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
+    intact_qc_rows, intact_diagnostic_rows = build_intact_reconstruction_qc(
+        intact_results,
+        charge_state_peaks,
+        config.reconstruction or {},
+        reconstruction_enabled=reconstruction_enabled,
+    )
 
     intact_rows = []
     for item in intact_results:
@@ -560,6 +586,18 @@ def write_excel_report(
                 "Assignment": raw.get("assignment"),
                 "Confidence": raw.get("confidence"),
                 "Warnings": raw.get("warnings"),
+                "Reconstruction_Status": raw.get("reconstruction_status"),
+                "Reconstruction_Confidence": raw.get("reconstruction_confidence"),
+                "Num_Supporting_Charge_States": raw.get("num_supporting_charge_states"),
+                "Charge_State_Range": raw.get("charge_state_range"),
+                "Charge_State_Continuity": raw.get("charge_state_continuity"),
+                "Neutral_Mass_SD": raw.get("neutral_mass_sd"),
+                "Neutral_Mass_Range": raw.get("neutral_mass_range"),
+                "Max_Mass_Error_ppm": raw.get("max_mass_error_ppm"),
+                "Total_Supporting_Intensity": raw.get("total_supporting_intensity"),
+                "Competing_Envelope_Count": raw.get("competing_envelope_count"),
+                "Primary_Limiting_Factor": raw.get("primary_limiting_factor"),
+                "Comparison_Ready": raw.get("comparison_ready"),
             }
         )
 
@@ -581,8 +619,6 @@ def write_excel_report(
     known_modification_summary = known_modification_summary or []
     fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
     fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
-    reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
-
     input_parameters = {
         "project": config.project,
         "input": config.input,
@@ -614,12 +650,24 @@ def write_excel_report(
         "Known_Modification_Candidates": pd.DataFrame(known_modification_candidates, columns=KNOWN_MODIFICATION_CANDIDATE_COLUMNS),
         "Known_Modification_Summary": pd.DataFrame(known_modification_summary, columns=KNOWN_MODIFICATION_SUMMARY_COLUMNS),
     }
+    intact_qc_sheets = {
+        "Intact_Reconstruction_QC": pd.DataFrame(intact_qc_rows, columns=INTACT_QC_COLUMNS),
+        "Intact_Reconstruction_Diag": pd.DataFrame(intact_diagnostic_rows, columns=INTACT_DIAGNOSTIC_COLUMNS),
+    }
     if reconstruction_enabled:
         data_sheets = {
             "Input_parameters": data_sheets["Input_parameters"],
             "mzML_diagnostics": data_sheets["mzML_diagnostics"],
             "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
             "Charge_state_peaks": pd.DataFrame(charge_state_peak_rows, columns=CHARGE_COLUMNS),
+            **intact_qc_sheets,
+            **{key: value for key, value in data_sheets.items() if key not in {"Input_parameters", "mzML_diagnostics"}},
+        }
+    else:
+        data_sheets = {
+            "Input_parameters": data_sheets["Input_parameters"],
+            "mzML_diagnostics": data_sheets["mzML_diagnostics"],
+            **intact_qc_sheets,
             **{key: value for key, value in data_sheets.items() if key not in {"Input_parameters", "mzML_diagnostics"}},
         }
     optional_columns = {
