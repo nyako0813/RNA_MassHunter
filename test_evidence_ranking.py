@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
-from rna_masshunter.evidence_ranking import build_modification_evidence_ranking
+from rna_masshunter.evidence_ranking import (
+    _confidence_limiting_factor,
+    _final_confidence,
+    build_modification_evidence_ranking,
+)
 from rna_masshunter.models import Fragment, Modification
 
 
@@ -85,6 +89,31 @@ def test_integrated_candidate_ranks_first_and_penalties_apply():
     assert summary[0]["Total_Ranked_Candidates"] == len(rows)
 
 
+def test_confidence_calibration_for_weak_and_multi_ion_support():
+    config = {"require_ms2_evidence_for_high_confidence": True}
+    weak_single = _final_confidence(
+        8.0, True, True, "Weak", True, True, False,
+        1, 1, 0, 1.0, 1.0, config,
+    )
+    assert weak_single == "Medium"
+    assert "weak-localization" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
+    assert "single-modified-ion" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
+    assert "one-sided-ion-series" in _confidence_limiting_factor(True, True, "Weak", 1, 1, 0, True, True)
+
+    multi_series = _final_confidence(
+        7.0, True, True, "Weak", True, True, False,
+        2, 1, 1, 2.0, 2.0, config,
+    )
+    assert multi_series == "High"
+
+    strong = _final_confidence(
+        9.0, True, True, "Strong", True, True, False,
+        3, 2, 1, 2.0, 2.0, config,
+    )
+    assert strong == "Very High"
+
+
 if __name__ == "__main__":
     test_integrated_candidate_ranks_first_and_penalties_apply()
+    test_confidence_calibration_for_weak_and_multi_ion_support()
     print("synthetic evidence ranking test: OK")

@@ -5,7 +5,7 @@ from typing import Any
 
 
 RANKING_COLUMNS = [
-    "Rank", "Final_Score", "Final_Confidence", "Final_Interpretation",
+    "Rank", "Final_Score", "Final_Confidence", "Final_Interpretation", "Confidence_Limiting_Factor",
     "Modification_ID", "Modification_Name", "Modification_Category", "Target_Base", "Mass_Shift", "Is_Isobaric",
     "Candidate_tRNA_Position", "Candidate_Base", "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start", "Parent_End", "Candidate_Position_In_Parent",
     "Has_MS1_Fragment_Evidence", "MS1_Fragment_Best_Confidence", "MS1_Fragment_Total_Intensity",
@@ -140,14 +140,27 @@ def build_modification_evidence_ranking(
         if ambiguous: score += weight("ambiguous_position_penalty", -1.0)
         if isobaric and precursor_rows and not modified_ions: score += weight("isobaric_precursor_penalty", -2.0)
         has_ms2 = bool(precursor_rows or modified_ions)
-        confidence = _final_confidence(score, bool(precursor_rows), bool(modified_ions), level, bool(known_rows), has_ms2, isobaric, ranking)
-        interpretation = _interpretation(bool(precursor_rows), bool(modified_ions), level, bool(matching_ms1), bool(known_rows), ambiguous, low_information)
         best_ms1 = max(matching_ms1, key=lambda row: _confidence_rank(row.get("confidence")), default={})
         best_precursor_error = min((abs(_float(row.get("Precursor_Error_ppm"))) for row in precursor_rows), default="")
         best_ion_error = min((abs(_float(row.get("Mass_Error_ppm"))) for row in modified_ions), default="")
+        num_c = int(loc.get("Num_c_Modified_Ions", 0) or 0)
+        num_y = int(loc.get("Num_y_Modified_Ions", 0) or 0)
+        confidence = _final_confidence(
+            score, bool(precursor_rows), bool(modified_ions), level, bool(known_rows), has_ms2,
+            isobaric, len(informative_ions), num_c, num_y, best_precursor_error, best_ion_error, ranking,
+        )
+        limiting_factor = _confidence_limiting_factor(
+            bool(precursor_rows), bool(modified_ions), level, len(informative_ions), num_c, num_y,
+            rule_supported, bool(matching_ms1),
+        )
+        interpretation = _interpretation(
+            bool(precursor_rows), bool(modified_ions), level, bool(matching_ms1), bool(known_rows),
+            ambiguous, low_information, len(informative_ions), num_c, num_y,
+        )
         target_bases = getattr(modification, "target_bases", []) if modification else []
         output.append({
             "Final_Score": score, "Final_Confidence": confidence, "Final_Interpretation": interpretation,
+            "Confidence_Limiting_Factor": limiting_factor,
             "Modification_ID": mod_id, "Modification_Name": mod_raw.get("name") or getattr(modification, "symbol", None) or (precursor_rows[0].get("Modification_Name") if precursor_rows else mod_id),
             "Modification_Category": getattr(modification, "category", ""), "Target_Base": ",".join(target_bases), "Mass_Shift": shift, "Is_Isobaric": isobaric,
             "Candidate_tRNA_Position": trna_position, "Candidate_Base": loc.get("Candidate_Modification_Base", ""), "Parent_Fragment_ID": fragment_id,
@@ -161,7 +174,7 @@ def build_modification_evidence_ranking(
             "Has_Modified_Ion_Evidence": bool(modified_ions), "Num_Modified_Ion_Matches": len(modified_ions),
             "Num_Informative_Modified_Ion_Matches": len(informative_ions), "Best_Modified_Ion_Error_ppm": best_ion_error,
             "Has_Localization_Evidence": bool(loc), "Localization_Level": level, "Localization_Score": _float(loc.get("Localization_Score")),
-            "Localization_Interpretation": loc.get("Localization_Interpretation", ""), "Num_c_Modified_Ions": loc.get("Num_c_Modified_Ions", 0), "Num_y_Modified_Ions": loc.get("Num_y_Modified_Ions", 0),
+            "Localization_Interpretation": loc.get("Localization_Interpretation", ""), "Num_c_Modified_Ions": num_c, "Num_y_Modified_Ions": num_y,
             "Organism_Group": getattr(config, "organism", {}).get("group", ""), "Organism_Species": getattr(config, "organism", {}).get("species", ""),
             "Rule_Set": getattr(config, "organism", {}).get("rule_set", ""), "Organism_Rule_Supported": rule_supported,
             "TRNA_Context_Supported": trna_supported, "Context_Notes": "Rule/context points are applied only when explicit loaded data supports them.",
@@ -177,9 +190,18 @@ def build_modification_evidence_ranking(
     return output, build_modification_evidence_summary(output)
 
 
-def _final_confidence(score: float, precursor: bool, ions: bool, level: str, known: bool, has_ms2: bool, isobaric: bool, config: dict[str, Any]) -> str:
-    if score >= 8 and precursor and ions and level in {"Moderate", "Strong"}: result = "Very High"
-    elif score >= 6 and precursor and ions: result = "High"
+def _final_confidence(
+    score: float, precursor: bool, ions: bool, level: str, known: bool, has_ms2: bool,
+    isobaric: bool, informative_count: int, num_c: int, num_y: int,
+    precursor_error: Any, ion_error: Any, config: dict[str, Any],
+) -> str:
+    both_series = num_c >= 1 and num_y >= 1
+    localization_gate = level in {"Moderate", "Strong"}
+    multi_ion_gate = informative_count >= 2 and both_series
+    good_errors = precursor_error != "" and ion_error != "" and _float(precursor_error, 999) <= 5.0 and _float(ion_error, 999) <= 5.0
+    if score >= 8 and precursor and ions and level == "Strong" and informative_count >= 3 and both_series and good_errors: result = "Very High"
+    elif score >= 6 and precursor and ions and (localization_gate or multi_ion_gate): result = "High"
+    elif precursor and ions and level == "Weak" and informative_count >= 1: result = "Medium"
     elif score >= 4 and precursor and (level in {"Weak", "Moderate", "Strong"} or known): result = "Medium"
     elif score >= 2: result = "Low"
     else: result = "Very Low"
@@ -188,15 +210,34 @@ def _final_confidence(score: float, precursor: bool, ions: bool, level: str, kno
     return result
 
 
-def _interpretation(precursor: bool, ions: bool, level: str, ms1: bool, known: bool, ambiguous: bool, low_information: bool) -> str:
+def _interpretation(
+    precursor: bool, ions: bool, level: str, ms1: bool, known: bool, ambiguous: bool,
+    low_information: bool, informative_count: int, num_c: int, num_y: int,
+) -> str:
     if ambiguous: return "ambiguous-localization"
     if low_information: return "low-information-ion-only"
     if precursor and ions and level in {"Moderate", "Strong"}: return "strong-modified-ms2-evidence"
+    if precursor and ions and informative_count == 1: return "precursor-and-single-modified-ion-supported"
+    if precursor and ions and (num_c == 0 or num_y == 0): return "candidate-needs-additional-ms2-support"
     if precursor and ions: return "precursor-and-modified-ion-supported"
     if precursor and level == "Weak": return "precursor-supported-localization-weak"
     if ms1 and not precursor and not ions: return "ms1-only-candidate"
     if known and not precursor and not ions: return "known-modification-only-candidate"
     return "insufficient-evidence"
+
+
+def _confidence_limiting_factor(
+    precursor: bool, ions: bool, level: str, informative_count: int, num_c: int, num_y: int,
+    rule_supported: bool, ms1_supported: bool,
+) -> str:
+    factors = []
+    if precursor and not ions: factors.append("precursor-only")
+    if level == "Weak": factors.append("weak-localization")
+    if ions and informative_count <= 1: factors.append("single-modified-ion")
+    if ions and (num_c == 0 or num_y == 0): factors.append("one-sided-ion-series")
+    if not rule_supported: factors.append("no-known-modification-rule")
+    if not ms1_supported: factors.append("no-ms1-fragment-evidence")
+    return "; ".join(factors)
 
 
 def build_modification_evidence_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -212,5 +253,5 @@ def build_modification_evidence_summary(rows: list[dict[str, Any]]) -> list[dict
         "Candidates_With_Localization_Evidence": sum(row["Has_Localization_Evidence"] for row in rows),
         "Ambiguous_Candidates": sum(row["Ambiguous_Position"] for row in rows),
         "Top_Modification_IDs": "; ".join(f"{mod_id}/{count}" for mod_id, count in top),
-        "Notes": "Evidence ranking is a review priority, not a modification call.",
+        "Notes": "High confidence requires localization-level support or multi-ion c/y support. Weak localization candidates are treated as Medium review candidates. Evidence ranking is not a modification call.",
     }]

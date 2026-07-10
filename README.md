@@ -110,6 +110,8 @@ MVP-5.3 extends each modified precursor candidate into position-specific modifie
 
 MVP-5.4 adds evidence ranking for review prioritization, not definitive modification assignment. `Modification_Evidence_Ranking` integrates MS1 fragment matches, known-modification candidates, modified precursor evidence, modified-ion matches, localization evidence, and available organism/tRNA context into `Final_Score` and `Final_Confidence`. Isobaric candidates cannot become highly confident from precursor evidence alone; ambiguous localization and evidence dominated by one-nucleotide ions receive explicit penalties and warnings. `Modification_Evidence_Summary` provides run-level ranking counts.
 
+MVP-5.4.1 calibrates confidence conservatively. High confidence requires Moderate/Strong localization or at least two informative modified-ion matches with both c- and y-series support. A precursor plus a single informative modified ion with Weak localization is retained as a Medium review candidate. `Confidence_Limiting_Factor` explains restrictions such as weak localization, single-ion support, one-sided ion series, or precursor-only evidence. Very High additionally requires Strong localization, at least three informative ions, both ion series, and good precursor/fragment-ion mass errors.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.
