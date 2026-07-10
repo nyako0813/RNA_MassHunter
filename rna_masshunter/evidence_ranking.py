@@ -3,6 +3,8 @@
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from rna_masshunter.biological_context import score_biological_context
+
 
 RANKING_COLUMNS = [
     "Rank", "Final_Score", "Final_Confidence", "Final_Interpretation", "Confidence_Limiting_Factor",
@@ -10,6 +12,11 @@ RANKING_COLUMNS = [
     "Source_Priority", "Curation_Status", "Candidate_Policy_By_Mass_Search",
     "Candidate_Policy_Position_Rule", "Detectability_MS1", "Detectability_MS2",
     "Chemical_Group", "Near_Isobaric_Group",
+    "Biological_Context_Score", "Biological_Context_Level", "Biological_Context_Notes",
+    "Context_Matched_Priority_Modification", "Context_Matched_Keywords",
+    "Context_Focus_Position_Match", "Context_Focus_Position_Distance",
+    "Context_Pathway_Supported", "Context_Organism_Supported", "Context_TRNA_Supported",
+    "Context_Conflict",
     "Candidate_tRNA_Position", "Candidate_Base", "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start", "Parent_End", "Candidate_Position_In_Parent",
     "Has_MS1_Fragment_Evidence", "MS1_Fragment_Best_Confidence", "MS1_Fragment_Total_Intensity",
     "Has_Known_Modification_Candidate", "Known_Modification_Priority_Score",
@@ -31,6 +38,9 @@ SUMMARY_COLUMNS = [
     "Total_Ambiguity_Groups", "Resolved_Ambiguity_Groups", "Partially_Resolved_Ambiguity_Groups",
     "Ambiguous_Groups", "Candidates_With_Position_Discriminating_Evidence",
     "Candidates_Without_Position_Discriminating_Evidence", "Notes",
+    "Candidates_With_Biological_Context_Support", "Candidates_With_Priority_Modification",
+    "Candidates_With_Priority_Keyword", "Candidates_With_Focus_Position_Match",
+    "Candidates_With_Context_Conflict", "Top_Context_Supported_Modifications", "Top_Context_Keywords",
 ]
 
 AMBIGUITY_GROUP_COLUMNS = [
@@ -116,6 +126,24 @@ def _confidence_rank(value: Any) -> int:
     return {"high": 3, "medium": 2, "low": 1}.get(str(value or "").lower(), 0)
 
 
+def _cap_confidence(value: str, cap: str) -> str:
+    order = ["Very Low", "Low", "Medium", "High", "Very High"]
+    if value not in order or cap not in order:
+        return value
+    return order[min(order.index(value), order.index(cap))]
+
+
+def _empty_context_result() -> dict[str, Any]:
+    return {
+        "Biological_Context_Score": 0.0, "Biological_Context_Level": "None",
+        "Biological_Context_Notes": "", "Context_Matched_Priority_Modification": False,
+        "Context_Matched_Keywords": "", "Context_Focus_Position_Match": "",
+        "Context_Focus_Position_Distance": "", "Context_Pathway_Supported": False,
+        "Context_Organism_Supported": False, "Context_TRNA_Supported": False,
+        "Context_Conflict": False,
+    }
+
+
 def _rule_modification_ids(rule_set: dict[str, Any] | None) -> set[str]:
     ids: set[str] = set()
     def visit(value: Any) -> None:
@@ -141,6 +169,7 @@ def build_modification_evidence_ranking(
     known_candidates: list[Any],
     ms2_results: dict[str, Any],
     rule_set: dict[str, Any] | None = None,
+    pathways: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     ranking = getattr(config, "modification_evidence_ranking", {}) or {}
     if not _bool(ranking.get("enabled"), True):
@@ -242,6 +271,18 @@ def build_modification_evidence_ranking(
         position_discriminating = bool(loc.get("Has_Position_Discriminating_Evidence"))
         if modified_ions and not position_discriminating:
             score += weight("non_discriminating_ion_penalty", -0.5)
+        context_candidate = {
+            "Modification_ID": mod_id,
+            "Modification_Name": mod_raw.get("name") or getattr(modification, "symbol", None) or mod_id,
+            "Chemical_Group": chemical_group, "Near_Isobaric_Group": near_isobaric_group,
+            "Source_Priority": source_priority, "Notes": mod_raw.get("notes") or "",
+            "Candidate_tRNA_Position": trna_position,
+        }
+        context_result = score_biological_context(
+            context_candidate, modification, config, rule_set=rule_set, pathways=pathways,
+            rule_supported=rule_supported,
+        ) if _bool(ranking.get("use_biological_context"), True) else _empty_context_result()
+        score += _float(context_result.get("Biological_Context_Score"), 0.0)
         confidence = _final_confidence(
             score, bool(precursor_rows), bool(modified_ions), level, bool(known_rows), has_ms2,
             isobaric, len(informative_ions), num_c, num_y, best_precursor_error, best_ion_error,
@@ -249,6 +290,8 @@ def build_modification_evidence_ranking(
         )
         if not _bool(candidate_policy.get("include_by_mass_search"), True) and not rule_supported and not modified_ions and confidence in {"Very High", "High"}:
             confidence = "Medium"
+        if context_result.get("Biological_Context_Score", 0) and not has_ms2 and _bool(ranking.get("require_ms_evidence_for_context_boosted_high"), True):
+            confidence = _cap_confidence(confidence, str(ranking.get("cap_context_only_confidence") or "Medium"))
         limiting_factor = _confidence_limiting_factor(
             bool(precursor_rows), bool(modified_ions), level, len(informative_ions), num_c, num_y,
             rule_supported, bool(matching_ms1), position_discriminating, ambiguity_status,
@@ -268,6 +311,7 @@ def build_modification_evidence_ranking(
             "Candidate_Policy_Position_Rule": _bool(candidate_policy.get("include_if_position_rule_exists"), False),
             "Detectability_MS1": detectability.get("ms1", ""), "Detectability_MS2": detectability.get("ms2", ""),
             "Chemical_Group": chemical_group, "Near_Isobaric_Group": near_isobaric_group,
+            **context_result,
             "Candidate_tRNA_Position": trna_position, "Candidate_Base": loc.get("Candidate_Modification_Base", ""), "Parent_Fragment_ID": fragment_id,
             "Parent_Sequence": loc.get("Parent_Sequence") or getattr(fragment, "sequence", ""), "Parent_Start": loc.get("Parent_Start", getattr(fragment, "start", "")),
             "Parent_End": loc.get("Parent_End", getattr(fragment, "end", "")), "Candidate_Position_In_Parent": position,
@@ -371,6 +415,15 @@ def build_modification_evidence_summary(
     counts: dict[str, int] = {}
     for row in rows: counts[row["Modification_ID"]] = counts.get(row["Modification_ID"], 0) + 1
     top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    context_modifications: dict[str, int] = {}
+    context_keywords: dict[str, int] = {}
+    for row in rows:
+        if _float(row.get("Biological_Context_Score"), 0.0) > 0:
+            mod_id = str(row.get("Modification_ID") or "")
+            context_modifications[mod_id] = context_modifications.get(mod_id, 0) + 1
+        for keyword in str(row.get("Context_Matched_Keywords") or "").split(";"):
+            if keyword:
+                context_keywords[keyword] = context_keywords.get(keyword, 0) + 1
     return [{
         "Total_Ranked_Candidates": len(rows), "Very_High": sum(row["Final_Confidence"] == "Very High" for row in rows),
         "High": sum(row["Final_Confidence"] == "High" for row in rows), "Medium": sum(row["Final_Confidence"] == "Medium" for row in rows),
@@ -386,5 +439,12 @@ def build_modification_evidence_summary(
         "Ambiguous_Groups": sum(row.get("Position_Ambiguity_Status") == "ambiguous" for row in ambiguity_groups),
         "Candidates_With_Position_Discriminating_Evidence": sum(bool(row.get("Position_Discriminating_Evidence")) for row in rows),
         "Candidates_Without_Position_Discriminating_Evidence": sum(not bool(row.get("Position_Discriminating_Evidence")) for row in rows),
-        "Notes": "High confidence requires localization-level support or multi-ion c/y support. Weak localization candidates are treated as Medium review candidates. Candidates sharing the same parent fragment and modification may form ambiguity groups. Position confidence requires position-discriminating ions. Evidence ranking is not a modification call.",
+        "Candidates_With_Biological_Context_Support": sum(_float(row.get("Biological_Context_Score"), 0.0) > 0 for row in rows),
+        "Candidates_With_Priority_Modification": sum(bool(row.get("Context_Matched_Priority_Modification")) for row in rows),
+        "Candidates_With_Priority_Keyword": sum(bool(row.get("Context_Matched_Keywords")) for row in rows),
+        "Candidates_With_Focus_Position_Match": sum(bool(row.get("Context_Focus_Position_Match")) for row in rows),
+        "Candidates_With_Context_Conflict": sum(bool(row.get("Context_Conflict")) for row in rows),
+        "Top_Context_Supported_Modifications": "; ".join(f"{key}/{value}" for key, value in sorted(context_modifications.items(), key=lambda item: (-item[1], item[0]))[:10]),
+        "Top_Context_Keywords": "; ".join(f"{key}/{value}" for key, value in sorted(context_keywords.items(), key=lambda item: (-item[1], item[0]))[:10]),
+        "Notes": "High confidence requires localization-level support or multi-ion c/y support. Weak localization candidates are treated as Medium review candidates. Candidates sharing the same parent fragment and modification may form ambiguity groups. Position confidence requires position-discriminating ions. Biological context boosts prioritization but does not establish modification identity without mass/MS evidence. Evidence ranking is not a modification call.",
     }]

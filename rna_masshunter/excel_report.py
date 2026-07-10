@@ -20,6 +20,7 @@ from rna_masshunter.ms2_annotation import (
     MS2_UNMATCHED_COLUMNS,
 )
 from rna_masshunter.evidence_ranking import AMBIGUITY_GROUP_COLUMNS, RANKING_COLUMNS, SUMMARY_COLUMNS
+from rna_masshunter.biological_context import CONTEXT_PRIORITY_COLUMNS
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -201,6 +202,8 @@ SHEET_DESCRIPTIONS = {
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
     "Modification_Evidence_Ranking": "Integrated evidence scores for prioritizing modification candidates.",
     "Modification_Ambiguity_Groups": "Position ambiguity groups for shared parent-fragment modification candidates.",
+    "Biological_Context_Priorities": "Biological context settings used for generic candidate prioritization.",
+    "Context_Supported_Candidates": "Ranking candidates receiving a user-configured biological context boost.",
     "P1_Summary": "Summary of P1 observed peak annotation results.",
     "P1_Theoretical_Structures": "P1 monomer and short oligonucleotide theoretical structure candidates.",
     "P1_Peak_Annotations": "Observed P1 peaks matched to theoretical structure candidates, retaining unmatched peaks.",
@@ -596,6 +599,7 @@ def write_excel_report(
         "p1_annotation": config.p1_annotation,
         "ms2_annotation": config.ms2_annotation,
         "modification_evidence_ranking": config.modification_evidence_ranking,
+        "biological_context": config.biological_context,
         "performance": config.performance,
         "reporting": config.reporting,
     }
@@ -633,6 +637,8 @@ def write_excel_report(
         "Modification_Evidence_Summary": SUMMARY_COLUMNS,
         "Modification_Evidence_Ranking": RANKING_COLUMNS,
         "Modification_Ambiguity_Groups": AMBIGUITY_GROUP_COLUMNS,
+        "Biological_Context_Priorities": CONTEXT_PRIORITY_COLUMNS,
+        "Context_Supported_Candidates": RANKING_COLUMNS,
         "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
         "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
         "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,

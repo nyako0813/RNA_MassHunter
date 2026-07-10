@@ -140,6 +140,9 @@ modification_evidence_ranking:
   use_organism_rules: true
   use_trna_context: true
   require_ms2_evidence_for_high_confidence: true
+  use_biological_context: true
+  cap_context_only_confidence: Medium
+  require_ms_evidence_for_context_boosted_high: true
   enable_ambiguity_grouping: true
   ambiguity_group_by:
     - Spectrum_ID
@@ -169,6 +172,29 @@ modification_evidence_ranking:
     curation_manually_checked: 0.5
     source_user_pdf: 0.5
     detectability_ms2_supported: 0.5
+
+biological_context:
+  enabled: true
+  organism_group: ""
+  organism_species: ""
+  trna_name: ""
+  trna_type: ""
+  anticodon: ""
+  focus_positions: []
+  focus_position_window: 2
+  priority_modifications: []
+  priority_keywords: []
+  boost:
+    organism_rule_supported: 1.0
+    pathway_supported: 1.0
+    priority_modification: 1.5
+    priority_keyword_match: 0.75
+    focus_position_match: 1.0
+    focus_position_nearby: 0.5
+    trna_context_supported: 1.0
+  penalties:
+    organism_context_conflict: -2.0
+    unrelated_modification_family: -0.5
 
 peak_filtering:
   strategy: tiered

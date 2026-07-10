@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
+from rna_masshunter.biological_context import biological_context_priority_rows
 from rna_masshunter.conversion import prepare_input_file
 from rna_masshunter.digestion import digest_sequence
 from rna_masshunter.excel_report import write_excel_report
@@ -164,9 +165,14 @@ def main() -> None:
         known_candidates=known_modification_candidates,
         ms2_results=optional_results,
         rule_set=rule_set,
+        pathways=pathways,
     )
     optional_results["Modification_Evidence_Summary"] = ranking_summary
     optional_results["Modification_Evidence_Ranking"] = ranking_rows
+    optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
+    optional_results["Context_Supported_Candidates"] = [
+        row for row in ranking_rows if float(row.get("Biological_Context_Score") or 0.0) > 0
+    ]
 
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),

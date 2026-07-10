@@ -19,6 +19,7 @@ class RunConfig:
     p1_annotation: dict[str, Any] = field(default_factory=dict)
     ms2_annotation: dict[str, Any] = field(default_factory=dict)
     modification_evidence_ranking: dict[str, Any] = field(default_factory=dict)
+    biological_context: dict[str, Any] = field(default_factory=dict)
     performance: dict[str, Any] = field(default_factory=dict)
     reporting: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
