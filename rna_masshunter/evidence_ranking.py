@@ -35,8 +35,10 @@ SUMMARY_COLUMNS = [
     "Total_Ranked_Candidates", "Very_High", "High", "Medium", "Low", "Very_Low",
     "Candidates_With_MS2_Precursor_Evidence", "Candidates_With_Modified_Ion_Evidence",
     "Candidates_With_Localization_Evidence", "Ambiguous_Candidates", "Top_Modification_IDs",
-    "Total_Ambiguity_Groups", "Resolved_Ambiguity_Groups", "Partially_Resolved_Ambiguity_Groups",
-    "Ambiguous_Groups", "Candidates_With_Position_Discriminating_Evidence",
+    "Total_Ambiguity_Groups", "Resolved_Ambiguity_Groups", "Single_Candidate_Position_Groups",
+    "Resolved_By_Discriminating_Ion_Groups", "Partially_Resolved_Ambiguity_Groups",
+    "Ambiguous_Groups", "No_Localization_Evidence_Groups",
+    "Candidates_With_Position_Discriminating_Evidence",
     "Candidates_Without_Position_Discriminating_Evidence", "Notes",
     "Candidates_With_Biological_Context_Support", "Candidates_With_Priority_Modification",
     "Candidates_With_Priority_Keyword", "Candidates_With_Focus_Position_Match",
@@ -50,6 +52,7 @@ AMBIGUITY_GROUP_COLUMNS = [
     "Num_Candidate_Positions", "Num_Modified_Ion_Matches", "Num_Position_Discriminating_Ions",
     "Num_Informative_Position_Discriminating_Ions", "Num_Non_Discriminating_Ions",
     "Best_Position_By_Score", "Best_Position_Score", "Position_Ambiguity_Status",
+    "Position_Resolution_Basis", "Position_Resolution_Notes",
     "Group_Interpretation", "Notes",
 ]
 
@@ -73,15 +76,33 @@ def build_ambiguity_groups(
         best_position = best_positions[0] if len(best_positions) == 1 else ""
         discriminating_positions = {int(row["Candidate_Modification_Position_In_Parent"]) for row in informative_discriminating}
         if not group_matches:
-            status, interpretation = "no_localization_evidence", "no-modified-ion-support"
-        elif len(position_values) == 1 or (len(discriminating_positions) == 1 and best_position in discriminating_positions):
-            status, interpretation = "resolved", "position-resolved-by-discriminating-ions"
+            status = "no_localization_evidence"
+            interpretation = "precursor-supported-but-no-modified-ion-localization"
+            resolution_basis = "no_modified_ion_evidence"
+            resolution_notes = "No modified ion evidence is available for localization."
+        elif len(position_values) == 1:
+            status = "single_candidate_position"
+            interpretation = "single-candidate-position-not-ambiguity"
+            resolution_basis = "single_candidate_position"
+            resolution_notes = (
+                "Candidate position is unique for this parent/modification; "
+                "this does not imply ion-based localization evidence."
+            )
+        elif len(discriminating_positions) == 1 and best_position in discriminating_positions:
+            status = "resolved_by_discriminating_ions"
+            interpretation = "position-resolved-by-discriminating-ions"
+            resolution_basis = "discriminating_ions"
+            resolution_notes = "Position is supported by position-discriminating modified ions."
         elif discriminating_positions:
-            status, interpretation = "partially_resolved", "position-partially-supported"
+            status = "partially_resolved"
+            interpretation = "position-partially-supported"
+            resolution_basis = "partial_discriminating_ions"
+            resolution_notes = "Some candidate positions have position-discriminating ion support."
         else:
-            status, interpretation = "ambiguous", "position-ambiguous-same-evidence"
-        if status == "ambiguous" and not discriminating:
-            interpretation = "precursor-supported-but-position-unresolved"
+            status = "ambiguous"
+            interpretation = "position-ambiguous-same-or-non-discriminating-evidence"
+            resolution_basis = "non_discriminating_ions_only"
+            resolution_notes = "Modified ion evidence does not distinguish among candidate positions."
         first = positions[0]
         results.append({
             "Ambiguity_Group_ID": f"AMBG_{group_index:06d}", "Spectrum_ID": key[0],
@@ -97,7 +118,10 @@ def build_ambiguity_groups(
             "Num_Informative_Position_Discriminating_Ions": len(informative_discriminating),
             "Num_Non_Discriminating_Ions": len(group_matches) - len(discriminating),
             "Best_Position_By_Score": best_position, "Best_Position_Score": best_score,
-            "Position_Ambiguity_Status": status, "Group_Interpretation": interpretation,
+            "Position_Ambiguity_Status": status,
+            "Position_Resolution_Basis": resolution_basis,
+            "Position_Resolution_Notes": resolution_notes,
+            "Group_Interpretation": interpretation,
             "Notes": "Candidate positions are retained; the group reports whether MS2 ions separate them.",
         })
     return results
@@ -362,7 +386,7 @@ def _final_confidence(
     min_discriminating_for_high = int(config.get("min_informative_discriminating_ions_for_high", 2) or 2)
     multi_ion_gate = informative_count >= 2 and both_series and informative_discriminating_count >= min_discriminating_for_high
     good_errors = precursor_error != "" and ion_error != "" and _float(precursor_error, 999) <= 5.0 and _float(ion_error, 999) <= 5.0
-    if score >= 8 and precursor and ions and level == "Strong" and informative_count >= 3 and both_series and good_errors and informative_discriminating_count >= 2 and ambiguity_status in {"", "resolved"}: result = "Very High"
+    if score >= 8 and precursor and ions and level == "Strong" and informative_count >= 3 and both_series and good_errors and informative_discriminating_count >= 2 and ambiguity_status in {"", "resolved", "resolved_by_discriminating_ions"}: result = "Very High"
     elif score >= 6 and precursor and ions and (localization_gate or multi_ion_gate): result = "High"
     elif precursor and ions and level == "Weak" and informative_count >= 1: result = "Medium"
     elif score >= 4 and precursor and (level in {"Weak", "Moderate", "Strong"} or known): result = "Medium"
@@ -434,9 +458,12 @@ def build_modification_evidence_summary(
         "Ambiguous_Candidates": sum(row["Ambiguous_Position"] for row in rows),
         "Top_Modification_IDs": "; ".join(f"{mod_id}/{count}" for mod_id, count in top),
         "Total_Ambiguity_Groups": len(ambiguity_groups),
-        "Resolved_Ambiguity_Groups": sum(row.get("Position_Ambiguity_Status") == "resolved" for row in ambiguity_groups),
+        "Resolved_Ambiguity_Groups": sum(row.get("Position_Ambiguity_Status") in {"resolved", "resolved_by_discriminating_ions"} for row in ambiguity_groups),
+        "Single_Candidate_Position_Groups": sum(row.get("Position_Ambiguity_Status") == "single_candidate_position" for row in ambiguity_groups),
+        "Resolved_By_Discriminating_Ion_Groups": sum(row.get("Position_Ambiguity_Status") in {"resolved", "resolved_by_discriminating_ions"} for row in ambiguity_groups),
         "Partially_Resolved_Ambiguity_Groups": sum(row.get("Position_Ambiguity_Status") == "partially_resolved" for row in ambiguity_groups),
         "Ambiguous_Groups": sum(row.get("Position_Ambiguity_Status") == "ambiguous" for row in ambiguity_groups),
+        "No_Localization_Evidence_Groups": sum(row.get("Position_Ambiguity_Status") == "no_localization_evidence" for row in ambiguity_groups),
         "Candidates_With_Position_Discriminating_Evidence": sum(bool(row.get("Position_Discriminating_Evidence")) for row in rows),
         "Candidates_Without_Position_Discriminating_Evidence": sum(not bool(row.get("Position_Discriminating_Evidence")) for row in rows),
         "Candidates_With_Biological_Context_Support": sum(_float(row.get("Biological_Context_Score"), 0.0) > 0 for row in rows),
@@ -446,5 +473,5 @@ def build_modification_evidence_summary(
         "Candidates_With_Context_Conflict": sum(bool(row.get("Context_Conflict")) for row in rows),
         "Top_Context_Supported_Modifications": "; ".join(f"{key}/{value}" for key, value in sorted(context_modifications.items(), key=lambda item: (-item[1], item[0]))[:10]),
         "Top_Context_Keywords": "; ".join(f"{key}/{value}" for key, value in sorted(context_keywords.items(), key=lambda item: (-item[1], item[0]))[:10]),
-        "Notes": "High confidence requires localization-level support or multi-ion c/y support. Weak localization candidates are treated as Medium review candidates. Candidates sharing the same parent fragment and modification may form ambiguity groups. Position confidence requires position-discriminating ions. Biological context boosts prioritization but does not establish modification identity without mass/MS evidence. Evidence ranking is not a modification call.",
+        "Notes": "High confidence requires localization-level support or multi-ion c/y support. Weak localization candidates are treated as Medium review candidates. Candidates sharing the same parent fragment and modification may form ambiguity groups. Position confidence requires position-discriminating ions. single_candidate_position means only one candidate position exists for that parent/modification; it does not imply ion-based localization. Biological context boosts prioritization but does not establish modification identity without mass/MS evidence. Evidence ranking is not a modification call.",
     }]

@@ -150,7 +150,7 @@ def test_ambiguity_groups_distinguish_shared_and_position_specific_evidence():
     ]
     groups = build_ambiguity_groups(localization, matches)
     assert next(row for row in groups if row["Spectrum_ID"] == "AMB")["Position_Ambiguity_Status"] == "ambiguous"
-    assert next(row for row in groups if row["Spectrum_ID"] == "RES")["Position_Ambiguity_Status"] == "resolved"
+    assert next(row for row in groups if row["Spectrum_ID"] == "RES")["Position_Ambiguity_Status"] == "resolved_by_discriminating_ions"
 
 
 if __name__ == "__main__":
