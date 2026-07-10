@@ -119,6 +119,15 @@ ms2_annotation:
   modified_precursor_include_isobaric: false
   modified_precursor_mass_shift_tolerance_da: 1.0e-6
   modified_precursor_max_candidates_per_spectrum: 20
+  include_modified_fragment_ions: true
+  modified_fragment_ion_source: modified_precursor_candidates
+  modified_fragment_max_positions_per_candidate: 20
+  modified_fragment_require_target_base: true
+  modified_fragment_include_unmodified_counterparts: true
+  modified_fragment_min_ion_length: 1
+  modified_fragment_min_ion_length_for_localization: 2
+  modified_fragment_output_all_position_candidates: true
+  modified_fragment_max_rows: 100000
 
 peak_filtering:
   strategy: tiered

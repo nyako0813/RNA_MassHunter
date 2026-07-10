@@ -4,6 +4,11 @@ import numpy as np
 
 from rna_masshunter.masses import calculate_unmodified_rna_mass
 from rna_masshunter.modified_precursor import find_modified_parent_candidates
+from rna_masshunter.modified_fragment_ions import (
+    build_localization_evidence,
+    generate_modified_theoretical_ions,
+    match_modified_ions,
+)
 from rna_masshunter.models import Fragment, MS2IonMatch, MS2SpectrumInfo, TheoreticalMS2Ion
 from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 from rna_masshunter.mzml_diagnostics import _rt_minutes
@@ -24,6 +29,13 @@ MS2_SUMMARY_COLUMNS = [
     "Spectra_Rescued_By_Modified_Precursor",
     "Total_Modified_Parent_Candidates",
     "Top_Modification_Candidates_For_Precursors",
+    "Total_Modified_Theoretical_Ions",
+    "Total_Modified_Ion_Matches",
+    "Spectra_With_Modified_Ion_Evidence",
+    "Strong_Localization_Evidence",
+    "Moderate_Localization_Evidence",
+    "Weak_Localization_Evidence",
+    "Top_Localized_Modification_Candidates",
     "Total_Parent_Candidates",
     "Total_Matched_Ion_Rows",
     "Total_Unmatched_Output_Rows",
@@ -181,6 +193,33 @@ MS2_MODIFIED_PRECURSOR_COLUMNS = [
     "Precursor_Error_ppm", "Modified_Precursor_Rescue", "Candidate_Rank", "Comment",
 ]
 
+MS2_MODIFIED_THEORETICAL_ION_COLUMNS = [
+    "Ion_ID", "Spectrum_ID", "Parent_Fragment_ID", "Parent_Sequence", "Candidate_Type",
+    "Modification_ID", "Modification_Name", "Modification_Target_Base", "Modification_Mass_Shift",
+    "Candidate_Modification_Position_In_Parent", "Candidate_Modification_Base", "Ion_Type", "Ion_Sequence",
+    "Ion_Start", "Ion_End", "Ion_Length", "Informative_Ion", "Ion_Contains_Modification",
+    "Modification_Mass_Shift_Applied", "Charge", "Theoretical_Mass", "Theoretical_mz", "Comment",
+]
+
+MS2_MODIFIED_ION_MATCH_COLUMNS = [
+    "Spectrum_ID", "Scan_Index", "RT", "Precursor_mz", "Precursor_Charge", "Parent_Fragment_ID",
+    "Parent_Sequence", "Candidate_Type", "Modification_ID", "Modification_Name",
+    "Candidate_Modification_Position_In_Parent", "Candidate_Modification_Base", "Observed_mz",
+    "Observed_Intensity", "Ion_ID", "Ion_Type", "Ion_Sequence", "Ion_Start", "Ion_End", "Ion_Length",
+    "Informative_Ion", "Ion_Contains_Modification", "Modification_Mass_Shift_Applied", "Theoretical_mz",
+    "Mass_Error_Da", "Mass_Error_ppm", "Match_Status", "Confidence", "Comment",
+]
+
+MS2_LOCALIZATION_EVIDENCE_COLUMNS = [
+    "Spectrum_ID", "RT", "Precursor_mz", "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start",
+    "Parent_End", "Modification_ID", "Modification_Name", "Candidate_Modification_Position_In_Parent",
+    "Candidate_Modification_Position_In_tRNA", "Candidate_Modification_Base", "Num_Modified_Ion_Matches",
+    "Num_Unmodified_Counterpart_Matches", "Num_Informative_Modified_Ion_Matches", "Num_c_Modified_Ions",
+    "Num_y_Modified_Ions", "Best_Modified_Ion_Error_ppm", "Median_Abs_Modified_Ion_Error_ppm",
+    "Total_Modified_Ion_Intensity", "Localization_Score", "Localization_Level",
+    "Localization_Interpretation", "Notes",
+]
+
 
 def annotate_ms2(
     mzml_path: str | None,
@@ -198,6 +237,9 @@ def annotate_ms2(
     ions = generate_theoretical_ms2_ions(theoretical_fragments, config, base_masses, warnings)
     matches, unmatched, spectrum_rows, parent_rows = match_ms2_spectra(spectra, ions, theoretical_fragments, config, modifications or [])
     evidence_rows = build_fragment_evidence(matches, theoretical_fragments, config, parent_rows)
+    modified_ions = generate_modified_theoretical_ions(parent_rows, config, base_masses)
+    modified_matches = match_modified_ions(spectra, modified_ions, config)
+    localization_rows = build_localization_evidence(modified_ions, modified_matches)
 
     if not spectra:
         spectrum_rows = [{
@@ -230,10 +272,16 @@ def annotate_ms2(
     unmatched_rows = _prioritize_unmatched(unmatched, max_unmatched) if output_unmatched else []
 
     results = {
-        "MS2_Summary": build_ms2_summary(spectra, ions, matches, unmatched_rows, parent_rows, evidence_rows),
+        "MS2_Summary": build_ms2_summary(
+            spectra, ions, matches, unmatched_rows, parent_rows, evidence_rows,
+            modified_ions, modified_matches, localization_rows,
+        ),
         "MS2_Spectra": spectrum_rows,
         "MS2_Parent_Candidates": parent_rows,
         "MS2_Modified_Precursor_Candidates": modified_precursor_rows(parent_rows),
+        "MS2_Modified_Theoretical_Ions": modified_ions,
+        "MS2_Modified_Ion_Matches": modified_matches,
+        "MS2_Modification_Localization_Evidence": localization_rows,
         "MS2_Theoretical_Ions": [theoretical_ion_row(ion, config) for ion in ions],
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,
@@ -587,6 +635,17 @@ def _top_precursor_modifications(rows: list[dict[str, Any]]) -> str:
     return "; ".join(f"{mod_id}/{name}/{count}" for (mod_id, name), count in ranked)
 
 
+def _top_localized_modifications(rows: list[dict[str, Any]]) -> str:
+    counts: dict[tuple[str, str], int] = {}
+    for row in rows:
+        if row.get("Localization_Level") not in {"Strong", "Moderate"}:
+            continue
+        key = (str(row.get("Modification_ID") or ""), str(row.get("Modification_Name") or ""))
+        counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    return "; ".join(f"{mod_id}/{name}/{count}" for (mod_id, name), count in ranked)
+
+
 def build_fragment_evidence(
     matches: list[MS2IonMatch], theoretical_fragments: list[Fragment], config: Any,
     parent_rows: list[dict[str, Any]] | None = None,
@@ -653,7 +712,13 @@ def build_ms2_summary(
     unmatched_rows: list[dict[str, Any]],
     parent_rows: list[dict[str, Any]],
     evidence_rows: list[dict[str, Any]],
+    modified_ions: list[dict[str, Any]] | None = None,
+    modified_matches: list[dict[str, Any]] | None = None,
+    localization_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    modified_ions = modified_ions or []
+    modified_matches = modified_matches or []
+    localization_rows = localization_rows or []
     parent_counts: dict[str, int] = {}
     for match in matches:
         parent_counts[match.parent_fragment_id] = parent_counts.get(match.parent_fragment_id, 0) + 1
@@ -681,6 +746,13 @@ def build_ms2_summary(
         "Spectra_Rescued_By_Modified_Precursor": len({row["Spectrum_ID"] for row in matched_rows if row.get("Modified_Precursor_Rescue")}),
         "Total_Modified_Parent_Candidates": sum(1 for row in matched_rows if row.get("Candidate_Type") == "modified"),
         "Top_Modification_Candidates_For_Precursors": _top_precursor_modifications(matched_rows),
+        "Total_Modified_Theoretical_Ions": len(modified_ions),
+        "Total_Modified_Ion_Matches": len(modified_matches),
+        "Spectra_With_Modified_Ion_Evidence": len({row["Spectrum_ID"] for row in modified_matches if row.get("Ion_Contains_Modification")}),
+        "Strong_Localization_Evidence": sum(row.get("Localization_Level") == "Strong" for row in localization_rows),
+        "Moderate_Localization_Evidence": sum(row.get("Localization_Level") == "Moderate" for row in localization_rows),
+        "Weak_Localization_Evidence": sum(row.get("Localization_Level") == "Weak" for row in localization_rows),
+        "Top_Localized_Modification_Candidates": _top_localized_modifications(localization_rows),
         "Total_Parent_Candidates": len(matched_rows),
         "Total_Matched_Ion_Rows": len(matches),
         "Total_Unmatched_Output_Rows": len(unmatched_rows),

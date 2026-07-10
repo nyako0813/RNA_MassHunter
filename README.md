@@ -106,6 +106,8 @@ ms2_annotation:
 
 MVP-5.2 can also match an MS2 precursor to a theoretical digestion fragment plus one compatible known-modification mass shift. Enable this with `ms2_annotation.include_modified_precursor_candidates`. Base compatibility is required and mass-neutral/isobaric modifications are excluded by default; at most one modification is considered per fragment. These candidates indicate that the precursor mass may be explained by a modification, but do not localize that modification. Fragment-ion matching remains an unmodified c/y-ion approximation in MVP-5.2, and this limitation is recorded in the candidate and evidence sheets.
 
+MVP-5.3 extends each modified precursor candidate into position-specific modified c/y ions. Candidate positions are the matching target bases in the parent fragment; ions containing a candidate position receive the known modification mass shift, while unmodified counterparts are retained for comparison. `MS2_Modification_Localization_Evidence` summarizes support for each possible position. This is localization evidence, not definitive site assignment: one-nucleotide ions are low-information, strong evidence requires at least three informative matches with both c- and y-ion support, and similarly supported positions are explicitly marked `ambiguous-multiple-positions`.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.
