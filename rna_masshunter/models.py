@@ -34,6 +34,12 @@ class Modification:
     detectability: Any = None
     curation: Any = None
     sources: Any = None
+    source: Any = None
+    source_priority: Any = None
+    curation_status: str = ""
+    candidate_policy: dict[str, Any] = field(default_factory=dict)
+    chemical_group: str = ""
+    near_isobaric_group: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
 

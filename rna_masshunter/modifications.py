@@ -51,6 +51,12 @@ def load_modifications(path: str | Path, warnings: list[dict[str, Any]] | None =
                 detectability=record.get("detectability"),
                 curation=record.get("curation"),
                 sources=record.get("sources"),
+                source=record.get("source"),
+                source_priority=record.get("source_priority") or (record.get("source", {}) or {}).get("source_priority"),
+                curation_status=str(record.get("curation_status") or (record.get("source", {}) or {}).get("curation_status") or (record.get("curation", {}) or {}).get("status") or ""),
+                candidate_policy=dict(record.get("candidate_policy") or {}),
+                chemical_group=str(record.get("chemical_group") or ""),
+                near_isobaric_group=str(record.get("near_isobaric_group") or ""),
                 raw=record,
             )
         )

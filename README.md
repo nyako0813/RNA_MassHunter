@@ -114,6 +114,8 @@ MVP-5.4.1 calibrates confidence conservatively. High confidence requires Moderat
 
 MVP-5.4.2 groups candidate positions that share a spectrum, parent fragment, and modification. `Modification_Ambiguity_Groups` distinguishes resolved, partially resolved, ambiguous, and unsupported groups without deleting individual candidates. Modified-ion matches are marked as position-discriminating only when their ion range supports one candidate position and excludes the alternatives; ions covering multiple candidate positions do not localize the modification. Ranking confidence therefore requires position-discriminating evidence, and unresolved groups receive explicit score penalties and limiting factors. Evidence ranking remains candidate prioritization rather than modification or site confirmation.
 
+MVP-5.5 treats the user-curated PDF modification workbook as the authoritative import source for PDF-confirmed symbols, monoisotopic nucleoside masses, and mass shifts. Run `tools/import_curated_modifications.py` with a local workbook path to generate `data/modifications.yaml` and an Excel/TSV diff report; the source workbook is not committed unless redistribution rights are confirmed. Generated records include detectability, candidate policy, source priority, curation status, chemical group, and near-isobaric metadata. Pseudouridine is excluded from blind mass search but remains available to position-rule, literature, or user-specified workflows. Trimethylation and acetylation remain chemically distinct while sharing a near-isobaric review flag. Ranking uses curated/source metadata only as modest supporting evidence and never forces a modification call.
+
 ## Alkaline phosphatase setting
 
 Record whether the sample was treated with alkaline phosphatase.

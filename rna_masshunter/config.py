@@ -144,6 +144,8 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "low_information_penalty": -1.0, "ambiguous_position_penalty": -1.0,
             "isobaric_precursor_penalty": -2.0,
             "ambiguity_penalty": -1.5, "non_discriminating_ion_penalty": -0.5,
+            "curation_manually_checked": 0.5, "source_user_pdf": 0.5,
+            "detectability_ms2_supported": 0.5,
         },
     },
     "peak_filtering": {

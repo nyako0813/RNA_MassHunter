@@ -34,7 +34,12 @@ def _config():
 
 def test_integrated_candidate_ranks_first_and_penalties_apply():
     modifications = [
-        Modification("mA", "mA", 14.0, "methyl", ["A"], raw={"name": "A modification"}),
+        Modification("mA", "mA", 14.0, "methyl", ["A"], raw={
+            "name": "A modification", "source_priority": "user_pdf_for_mass_shift",
+            "curation_status": "manually_checked", "candidate_policy": {"include_by_mass_search": True, "include_if_position_rule_exists": True},
+            "detectability": {"ms1": True, "ms2": True}, "chemical_group": "methylation",
+            "near_isobaric_group": "near_test",
+        }),
         Modification("mB", "mB", 28.0, "other", ["C"], raw={"name": "B modification"}),
         Modification("mI", "mI", 0.0, "isobaric", ["U"], raw={"name": "Isobaric"}),
         Modification("mC", "mC", 15.0, "other", ["C"], raw={"name": "C modification"}),
@@ -81,6 +86,11 @@ def test_integrated_candidate_ranks_first_and_penalties_apply():
     )
     assert rows[0]["Modification_ID"] == "mA"
     assert rows[0]["Final_Confidence"] in {"Very High", "High"}
+    assert rows[0]["Source_Priority"] == "user_pdf_for_mass_shift"
+    assert rows[0]["Curation_Status"] == "manually_checked"
+    assert rows[0]["Candidate_Policy_By_Mass_Search"] is True
+    assert rows[0]["Detectability_MS2"] is True
+    assert rows[0]["Chemical_Group"] == "methylation"
     known_only = next(row for row in rows if row["Modification_ID"] == "mB")
     assert known_only["Final_Confidence"] not in {"Very High", "High"}
     ambiguous = next(row for row in rows if row["Modification_ID"] == "mC" and row["Candidate_Position_In_Parent"] == 3)

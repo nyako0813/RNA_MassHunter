@@ -21,3 +21,6 @@ _backup_before_mvp1/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Local curated source workbooks (redistribution rights not confirmed)
+data/source/*.xlsx

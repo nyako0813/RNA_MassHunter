@@ -56,6 +56,9 @@ def find_modified_parent_candidates(
     candidates: list[dict[str, Any]] = []
     for fragment in fragments or []:
         for modification in modifications or []:
+            policy = getattr(modification, "candidate_policy", None) or (getattr(modification, "raw", {}) or {}).get("candidate_policy", {})
+            if not _as_bool(policy.get("include_by_mass_search"), True):
+                continue
             shift = modification.mass_shift_from_unmodified
             if shift != shift or (not include_isobaric and abs(shift) <= zero_tolerance):
                 continue

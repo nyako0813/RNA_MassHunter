@@ -96,6 +96,11 @@ def _should_skip_isobaric_shift(shift: float, search_config: dict[str, Any]) -> 
     return not include_isobaric
 
 
+def _candidate_policy_allows_mass_search(modification: Modification) -> bool:
+    policy = getattr(modification, "candidate_policy", None) or (getattr(modification, "raw", {}) or {}).get("candidate_policy", {})
+    return _as_bool(policy.get("include_by_mass_search"), True)
+
+
 def _priority_score(
     confidence: str,
     peak_tier: str | None,
@@ -186,6 +191,8 @@ def _fragment_candidates(
         mass_error_unmodified_ppm = _ppm_error(observed_mass, unmodified_mass)
         per_match: list[KnownModificationCandidate] = []
         for modification in modifications:
+            if not _candidate_policy_allows_mass_search(modification):
+                continue
             shift = modification.mass_shift_from_unmodified
             if not isfinite(shift):
                 continue
@@ -265,6 +272,8 @@ def _intact_candidates(
         observed = result.observed_mass
         per_result: list[KnownModificationCandidate] = []
         for modification in modifications:
+            if not _candidate_policy_allows_mass_search(modification):
+                continue
             shift = modification.mass_shift_from_unmodified
             if not isfinite(shift):
                 continue

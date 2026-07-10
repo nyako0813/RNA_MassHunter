@@ -166,6 +166,9 @@ modification_evidence_ranking:
     isobaric_precursor_penalty: -2.0
     ambiguity_penalty: -1.5
     non_discriminating_ion_penalty: -0.5
+    curation_manually_checked: 0.5
+    source_user_pdf: 0.5
+    detectability_ms2_supported: 0.5
 
 peak_filtering:
   strategy: tiered

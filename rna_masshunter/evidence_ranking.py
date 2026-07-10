@@ -7,6 +7,9 @@ from typing import Any
 RANKING_COLUMNS = [
     "Rank", "Final_Score", "Final_Confidence", "Final_Interpretation", "Confidence_Limiting_Factor",
     "Modification_ID", "Modification_Name", "Modification_Category", "Target_Base", "Mass_Shift", "Is_Isobaric",
+    "Source_Priority", "Curation_Status", "Candidate_Policy_By_Mass_Search",
+    "Candidate_Policy_Position_Rule", "Detectability_MS1", "Detectability_MS2",
+    "Chemical_Group", "Near_Isobaric_Group",
     "Candidate_tRNA_Position", "Candidate_Base", "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start", "Parent_End", "Candidate_Position_In_Parent",
     "Has_MS1_Fragment_Evidence", "MS1_Fragment_Best_Confidence", "MS1_Fragment_Total_Intensity",
     "Has_Known_Modification_Candidate", "Known_Modification_Priority_Score",
@@ -120,6 +123,8 @@ def _rule_modification_ids(rule_set: dict[str, Any] | None) -> set[str]:
             for key, child in value.items():
                 if str(key).lower() in {"modification_id", "modification", "mod_id"} and isinstance(child, (str, int)):
                     ids.add(str(child))
+                if str(key).lower() in {"preferred_modifications", "supported_modifications", "modification_ids"} and isinstance(child, list):
+                    ids.update(str(item) for item in child if isinstance(item, (str, int)))
                 visit(child)
         elif isinstance(value, list):
             for child in value:
@@ -143,6 +148,11 @@ def build_modification_evidence_ranking(
     weights = ranking.get("weights", {}) or {}
     weight = lambda name, default: _float(weights.get(name), default)
     modification_lookup = {str(getattr(item, "id", "")): item for item in modifications or []}
+    near_isobaric_counts: dict[str, int] = {}
+    for modification_item in modifications or []:
+        group = str((getattr(modification_item, "raw", {}) or {}).get("near_isobaric_group") or "")
+        if group:
+            near_isobaric_counts[group] = near_isobaric_counts.get(group, 0) + 1
     fragment_lookup = {str(getattr(item, "fragment_id", "")): item for item in theoretical_fragments or []}
     rule_ids = _rule_modification_ids(rule_set)
     localization = list(ms2_results.get("MS2_Modification_Localization_Evidence", []) or [])
@@ -179,6 +189,14 @@ def build_modification_evidence_ranking(
         mod_id, fragment_id, position = item["mod_id"], item["fragment_id"], item["position"]
         modification = modification_lookup.get(mod_id)
         mod_raw = getattr(modification, "raw", {}) or {}
+        source = mod_raw.get("source", {}) or {}
+        source_priority_raw = mod_raw.get("source_priority") or source.get("source_priority") or ""
+        source_priority = source_priority_raw.get("mass_shift", "") if isinstance(source_priority_raw, dict) else str(source_priority_raw)
+        curation_status = str(mod_raw.get("curation_status") or source.get("curation_status") or (mod_raw.get("curation", {}) or {}).get("status") or "")
+        candidate_policy = mod_raw.get("candidate_policy", {}) or {}
+        detectability = mod_raw.get("detectability", {}) or {}
+        chemical_group = str(mod_raw.get("chemical_group") or "")
+        near_isobaric_group = str(mod_raw.get("near_isobaric_group") or "")
         loc = item.get("localization", {})
         precursor_rows = item.get("precursors", [])
         known_rows = item.get("known", [])
@@ -205,6 +223,9 @@ def build_modification_evidence_ranking(
         trna_position = loc.get("Candidate_Modification_Position_In_tRNA", "")
         trna_supported = bool(trna_position and (getattr(config, "sequence", {}) or {}).get("type", "").upper() == "RNA")
         if trna_supported and _bool(ranking.get("use_trna_context"), True): score += weight("trna_context_supported", 1.0)
+        if curation_status == "manually_checked": score += weight("curation_manually_checked", 0.5)
+        if source_priority in {"user_pdf_for_mass_shift", "user_pdf"}: score += weight("source_user_pdf", 0.5)
+        if modified_ions and _bool(detectability.get("ms2"), False): score += weight("detectability_ms2_supported", 0.5)
         if low_information: score += weight("low_information_penalty", -1.0)
         if ambiguous and not group: score += weight("ambiguous_position_penalty", -1.0)
         ambiguity_penalty = weight("ambiguity_penalty", -1.5) if ambiguous and group else 0.0
@@ -226,6 +247,8 @@ def build_modification_evidence_ranking(
             isobaric, len(informative_ions), num_c, num_y, best_precursor_error, best_ion_error,
             position_discriminating, num_informative_discriminating, ambiguity_status, ranking,
         )
+        if not _bool(candidate_policy.get("include_by_mass_search"), True) and not rule_supported and not modified_ions and confidence in {"Very High", "High"}:
+            confidence = "Medium"
         limiting_factor = _confidence_limiting_factor(
             bool(precursor_rows), bool(modified_ions), level, len(informative_ions), num_c, num_y,
             rule_supported, bool(matching_ms1), position_discriminating, ambiguity_status,
@@ -240,6 +263,11 @@ def build_modification_evidence_ranking(
             "Confidence_Limiting_Factor": limiting_factor,
             "Modification_ID": mod_id, "Modification_Name": mod_raw.get("name") or getattr(modification, "symbol", None) or (precursor_rows[0].get("Modification_Name") if precursor_rows else mod_id),
             "Modification_Category": getattr(modification, "category", ""), "Target_Base": ",".join(target_bases), "Mass_Shift": shift, "Is_Isobaric": isobaric,
+            "Source_Priority": source_priority, "Curation_Status": curation_status,
+            "Candidate_Policy_By_Mass_Search": _bool(candidate_policy.get("include_by_mass_search"), True),
+            "Candidate_Policy_Position_Rule": _bool(candidate_policy.get("include_if_position_rule_exists"), False),
+            "Detectability_MS1": detectability.get("ms1", ""), "Detectability_MS2": detectability.get("ms2", ""),
+            "Chemical_Group": chemical_group, "Near_Isobaric_Group": near_isobaric_group,
             "Candidate_tRNA_Position": trna_position, "Candidate_Base": loc.get("Candidate_Modification_Base", ""), "Parent_Fragment_ID": fragment_id,
             "Parent_Sequence": loc.get("Parent_Sequence") or getattr(fragment, "sequence", ""), "Parent_Start": loc.get("Parent_Start", getattr(fragment, "start", "")),
             "Parent_End": loc.get("Parent_End", getattr(fragment, "end", "")), "Candidate_Position_In_Parent": position,
@@ -256,7 +284,7 @@ def build_modification_evidence_ranking(
             "Rule_Set": getattr(config, "organism", {}).get("rule_set", ""), "Organism_Rule_Supported": rule_supported,
             "TRNA_Context_Supported": trna_supported, "Context_Notes": "Rule/context points are applied only when explicit loaded data supports them.",
             "Ambiguous_Position": ambiguous, "Low_Information_Evidence": low_information,
-            "Evidence_Warnings": "; ".join(filter(None, ["isobaric precursor evidence is non-specific" if isobaric else "", "ambiguous localization" if ambiguous else "", "1 nt/low-information ion evidence" if low_information else ""])),
+            "Evidence_Warnings": "; ".join(filter(None, ["isobaric precursor evidence is non-specific" if isobaric else "", "near-isobaric alternative" if near_isobaric_group and near_isobaric_counts.get(near_isobaric_group, 0) > 1 else "", "excluded from blind mass search by curated policy" if not _bool(candidate_policy.get("include_by_mass_search"), True) else "", "ambiguous localization" if ambiguous else "", "1 nt/low-information ion evidence" if low_information else ""])),
             "Notes": "Ranking prioritizes candidates; it does not confirm modification identity or position.",
             "Ambiguity_Group_ID": group.get("Ambiguity_Group_ID", ""),
             "Num_Positions_In_Ambiguity_Group": group.get("Num_Candidate_Positions", 1 if position != "" else 0),
