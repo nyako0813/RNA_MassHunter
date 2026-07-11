@@ -47,6 +47,14 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "reference_mass_tolerance_ppm": 20,
             "neutral_mass_range": {"enabled": True, "min_da": 20000, "max_da": 30000},
             "target_review_mass_range": {"enabled": False, "min_da": None, "max_da": None},
+            "envelope_grouping": {
+                "enabled": True,
+                "mass_tolerance_da": 1.0,
+                "rt_tolerance_min": 0.15,
+                "min_shared_peak_fraction": 0.5,
+                "min_shared_charge_fraction": 0.5,
+                "require_peak_overlap": True,
+            },
         },
     },
     "digestion": {

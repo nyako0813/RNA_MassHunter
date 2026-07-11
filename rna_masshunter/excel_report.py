@@ -7,9 +7,15 @@ import pandas as pd
 from openpyxl.utils import get_column_letter
 
 from rna_masshunter.intact_reconstruction import (
+    COMPARISON_CANDIDATE_COLUMNS as INTACT_COMPARISON_CANDIDATE_COLUMNS,
     DIAGNOSTIC_COLUMNS as INTACT_DIAGNOSTIC_COLUMNS,
+    GROUP_COLUMNS as INTACT_GROUP_COLUMNS,
     QC_COLUMNS as INTACT_QC_COLUMNS,
+    TARGET_REVIEW_CANDIDATE_COLUMNS as INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS,
+    build_intact_comparison_candidate_rows,
+    build_intact_envelope_group_rows,
     build_intact_reconstruction_qc,
+    build_target_review_candidate_rows,
 )
 from rna_masshunter.ms2_annotation import (
     MS2_FRAGMENT_EVIDENCE_COLUMNS,
@@ -58,6 +64,26 @@ INTACT_COLUMNS = [
     "Strict_Eligible_Rank",
     "Review_Eligible_Rank",
     "Dominant_Intact_Envelope_Flag",
+    "Supporting_Peak_IDs",
+    "Supporting_Peak_Count",
+    "Supporting_Scan_IDs",
+    "Supporting_RT_Values",
+    "Supporting_Charge_States",
+    "Exact_Peak_Set_Key",
+    "Exact_Duplicate_Group_ID",
+    "Exact_Duplicate_Count",
+    "Is_Exact_Duplicate_Representative",
+    "Intact_Envelope_Group_ID",
+    "Envelope_Group_Size",
+    "Group_Representative",
+    "Group_Ambiguity_Status",
+    "Comparison_Representative",
+    "Comparison_Representative_Reason",
+    "Comparison_Representative_Rank",
+    "Excluded_From_Comparison_Reason",
+    "Target_Review_Group_Representative",
+    "Target_Review_Rank",
+    "Dominant_Target_Review_Eligible_Flag",
     "Reconstruction_Status",
     "Reconstruction_Confidence",
     "Comparison_Ready_Strict",
@@ -257,6 +283,9 @@ SHEET_DESCRIPTIONS = {
     "Charge_state_peaks": "Peak and charge-state evidence supporting reconstructed masses.",
     "Intact_Reconstruction_QC": "Per-candidate intact mass reconstruction quality diagnostics.",
     "Intact_Reconstruction_Diag": "Run-level intact reconstruction QC settings, status counts, and limiting reasons.",
+    "Intact_Envelope_Groups": "Grouped intact envelope candidates and selected group representatives.",
+    "Intact_Comparison_Candidates": "Group representative intact candidates suitable for condition comparison.",
+    "Target_Review_Candidates": "Optional target review range candidates when configured.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
@@ -614,6 +643,9 @@ def write_excel_report(
         config.reconstruction or {},
         reconstruction_enabled=reconstruction_enabled,
     )
+    intact_group_rows = build_intact_envelope_group_rows(intact_qc_rows)
+    intact_comparison_rows = build_intact_comparison_candidate_rows(intact_qc_rows)
+    intact_target_review_rows = build_target_review_candidate_rows(intact_qc_rows)
 
     intact_rows = []
     for item in intact_results:
@@ -638,6 +670,26 @@ def write_excel_report(
                 "Strict_Eligible_Rank": raw.get("strict_eligible_rank"),
                 "Review_Eligible_Rank": raw.get("review_eligible_rank"),
                 "Dominant_Intact_Envelope_Flag": raw.get("dominant_intact_envelope_flag"),
+                "Supporting_Peak_IDs": raw.get("supporting_peak_ids"),
+                "Supporting_Peak_Count": raw.get("supporting_peak_count"),
+                "Supporting_Scan_IDs": raw.get("supporting_scan_ids"),
+                "Supporting_RT_Values": raw.get("supporting_rt_values"),
+                "Supporting_Charge_States": raw.get("supporting_charge_states"),
+                "Exact_Peak_Set_Key": raw.get("exact_peak_set_key"),
+                "Exact_Duplicate_Group_ID": raw.get("exact_duplicate_group_id"),
+                "Exact_Duplicate_Count": raw.get("exact_duplicate_count"),
+                "Is_Exact_Duplicate_Representative": raw.get("is_exact_duplicate_representative"),
+                "Intact_Envelope_Group_ID": raw.get("intact_envelope_group_id"),
+                "Envelope_Group_Size": raw.get("envelope_group_size"),
+                "Group_Representative": raw.get("group_representative"),
+                "Group_Ambiguity_Status": raw.get("group_ambiguity_status"),
+                "Comparison_Representative": raw.get("comparison_representative"),
+                "Comparison_Representative_Reason": raw.get("comparison_representative_reason"),
+                "Comparison_Representative_Rank": raw.get("comparison_representative_rank"),
+                "Excluded_From_Comparison_Reason": raw.get("excluded_from_comparison_reason"),
+                "Target_Review_Group_Representative": raw.get("target_review_group_representative"),
+                "Target_Review_Rank": raw.get("target_review_rank"),
+                "Dominant_Target_Review_Eligible_Flag": raw.get("dominant_target_review_eligible_flag"),
                 "Reconstruction_Status": raw.get("reconstruction_status"),
                 "Reconstruction_Confidence": raw.get("reconstruction_confidence"),
                 "Comparison_Ready_Strict": raw.get("comparison_ready_strict"),
@@ -743,6 +795,9 @@ def write_excel_report(
     intact_qc_sheets = {
         "Intact_Reconstruction_QC": pd.DataFrame(intact_qc_rows, columns=INTACT_QC_COLUMNS),
         "Intact_Reconstruction_Diag": pd.DataFrame(intact_diagnostic_rows, columns=INTACT_DIAGNOSTIC_COLUMNS),
+        "Intact_Envelope_Groups": pd.DataFrame(intact_group_rows, columns=INTACT_GROUP_COLUMNS),
+        "Intact_Comparison_Candidates": pd.DataFrame(intact_comparison_rows, columns=INTACT_COMPARISON_CANDIDATE_COLUMNS),
+        "Target_Review_Candidates": pd.DataFrame(intact_target_review_rows, columns=INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS),
     }
     if reconstruction_enabled:
         data_sheets = {

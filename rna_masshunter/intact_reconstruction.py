@@ -34,6 +34,14 @@ DEFAULT_INTACT_QC_CONFIG = {
     "reference_mass_tolerance_ppm": 20,
     "neutral_mass_range": {"enabled": True, "min_da": 20000, "max_da": 30000},
     "target_review_mass_range": {"enabled": False, "min_da": None, "max_da": None},
+    "envelope_grouping": {
+        "enabled": True,
+        "mass_tolerance_da": 1.0,
+        "rt_tolerance_min": 0.15,
+        "min_shared_peak_fraction": 0.5,
+        "min_shared_charge_fraction": 0.5,
+        "require_peak_overlap": True,
+    },
 }
 
 QC_COLUMNS = [
@@ -55,6 +63,32 @@ QC_COLUMNS = [
     "Strict_Eligible_Rank",
     "Review_Eligible_Rank",
     "Dominant_Intact_Envelope_Flag",
+    "Supporting_Peak_IDs",
+    "Supporting_Peak_Count",
+    "Supporting_Scan_IDs",
+    "Supporting_RT_Values",
+    "Supporting_Charge_States",
+    "Exact_Peak_Set_Key",
+    "Exact_Duplicate_Group_ID",
+    "Exact_Duplicate_Count",
+    "Is_Exact_Duplicate_Representative",
+    "Intact_Envelope_Group_ID",
+    "Envelope_Group_Size",
+    "Shared_Peak_Count_With_Representative",
+    "Shared_Peak_Fraction_With_Representative",
+    "Shared_Charge_Count_With_Representative",
+    "Shared_Charge_Fraction_With_Representative",
+    "Mass_Delta_To_Group_Representative_Da",
+    "RT_Delta_To_Group_Representative_Min",
+    "Group_Representative",
+    "Group_Ambiguity_Status",
+    "Comparison_Representative",
+    "Comparison_Representative_Reason",
+    "Comparison_Representative_Rank",
+    "Excluded_From_Comparison_Reason",
+    "Target_Review_Group_Representative",
+    "Target_Review_Rank",
+    "Dominant_Target_Review_Eligible_Flag",
     "Reconstruction_Status",
     "Reconstruction_Confidence",
     "Comparison_Ready_Strict",
@@ -109,6 +143,24 @@ DIAGNOSTIC_COLUMNS = [
     "Comparison_Ready_Strict_Count",
     "Comparison_Ready_Review_Count",
     "Comparison_Ready_Count",
+    "Exact_Duplicate_Group_Count",
+    "Exact_Duplicate_Candidate_Count",
+    "Intact_Envelope_Group_Count",
+    "Unique_Envelope_Group_Count",
+    "Overlapping_Envelope_Group_Count",
+    "Competing_Reconstruction_Group_Count",
+    "Comparison_Representative_Count",
+    "Target_Review_Representative_Count",
+    "Candidates_Removed_As_Exact_Duplicates",
+    "Candidates_Removed_As_Group_Nonrepresentatives",
+    "Dominant_Comparison_Representative_Mass",
+    "Dominant_Comparison_Representative_Intensity",
+    "Dominant_Target_Review_Representative_Mass",
+    "Dominant_Target_Review_Representative_Intensity",
+    "Grouping_Mass_Tolerance_Da",
+    "Grouping_RT_Tolerance_Min",
+    "Grouping_Min_Shared_Peak_Fraction",
+    "Grouping_Min_Shared_Charge_Fraction",
     "Trace_Only_Envelope_Count",
     "Noncontiguous_Envelope_Count",
     "RT_Inconsistent_Count",
@@ -162,6 +214,72 @@ DIAGNOSTIC_COLUMNS = [
     "Max_Competing_Envelopes",
     "Comparison_Ready_Statuses",
     "Notes",
+]
+
+GROUP_COLUMNS = [
+    "Intact_Envelope_Group_ID",
+    "Group_Size",
+    "Exact_Duplicate_Count",
+    "Representative_Cluster_ID",
+    "Representative_Mass",
+    "Representative_Status",
+    "Representative_QC_Score",
+    "Representative_Comparison_Ready",
+    "Representative_Total_Intensity",
+    "Representative_Charge_States",
+    "Representative_RT_Range",
+    "Group_Mass_Min",
+    "Group_Mass_Max",
+    "Group_Mass_Range",
+    "Group_RT_Min",
+    "Group_RT_Max",
+    "Group_Ambiguity_Status",
+    "Member_Cluster_IDs",
+    "Notes",
+]
+
+COMPARISON_CANDIDATE_COLUMNS = [
+    "Comparison_Representative_Rank",
+    "Cluster_ID",
+    "Reconstructed_Mass",
+    "Intact_Envelope_Group_ID",
+    "Reconstruction_Status",
+    "Comparison_Ready",
+    "Intact_Envelope_QC_Score",
+    "Total_Supporting_Intensity",
+    "Relative_Intact_Eligible_Intensity_Percent",
+    "Supporting_Charge_States",
+    "Charge_State_Continuity",
+    "RT_Range_Min",
+    "Envelope_Internal_Error_ppm",
+    "Neutral_Mass_SD",
+    "Neutral_Mass_Range",
+    "Unmodified_Theory_Delta_Da",
+    "Best_Reference_Label",
+    "Reference_Mass_Error_ppm",
+    "Target_Review_Rank",
+    "Limiting_Factors",
+]
+
+TARGET_REVIEW_CANDIDATE_COLUMNS = [
+    "Target_Review_Rank",
+    "Cluster_ID",
+    "Reconstructed_Mass",
+    "Intact_Envelope_Group_ID",
+    "Comparison_Representative_Rank",
+    "Reconstruction_Status",
+    "Comparison_Ready",
+    "Intact_Envelope_QC_Score",
+    "Total_Supporting_Intensity",
+    "Supporting_Charge_States",
+    "Charge_State_Continuity",
+    "RT_Range_Min",
+    "Envelope_Internal_Error_ppm",
+    "Neutral_Mass_SD",
+    "Neutral_Mass_Range",
+    "Best_Reference_Label",
+    "Reference_Mass_Error_ppm",
+    "Limiting_Factors",
 ]
 
 SEVERE_LIMITING_FACTORS = {
@@ -271,6 +389,17 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
             target_max,
             target_min,
         )
+    grouping = merged.get("envelope_grouping") or {}
+    if not isinstance(grouping, dict):
+        grouping = {}
+    merged["envelope_grouping"] = {
+        "enabled": _as_bool(grouping.get("enabled"), True),
+        "mass_tolerance_da": float(grouping.get("mass_tolerance_da") if grouping.get("mass_tolerance_da") is not None else 1.0),
+        "rt_tolerance_min": float(grouping.get("rt_tolerance_min") if grouping.get("rt_tolerance_min") is not None else 0.15),
+        "min_shared_peak_fraction": float(grouping.get("min_shared_peak_fraction") if grouping.get("min_shared_peak_fraction") is not None else 0.5),
+        "min_shared_charge_fraction": float(grouping.get("min_shared_charge_fraction") if grouping.get("min_shared_charge_fraction") is not None else 0.5),
+        "require_peak_overlap": _as_bool(grouping.get("require_peak_overlap"), True),
+    }
     return merged
 
 
@@ -466,6 +595,266 @@ def _class_summary(cluster_peaks: list[dict[str, Any]]) -> tuple[str, bool]:
     return "; ".join(classes), trace_only
 
 
+
+def _format_float(value: Any, digits: int) -> str:
+    try:
+        if value is None or value == "":
+            return "na"
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "na"
+
+
+def _supporting_peak_id(row: dict[str, Any]) -> str:
+    mz = _format_float(row.get("mz"), 6)
+    if row.get("Scan_ID") not in {None, ""}:
+        scan = str(row.get("Scan_ID"))
+    elif mz != "na":
+        scan = "scan_na"
+    else:
+        scan = str(row.get("Cluster_ID") or "scan_na")
+    rt = _format_float(row.get("RT"), 5)
+    charge = str(row.get("Charge") or "z_na")
+    return f"{scan}|rt={rt}|mz={mz}|z={charge}"
+
+
+def _shared_counts(row: dict[str, Any], representative: dict[str, Any]) -> tuple[int, float, int, float]:
+    peaks = set(row.get("_supporting_peak_id_set") or set())
+    rep_peaks = set(representative.get("_supporting_peak_id_set") or set())
+    charges = set(row.get("_supporting_charge_set") or set())
+    rep_charges = set(representative.get("_supporting_charge_set") or set())
+    shared_peak_count = len(peaks & rep_peaks)
+    shared_charge_count = len(charges & rep_charges)
+    peak_denominator = max(min(len(peaks), len(rep_peaks)), 1)
+    charge_denominator = max(min(len(charges), len(rep_charges)), 1)
+    return (
+        shared_peak_count,
+        shared_peak_count / peak_denominator,
+        shared_charge_count,
+        shared_charge_count / charge_denominator,
+    )
+
+
+def _representative_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        bool(row.get("Intact_Strict_Eligible")),
+        bool(row.get("Intact_Review_Eligible")),
+        bool(row.get("Comparison_Ready_Strict")),
+        bool(row.get("Comparison_Ready_Review")),
+        row.get("Charge_State_Continuity") == "contiguous",
+        _safe_float(row.get("Num_Supporting_Charge_States")),
+        _rt_rank_score(str(row.get("RT_Consistency") or "")),
+        -_safe_float(row.get("Envelope_Internal_Error_ppm"), 1_000_000.0),
+        -_safe_float(row.get("Neutral_Mass_SD"), 1_000_000.0),
+        -_safe_float(row.get("Neutral_Mass_Range"), 1_000_000.0),
+        _safe_float(row.get("Intact_Envelope_QC_Score")),
+        _safe_float(row.get("Total_Supporting_Intensity")),
+        str(row.get("Cluster_ID") or ""),
+    )
+
+
+class _DisjointSet:
+    def __init__(self, items: list[str]) -> None:
+        self.parent = {item: item for item in items}
+
+    def find(self, item: str) -> str:
+        parent = self.parent[item]
+        if parent != item:
+            self.parent[item] = self.find(parent)
+        return self.parent[item]
+
+    def union(self, left: str, right: str) -> None:
+        left_root = self.find(left)
+        right_root = self.find(right)
+        if left_root != right_root:
+            self.parent[right_root] = left_root
+
+
+def _rt_delta(left: dict[str, Any], right: dict[str, Any]) -> float:
+    return abs(_safe_float(left.get("RT_Mean")) - _safe_float(right.get("RT_Mean")))
+
+
+def _rows_overlap(left: dict[str, Any], right: dict[str, Any], grouping_config: dict[str, Any]) -> bool:
+    mass_delta = abs(_safe_float(left.get("Reconstructed_Mass")) - _safe_float(right.get("Reconstructed_Mass")))
+    if mass_delta > grouping_config["mass_tolerance_da"]:
+        return False
+    if _rt_delta(left, right) > grouping_config["rt_tolerance_min"]:
+        return False
+    _, peak_fraction, _, charge_fraction = _shared_counts(left, right)
+    peak_ok = peak_fraction >= grouping_config["min_shared_peak_fraction"]
+    charge_ok = charge_fraction >= grouping_config["min_shared_charge_fraction"]
+    if grouping_config.get("require_peak_overlap", True):
+        return peak_ok and charge_ok
+    return peak_ok or charge_ok
+
+
+def _comparison_exclusion_reason(row: dict[str, Any]) -> str:
+    if not row.get("Group_Representative"):
+        return "not_group_representative"
+    if not row.get("In_Neutral_Mass_Search_Range"):
+        return "outside_neutral_mass_search_range"
+    if row.get("Severe_Limiting_Factors"):
+        return "severe_limiting_factors"
+    if not (row.get("Intact_Strict_Eligible") or row.get("Intact_Review_Eligible")):
+        return "not_intact_eligible"
+    if not row.get("Comparison_Ready"):
+        return "not_comparison_ready"
+    return ""
+
+
+def apply_intact_envelope_grouping(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> None:
+    if not qc_rows:
+        return
+    exact_groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        key = str(row.get("Exact_Peak_Set_Key") or row.get("Cluster_ID") or "")
+        exact_groups.setdefault(key, []).append(row)
+
+    exact_representatives: list[dict[str, Any]] = []
+    for index, key in enumerate(sorted(exact_groups), start=1):
+        members = exact_groups[key]
+        representative = max(members, key=_representative_sort_key)
+        group_id = f"ED{index:05d}"
+        for member in members:
+            member["Exact_Duplicate_Group_ID"] = group_id
+            member["Exact_Duplicate_Count"] = len(members)
+            member["Is_Exact_Duplicate_Representative"] = member is representative
+        exact_representatives.append(representative)
+
+    grouping_config = qc_config["envelope_grouping"]
+    if grouping_config.get("enabled", True):
+        dsu = _DisjointSet([str(row.get("Cluster_ID")) for row in exact_representatives])
+        mass_width = max(grouping_config["mass_tolerance_da"], 0.000001)
+        rt_width = max(grouping_config["rt_tolerance_min"], 0.000001)
+        buckets: dict[tuple[int, int], list[dict[str, Any]]] = {}
+        for row in exact_representatives:
+            mass_bucket = int(_safe_float(row.get("Reconstructed_Mass")) // mass_width)
+            rt_bucket = int(_safe_float(row.get("RT_Mean")) // rt_width)
+            for mass_offset in (-1, 0, 1):
+                for rt_offset in (-1, 0, 1):
+                    for other in buckets.get((mass_bucket + mass_offset, rt_bucket + rt_offset), []):
+                        if _rows_overlap(row, other, grouping_config):
+                            dsu.union(str(row.get("Cluster_ID")), str(other.get("Cluster_ID")))
+            buckets.setdefault((mass_bucket, rt_bucket), []).append(row)
+        grouped_reps: dict[str, list[dict[str, Any]]] = {}
+        for row in exact_representatives:
+            grouped_reps.setdefault(dsu.find(str(row.get("Cluster_ID"))), []).append(row)
+    else:
+        grouped_reps = {str(row.get("Cluster_ID")): [row] for row in exact_representatives}
+
+    exact_reps_by_id = {str(row.get("Exact_Duplicate_Group_ID")): row for row in exact_representatives}
+    group_index = 1
+    for rep_key in sorted(grouped_reps, key=lambda key: min(str(row.get("Cluster_ID")) for row in grouped_reps[key])):
+        rep_rows = grouped_reps[rep_key]
+        member_rows: list[dict[str, Any]] = []
+        for rep in rep_rows:
+            exact_id = str(rep.get("Exact_Duplicate_Group_ID"))
+            member_rows.extend(exact_groups[str(rep.get("Exact_Peak_Set_Key") or rep.get("Cluster_ID") or "")])
+        group_representative = max(member_rows, key=_representative_sort_key)
+        group_id = f"IG{group_index:05d}"
+        group_index += 1
+        exact_count = sum(1 for row in member_rows if row.get("Exact_Duplicate_Count", 1) > 1)
+        distinct_exact_groups = {row.get("Exact_Duplicate_Group_ID") for row in member_rows}
+        if len(member_rows) == 1:
+            ambiguity = "unique"
+        elif len(distinct_exact_groups) == 1 and exact_count:
+            ambiguity = "exact_duplicates"
+        elif any(row.get("Comparison_Ready") for row in member_rows):
+            ambiguity = "overlapping_envelopes"
+        else:
+            ambiguity = "competing_reconstructions"
+        for member in member_rows:
+            shared_peak_count, shared_peak_fraction, shared_charge_count, shared_charge_fraction = _shared_counts(member, group_representative)
+            member["Intact_Envelope_Group_ID"] = group_id
+            member["Envelope_Group_Size"] = len(member_rows)
+            member["Shared_Peak_Count_With_Representative"] = shared_peak_count
+            member["Shared_Peak_Fraction_With_Representative"] = shared_peak_fraction
+            member["Shared_Charge_Count_With_Representative"] = shared_charge_count
+            member["Shared_Charge_Fraction_With_Representative"] = shared_charge_fraction
+            member["Mass_Delta_To_Group_Representative_Da"] = _safe_float(member.get("Reconstructed_Mass")) - _safe_float(group_representative.get("Reconstructed_Mass"))
+            member["RT_Delta_To_Group_Representative_Min"] = _safe_float(member.get("RT_Mean")) - _safe_float(group_representative.get("RT_Mean"))
+            member["Group_Representative"] = member is group_representative
+            member["Group_Ambiguity_Status"] = ambiguity
+            reason = _comparison_exclusion_reason(member)
+            member["Comparison_Representative"] = reason == ""
+            member["Comparison_Representative_Reason"] = "group_representative_intact_ready" if reason == "" else ""
+            member["Excluded_From_Comparison_Reason"] = reason
+            member["Comparison_Representative_Rank"] = None
+            member["Target_Review_Group_Representative"] = False
+            member["Target_Review_Rank"] = None
+            member["Dominant_Target_Review_Eligible_Flag"] = False
+
+    comparison_rows = sorted([row for row in qc_rows if row.get("Comparison_Representative")], key=_representative_sort_key, reverse=True)
+    for rank, row in enumerate(comparison_rows, start=1):
+        row["Comparison_Representative_Rank"] = rank
+    target_rows = sorted(
+        [row for row in comparison_rows if row.get("In_Target_Review_Mass_Range")],
+        key=_representative_sort_key,
+        reverse=True,
+    )
+    for rank, row in enumerate(target_rows, start=1):
+        row["Target_Review_Group_Representative"] = True
+        row["Target_Review_Rank"] = rank
+    if target_rows:
+        target_rows[0]["Dominant_Target_Review_Eligible_Flag"] = True
+
+
+def build_intact_envelope_group_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        group_id = str(row.get("Intact_Envelope_Group_ID") or "")
+        if group_id:
+            groups.setdefault(group_id, []).append(row)
+    rows = []
+    for group_id in sorted(groups):
+        members = groups[group_id]
+        representative = next((row for row in members if row.get("Group_Representative")), max(members, key=_representative_sort_key))
+        masses = [_safe_float(row.get("Reconstructed_Mass")) for row in members]
+        rt_values = []
+        for row in members:
+            if row.get("RT_Min") is not None:
+                rt_values.append(_safe_float(row.get("RT_Min")))
+            if row.get("RT_Max") is not None:
+                rt_values.append(_safe_float(row.get("RT_Max")))
+        exact_duplicate_count = sum(1 for row in members if _safe_float(row.get("Exact_Duplicate_Count"), 1) > 1)
+        rows.append({
+            "Intact_Envelope_Group_ID": group_id,
+            "Group_Size": len(members),
+            "Exact_Duplicate_Count": exact_duplicate_count,
+            "Representative_Cluster_ID": representative.get("Cluster_ID"),
+            "Representative_Mass": representative.get("Reconstructed_Mass"),
+            "Representative_Status": representative.get("Reconstruction_Status"),
+            "Representative_QC_Score": representative.get("Intact_Envelope_QC_Score"),
+            "Representative_Comparison_Ready": representative.get("Comparison_Ready"),
+            "Representative_Total_Intensity": representative.get("Total_Supporting_Intensity"),
+            "Representative_Charge_States": representative.get("Supporting_Charge_States"),
+            "Representative_RT_Range": representative.get("RT_Range_Min"),
+            "Group_Mass_Min": min(masses) if masses else None,
+            "Group_Mass_Max": max(masses) if masses else None,
+            "Group_Mass_Range": (max(masses) - min(masses)) if masses else None,
+            "Group_RT_Min": min(rt_values) if rt_values else None,
+            "Group_RT_Max": max(rt_values) if rt_values else None,
+            "Group_Ambiguity_Status": representative.get("Group_Ambiguity_Status"),
+            "Member_Cluster_IDs": "; ".join(str(row.get("Cluster_ID")) for row in members),
+            "Notes": "",
+        })
+    return rows
+
+
+def _candidate_projection(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
+    return {column: row.get(column) for column in columns}
+
+
+def build_intact_comparison_candidate_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = sorted([row for row in qc_rows if row.get("Comparison_Representative")], key=lambda row: _safe_float(row.get("Comparison_Representative_Rank")))
+    return [_candidate_projection(row, COMPARISON_CANDIDATE_COLUMNS) for row in rows]
+
+
+def build_target_review_candidate_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = sorted([row for row in qc_rows if row.get("Target_Review_Group_Representative")], key=lambda row: _safe_float(row.get("Target_Review_Rank")))
+    return [_candidate_projection(row, TARGET_REVIEW_CANDIDATE_COLUMNS) for row in rows]
+
+
 def build_intact_reconstruction_qc(
     candidates: list[IntactMassCandidate],
     charge_state_peaks: list[dict[str, Any]],
@@ -482,7 +871,15 @@ def build_intact_reconstruction_qc(
     for candidate in candidates:
         cluster_id = candidate.cluster_id or ""
         cluster_peaks = peaks_by_cluster.get(cluster_id, [])
+        supporting_peak_ids = sorted({_supporting_peak_id(row) for row in cluster_peaks})
+        supporting_scan_ids = sorted({str(row.get("Scan_ID")) for row in cluster_peaks if row.get("Scan_ID") not in {None, ""}})
+        supporting_rt_values = []
+        for row in cluster_peaks:
+            if row.get("RT") is not None and row.get("RT") != "":
+                supporting_rt_values.append(_safe_float(row.get("RT")))
         charges = sorted({int(charge) for charge in candidate.charge_states})
+        supporting_charge_states = sorted({int(row.get("Charge")) for row in cluster_peaks if row.get("Charge") is not None} or set(charges))
+        exact_peak_set_key = ";".join(supporting_peak_ids) if supporting_peak_ids else f"cluster:{cluster_id}"
         neutral_masses = [float(row.get("Neutral_Mass")) for row in cluster_peaks if row.get("Neutral_Mass") is not None]
         if not neutral_masses and candidate.observed_mass is not None:
             neutral_masses = [float(candidate.observed_mass)]
@@ -628,6 +1025,11 @@ def build_intact_reconstruction_qc(
         candidate.envelope_qc_eligible = envelope_qc_eligible
         candidate.intact_review_eligible = intact_review_eligible
         candidate.intact_strict_eligible = intact_strict_eligible
+        candidate.supporting_peak_ids = "; ".join(supporting_peak_ids)
+        candidate.supporting_scan_ids = "; ".join(supporting_scan_ids)
+        candidate.supporting_rt_values = "; ".join(f"{value:.5f}" for value in supporting_rt_values)
+        candidate.supporting_charge_states = "; ".join(map(str, supporting_charge_states))
+        candidate.exact_peak_set_key = exact_peak_set_key
         candidate.rt_min = rt_min
         candidate.rt_max = rt_max
         candidate.rt_mean = rt_mean
@@ -669,6 +1071,34 @@ def build_intact_reconstruction_qc(
             "Strict_Eligible_Rank": None,
             "Review_Eligible_Rank": None,
             "Dominant_Intact_Envelope_Flag": False,
+            "Supporting_Peak_IDs": "; ".join(supporting_peak_ids),
+            "Supporting_Peak_Count": len(supporting_peak_ids) or len(cluster_peaks),
+            "Supporting_Scan_IDs": "; ".join(supporting_scan_ids),
+            "Supporting_RT_Values": "; ".join(f"{value:.5f}" for value in supporting_rt_values),
+            "Supporting_Charge_States": "; ".join(map(str, supporting_charge_states)),
+            "Exact_Peak_Set_Key": exact_peak_set_key,
+            "Exact_Duplicate_Group_ID": "",
+            "Exact_Duplicate_Count": 1,
+            "Is_Exact_Duplicate_Representative": True,
+            "Intact_Envelope_Group_ID": "",
+            "Envelope_Group_Size": 1,
+            "Shared_Peak_Count_With_Representative": 0,
+            "Shared_Peak_Fraction_With_Representative": 0.0,
+            "Shared_Charge_Count_With_Representative": 0,
+            "Shared_Charge_Fraction_With_Representative": 0.0,
+            "Mass_Delta_To_Group_Representative_Da": 0.0,
+            "RT_Delta_To_Group_Representative_Min": 0.0,
+            "Group_Representative": True,
+            "Group_Ambiguity_Status": "unique",
+            "Comparison_Representative": False,
+            "Comparison_Representative_Reason": "",
+            "Comparison_Representative_Rank": None,
+            "Excluded_From_Comparison_Reason": "not_grouped",
+            "Target_Review_Group_Representative": False,
+            "Target_Review_Rank": None,
+            "Dominant_Target_Review_Eligible_Flag": False,
+            "_supporting_peak_id_set": set(supporting_peak_ids),
+            "_supporting_charge_set": set(supporting_charge_states),
             "Reconstruction_Status": status,
             "Reconstruction_Confidence": confidence,
             "Comparison_Ready_Strict": comparison_ready_strict,
@@ -733,6 +1163,8 @@ def build_intact_reconstruction_qc(
     if dominant_eligible is not None:
         dominant_eligible["Dominant_Intact_Envelope_Flag"] = True
 
+    apply_intact_envelope_grouping(qc_rows, qc_config)
+
     candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
     for row in qc_rows:
         candidate = candidates_by_cluster.get(str(row.get("Cluster_ID") or ""))
@@ -746,6 +1178,20 @@ def build_intact_reconstruction_qc(
         candidate.strict_eligible_rank = row["Strict_Eligible_Rank"]
         candidate.review_eligible_rank = row["Review_Eligible_Rank"]
         candidate.dominant_intact_envelope_flag = row["Dominant_Intact_Envelope_Flag"]
+        candidate.exact_duplicate_group_id = row["Exact_Duplicate_Group_ID"]
+        candidate.exact_duplicate_count = row["Exact_Duplicate_Count"]
+        candidate.is_exact_duplicate_representative = row["Is_Exact_Duplicate_Representative"]
+        candidate.intact_envelope_group_id = row["Intact_Envelope_Group_ID"]
+        candidate.envelope_group_size = row["Envelope_Group_Size"]
+        candidate.group_representative = row["Group_Representative"]
+        candidate.group_ambiguity_status = row["Group_Ambiguity_Status"]
+        candidate.comparison_representative = row["Comparison_Representative"]
+        candidate.comparison_representative_reason = row["Comparison_Representative_Reason"]
+        candidate.comparison_representative_rank = row["Comparison_Representative_Rank"]
+        candidate.excluded_from_comparison_reason = row["Excluded_From_Comparison_Reason"]
+        candidate.target_review_group_representative = row["Target_Review_Group_Representative"]
+        candidate.target_review_rank = row["Target_Review_Rank"]
+        candidate.dominant_target_review_eligible_flag = row["Dominant_Target_Review_Eligible_Flag"]
 
 
     diagnostic_rows = build_intact_reconstruction_diagnostics(qc_rows, reconstruction_config, reconstruction_enabled)
@@ -783,6 +1229,23 @@ def build_intact_reconstruction_diagnostics(
     dominant_review = _dominant_row(review_rows)
     dominant_eligible = dominant_strict or dominant_review
     target_review_rows = [row for row in qc_rows if row.get("In_Target_Review_Mass_Range")]
+    exact_duplicate_group_ids = {
+        row.get("Exact_Duplicate_Group_ID")
+        for row in qc_rows
+        if row.get("Exact_Duplicate_Group_ID") and _safe_float(row.get("Exact_Duplicate_Count"), 1) > 1
+    }
+    duplicate_candidate_count = sum(1 for row in qc_rows if _safe_float(row.get("Exact_Duplicate_Count"), 1) > 1)
+    group_ids = {row.get("Intact_Envelope_Group_ID") for row in qc_rows if row.get("Intact_Envelope_Group_ID")}
+    ambiguity_counts: dict[str, int] = {}
+    for row in qc_rows:
+        if row.get("Group_Representative"):
+            status = str(row.get("Group_Ambiguity_Status") or "unique")
+            ambiguity_counts[status] = ambiguity_counts.get(status, 0) + 1
+    comparison_reps = [row for row in qc_rows if row.get("Comparison_Representative")]
+    target_review_reps = [row for row in qc_rows if row.get("Target_Review_Group_Representative")]
+    dominant_comparison = comparison_reps[0] if comparison_reps else {}
+    dominant_target = target_review_reps[0] if target_review_reps else {}
+    grouping_config = qc_config["envelope_grouping"]
     references = qc_config.get("reference_masses") or []
     reference_summary = "; ".join(f"{item['label']}={item['mass_da']}" for item in references) or "not_configured"
     rt_settings = (
@@ -801,6 +1264,24 @@ def build_intact_reconstruction_diagnostics(
         "Comparison_Ready_Strict_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready_Strict")),
         "Comparison_Ready_Review_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready_Review")),
         "Comparison_Ready_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready")),
+        "Exact_Duplicate_Group_Count": len(exact_duplicate_group_ids),
+        "Exact_Duplicate_Candidate_Count": duplicate_candidate_count,
+        "Intact_Envelope_Group_Count": len(group_ids),
+        "Unique_Envelope_Group_Count": ambiguity_counts.get("unique", 0),
+        "Overlapping_Envelope_Group_Count": ambiguity_counts.get("overlapping_envelopes", 0) + ambiguity_counts.get("exact_duplicates", 0),
+        "Competing_Reconstruction_Group_Count": ambiguity_counts.get("competing_reconstructions", 0) + ambiguity_counts.get("unresolved_group", 0),
+        "Comparison_Representative_Count": len(comparison_reps),
+        "Target_Review_Representative_Count": len(target_review_reps),
+        "Candidates_Removed_As_Exact_Duplicates": sum(1 for row in qc_rows if not row.get("Is_Exact_Duplicate_Representative")),
+        "Candidates_Removed_As_Group_Nonrepresentatives": sum(1 for row in qc_rows if not row.get("Group_Representative")),
+        "Dominant_Comparison_Representative_Mass": dominant_comparison.get("Reconstructed_Mass"),
+        "Dominant_Comparison_Representative_Intensity": dominant_comparison.get("Total_Supporting_Intensity"),
+        "Dominant_Target_Review_Representative_Mass": dominant_target.get("Reconstructed_Mass"),
+        "Dominant_Target_Review_Representative_Intensity": dominant_target.get("Total_Supporting_Intensity"),
+        "Grouping_Mass_Tolerance_Da": grouping_config["mass_tolerance_da"],
+        "Grouping_RT_Tolerance_Min": grouping_config["rt_tolerance_min"],
+        "Grouping_Min_Shared_Peak_Fraction": grouping_config["min_shared_peak_fraction"],
+        "Grouping_Min_Shared_Charge_Fraction": grouping_config["min_shared_charge_fraction"],
         "Trace_Only_Envelope_Count": sum(1 for row in qc_rows if row.get("Trace_Only_Envelope")),
         "Noncontiguous_Envelope_Count": sum(1 for row in qc_rows if row.get("Charge_State_Continuity") == "non_contiguous"),
         "RT_Inconsistent_Count": sum(1 for row in qc_rows if row.get("RT_Consistency") == "inconsistent"),
@@ -853,7 +1334,7 @@ def build_intact_reconstruction_diagnostics(
         "Min_Relative_Envelope_Intensity_Percent_For_Review": qc_config["min_relative_envelope_intensity_percent_for_review"],
         "Max_Competing_Envelopes": qc_config["max_competing_envelopes"],
         "Comparison_Ready_Statuses": "; ".join(map(str, qc_config["comparison_ready_statuses"])),
-        "Notes": "Reliable emphasizes charge-envelope internal quality, RT consistency, and signal support. Comparison_Ready requires intact eligibility, not only neutral mass range membership. Neutral mass search range is the absolute intact reconstruction range; default is 20000-30000 Da. Target review mass range is optional prioritization only. Reference mass matches do not confirm modification identity. Raw in-range dominant is intensity-only; Dominant_Intact_Eligible uses QC eligibility and ranking.",
+        "Notes": "Reliable emphasizes charge-envelope internal quality, RT consistency, and signal support. Comparison_Ready requires intact eligibility, not only neutral mass range membership. Envelope grouping collapses exact duplicate and overlapping reconstruction candidates before comparison representative export. Reference masses and target review range are annotations only and do not affect global grouping or representative selection.",
     }]
 
 

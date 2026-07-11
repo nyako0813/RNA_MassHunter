@@ -512,6 +512,128 @@ def test_target_review_range_enabled_without_bounds_is_not_configured_and_non_fi
     assert diag["Target_Review_Candidate_Count"] == 0
 
 
+def _generic_config(**intact_overrides):
+    intact = {
+        **BASE_QC_CONFIG["intact_reconstruction"],
+        "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000},
+    }
+    intact.update(intact_overrides)
+    return {"intact_reconstruction": intact}
+
+
+def test_exact_duplicate_peak_set_forms_group_and_one_representative():
+    candidates = [
+        _candidate("DUP", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0),
+        _candidate("DUP", [6, 7, 8], mass=15000.1, intensity=35000, theoretical_mass=12000.0),
+    ]
+    peaks = _peaks("DUP", [6, 7, 8], masses=[14999.99, 15000.0, 15000.01], intensity=10000)
+    rows, diag = _qc(candidates, peaks, config=_generic_config())
+    assert {row["Exact_Duplicate_Group_ID"] for row in rows} == {"ED00001"}
+    assert all(row["Exact_Duplicate_Count"] == 2 for row in rows)
+    assert sum(1 for row in rows if row["Is_Exact_Duplicate_Representative"]) == 1
+    assert len({row["Intact_Envelope_Group_ID"] for row in rows}) == 1
+    assert sum(1 for row in rows if row["Comparison_Representative"]) == 1
+    assert diag["Exact_Duplicate_Group_Count"] == 1
+    assert diag["Exact_Duplicate_Candidate_Count"] == 2
+    assert diag["Candidates_Removed_As_Exact_Duplicates"] == 1
+
+
+def test_qc_eligible_candidate_beats_high_intensity_bad_group_member():
+    good = _candidate("GGOOD", [6, 7, 8], mass=15000.0, intensity=20000, theoretical_mass=12000.0)
+    bad = _candidate("GBAD", [6, 7, 8], mass=15000.2, intensity=90000, theoretical_mass=12000.0)
+    shared = [
+        {"Cluster_ID": "GGOOD", "Charge": 6, "Neutral_Mass": 14999.99, "Intensity": 5000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "GGOOD", "Charge": 7, "Neutral_Mass": 15000.0, "Intensity": 5000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "GGOOD", "Charge": 8, "Neutral_Mass": 15000.01, "Intensity": 5000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "GBAD", "Charge": 6, "Neutral_Mass": 14998.5, "Intensity": 30000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "GBAD", "Charge": 7, "Neutral_Mass": 15000.5, "Intensity": 30000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "GBAD", "Charge": 8, "Neutral_Mass": 15002.0, "Intensity": 30000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+    ]
+    rows, _ = _qc([good, bad], shared, config=_generic_config())
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["GGOOD"]["Group_Representative"] is True
+    assert by_cluster["GBAD"]["Group_Representative"] is False
+    assert by_cluster["GGOOD"]["Comparison_Representative"] is True
+
+
+def test_nearby_shared_peak_candidates_group_but_no_shared_peak_stays_separate():
+    a = _candidate("A", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    b = _candidate("B", [6, 7, 8], mass=15000.4, intensity=25000, theoretical_mass=12000.0)
+    c = _candidate("C", [6, 7, 8], mass=15000.5, intensity=25000, theoretical_mass=12000.0)
+    peaks = [
+        {"Cluster_ID": "A", "Charge": 6, "Neutral_Mass": 14999.99, "Intensity": 10000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "A", "Charge": 7, "Neutral_Mass": 15000.0, "Intensity": 10000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "A", "Charge": 8, "Neutral_Mass": 15000.01, "Intensity": 10000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "B", "Charge": 6, "Neutral_Mass": 15000.39, "Intensity": 9000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "B", "Charge": 7, "Neutral_Mass": 15000.4, "Intensity": 9000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "B", "Charge": 8, "Neutral_Mass": 15000.41, "Intensity": 9000, "RT": 5.05, "Peak_Tier": "Major", "mz": 1875.5, "Scan_ID": "s4"},
+        {"Cluster_ID": "C", "Charge": 6, "Neutral_Mass": 15000.49, "Intensity": 9000, "RT": 5.01, "Peak_Tier": "Major", "mz": 2501.0, "Scan_ID": "u1"},
+        {"Cluster_ID": "C", "Charge": 7, "Neutral_Mass": 15000.5, "Intensity": 9000, "RT": 5.03, "Peak_Tier": "Major", "mz": 2143.0, "Scan_ID": "u2"},
+        {"Cluster_ID": "C", "Charge": 8, "Neutral_Mass": 15000.51, "Intensity": 9000, "RT": 5.05, "Peak_Tier": "Major", "mz": 1876.0, "Scan_ID": "u3"},
+    ]
+    rows, _ = _qc([a, b, c], peaks, config=_generic_config())
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["A"]["Intact_Envelope_Group_ID"] == by_cluster["B"]["Intact_Envelope_Group_ID"]
+    assert by_cluster["A"]["Intact_Envelope_Group_ID"] != by_cluster["C"]["Intact_Envelope_Group_ID"]
+
+
+def test_rt_shared_peak_and_shared_charge_thresholds_control_grouping():
+    base = _candidate("BASE", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    far_rt = _candidate("FAR", [6, 7, 8], mass=15000.2, intensity=30000, theoretical_mass=12000.0)
+    low_charge = _candidate("LOWCHG", [6, 9, 10], mass=15000.3, intensity=30000, theoretical_mass=12000.0)
+    peaks = [
+        {"Cluster_ID": "BASE", "Charge": 6, "Neutral_Mass": 14999.99, "Intensity": 10000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "BASE", "Charge": 7, "Neutral_Mass": 15000.0, "Intensity": 10000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "BASE", "Charge": 8, "Neutral_Mass": 15000.01, "Intensity": 10000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "FAR", "Charge": 6, "Neutral_Mass": 15000.19, "Intensity": 10000, "RT": 6.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "FAR", "Charge": 7, "Neutral_Mass": 15000.2, "Intensity": 10000, "RT": 6.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "FAR", "Charge": 8, "Neutral_Mass": 15000.21, "Intensity": 10000, "RT": 6.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "LOWCHG", "Charge": 6, "Neutral_Mass": 15000.29, "Intensity": 10000, "RT": 5.01, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "LOWCHG", "Charge": 9, "Neutral_Mass": 15000.3, "Intensity": 10000, "RT": 5.03, "Peak_Tier": "Major", "mz": 1666.0, "Scan_ID": "s9"},
+        {"Cluster_ID": "LOWCHG", "Charge": 10, "Neutral_Mass": 15000.31, "Intensity": 10000, "RT": 5.05, "Peak_Tier": "Major", "mz": 1500.0, "Scan_ID": "s10"},
+    ]
+    rows, _ = _qc([base, far_rt, low_charge], peaks, config=_generic_config(envelope_grouping={"enabled": True, "mass_tolerance_da": 1.0, "rt_tolerance_min": 0.15, "min_shared_peak_fraction": 0.5, "min_shared_charge_fraction": 0.5, "require_peak_overlap": True}))
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["BASE"]["Intact_Envelope_Group_ID"] != by_cluster["FAR"]["Intact_Envelope_Group_ID"]
+    assert by_cluster["BASE"]["Intact_Envelope_Group_ID"] != by_cluster["LOWCHG"]["Intact_Envelope_Group_ID"]
+
+
+def test_reference_and_target_do_not_change_global_group_representative():
+    candidates = [
+        _candidate("A", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0),
+        _candidate("B", [6, 8], mass=15000.2, intensity=50000, theoretical_mass=12000.0),
+    ]
+    peaks = _peaks("A", [6, 7, 8], masses=[14999.99, 15000.0, 15000.01], intensity=10000) + _peaks("B", [6, 8], masses=[15000.19, 15000.21], intensity=25000)
+    base_rows, _ = _qc(candidates, peaks, config=_generic_config())
+    ref_target_rows, _ = _qc(
+        [_candidate("A", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0), _candidate("B", [6, 8], mass=15000.2, intensity=50000, theoretical_mass=12000.0)],
+        peaks,
+        config=_generic_config(reference_masses=[{"label": "external", "mass_da": 15000.2}], target_review_mass_range={"enabled": True, "min_da": 14999, "max_da": 15001}),
+    )
+    base_rep = sorted(row["Cluster_ID"] for row in base_rows if row["Group_Representative"])
+    ref_target_rep = sorted(row["Cluster_ID"] for row in ref_target_rows if row["Group_Representative"])
+    assert ref_target_rep == base_rep
+
+
+def test_grouping_disabled_keeps_existing_qc_and_singleton_groups():
+    candidates = [_candidate(f"C{i}", [6, 7, 8], mass=15000.0 + i, intensity=10000 + i, theoretical_mass=12000.0) for i in range(3)]
+    peaks = []
+    for i in range(3):
+        peaks.extend(_peaks(f"C{i}", [6, 7, 8], masses=[15000.0 + i - 0.01, 15000.0 + i, 15000.0 + i + 0.01], intensity=3000))
+    rows, diag = _qc(candidates, peaks, config=_generic_config(envelope_grouping={"enabled": False}))
+    assert len({row["Intact_Envelope_Group_ID"] for row in rows}) == 3
+    assert all(row["Envelope_Group_Size"] == 1 for row in rows)
+    assert diag["Intact_Envelope_Group_Count"] == 3
+
+
+def test_grouping_performance_for_ten_thousand_candidates():
+    candidates = [_candidate(f"P{i}", [6, 7, 8], mass=10000.0 + i * 2.0, intensity=1000.0, theoretical_mass=9000.0) for i in range(10000)]
+    rows, diag = _qc(candidates, [], config=_generic_config(envelope_grouping={"enabled": True, "mass_tolerance_da": 0.5, "rt_tolerance_min": 0.1}))
+    assert len(rows) == 10000
+    assert diag["Intact_Envelope_Group_Count"] == 10000
+
+
+
 def _excel_config(reconstruction):
     return SimpleNamespace(
         project={"name": "test"},
@@ -626,7 +748,14 @@ def test_existing_excel_sheets_and_new_columns_are_present(tmp_path):
         assert "Intact_Strict_Eligible_Count" in diag_headers
         assert "Intact_Review_Eligible_Count" in diag_headers
         assert "Target_Review_Candidate_Count" in diag_headers
+        assert "Exact_Duplicate_Group_Count" in diag_headers
+        assert "Intact_Envelope_Group_Count" in diag_headers
+        assert "Comparison_Representative_Count" in diag_headers
+        assert "Dominant_Comparison_Representative_Mass" in diag_headers
         assert "Total_Candidates_In_Mass_Range" in diag_headers
         assert "Total_Candidates_Outside_Mass_Range" in diag_headers
+        assert "Intact_Envelope_Groups" in workbook.sheetnames
+        assert "Intact_Comparison_Candidates" in workbook.sheetnames
+        assert "Target_Review_Candidates" in workbook.sheetnames
     finally:
         workbook.close()
