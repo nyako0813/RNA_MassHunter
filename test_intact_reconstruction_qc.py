@@ -5,8 +5,9 @@ from openpyxl import load_workbook
 
 from rna_masshunter.config import validate_config
 from rna_masshunter.excel_report import write_excel_report
-from rna_masshunter.intact_reconstruction import build_intact_reconstruction_qc, build_reconstructed_mass_spectrum_rows
-from rna_masshunter.models import IntactMassCandidate, RunConfig
+from rna_masshunter.intact_reconstruction import build_intact_reconstruction_qc, build_reconstructed_mass_spectrum_rows, reconstruct_intact_masses
+from rna_masshunter.masses import mz_from_neutral_mass
+from rna_masshunter.models import IntactMassCandidate, Peak, PeakTierResult, RunConfig
 
 
 UNMODIFIED_MASS = 25082.3
@@ -870,3 +871,211 @@ def test_invalid_reconstructed_spectrum_intensity_method_is_rejected():
     )
     with pytest.raises(ValueError, match="intensity_method must be one of"):
         validate_config(config)
+
+
+
+def _rt_config(**overrides):
+    intact = {
+        "engine": "rt_localized",
+        "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000},
+        "rt_localized": {
+            "rt_window_min": 0.10,
+            "rt_step_min": 0.05,
+            "min_scans_per_window": 1,
+            "peak_aggregation": "max",
+            "mz_merge_tolerance_ppm": 10,
+            "adjacent_charge_mz_tolerance_ppm": 20,
+            "max_charge_gap": 1,
+            "min_charge_states": 2,
+            "min_consecutive_charge_states": 2,
+            "require_consecutive_for_candidate": True,
+            "neutral_mass_estimator": "intensity_weighted_mean",
+            "merge_across_windows": {"enabled": True, "mass_tolerance_ppm": 10, "rt_overlap_required": True, "min_shared_charge_fraction": 0.5},
+        },
+    }
+    for key, value in overrides.items():
+        if key == "rt_localized":
+            intact["rt_localized"].update(value)
+        else:
+            intact[key] = value
+    return {"enabled": True, "min_charge": 6, "max_charge": 9, "min_charge_states": 2, "intact_reconstruction": intact}
+
+
+def _rt_peak(mass, charge, intensity=1000.0, rt=5.0, tier="Major", scan=None):
+    return Peak(mz=mz_from_neutral_mass(mass, charge, "negative"), intensity=intensity, rt=rt, scan_id=scan or f"s{charge}_{rt}", tier=tier)
+
+
+def _run_rt(peaks, below=None, config=None):
+    tier = PeakTierResult(major=peaks, below_threshold=below or [])
+    return reconstruct_intact_masses(tier, config or _rt_config(), {"polarity": "negative"}, theoretical_mass=None)
+
+
+def test_rt_localized_reconstructs_same_window_consecutive_charges():
+    candidates, charge_peaks, meta = _run_rt([_rt_peak(15000.0, z, intensity=1000 * z, rt=5.0 + z * 0.005) for z in [6, 7, 8]])
+    assert len(candidates) == 1
+    assert abs(candidates[0].observed_mass - 15000.0) < 0.01
+    assert candidates[0].charge_states == [6, 7, 8]
+    assert candidates[0].reconstruction_engine == "rt_localized"
+    assert candidates[0].longest_consecutive_charge_run == 3
+    assert candidates[0].comparison_ready is True
+    assert meta["stats"]["Num_RT_Windows"] == 1
+    assert meta["stats"]["Num_Candidates_After_RT_Window_Merge"] == 1
+    assert len(charge_peaks) == 3
+
+
+def test_rt_localized_does_not_mix_distant_rt_peaks():
+    peaks = [_rt_peak(15000.0, 6, rt=5.0), _rt_peak(15000.0, 7, rt=8.0)]
+    candidates, _, _ = _run_rt(peaks)
+    assert candidates == []
+
+
+def test_rt_localized_adjacent_charge_prediction_finds_neighbor():
+    candidates, _, meta = _run_rt([_rt_peak(15000.0, 6, rt=5.0), _rt_peak(15000.0, 7, rt=5.02)])
+    assert len(candidates) == 1
+    assert candidates[0].charge_states == [6, 7]
+    assert candidates[0].charge_coverage_fraction >= 2 / 3
+    assert meta["stats"]["Num_Anchor_Peaks_Evaluated"] >= 2
+
+
+def test_rt_localized_charge_gap_and_missing_charge_no_peak():
+    config = _rt_config(rt_localized={"max_charge_gap": 2, "require_consecutive_for_candidate": False})
+    candidates, _, meta = _run_rt([_rt_peak(15000.0, 6, rt=5.0), _rt_peak(15000.0, 8, rt=5.02)], config=config)
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.charge_gap_count == 1
+    assert candidate.missing_charge_states == "7"
+    assert candidate.missing_charge_predicted_mz
+    missing = meta["missing_charge_diagnostics"]
+    assert missing[0]["Missing_Charge"] == 7
+    assert missing[0]["Detection_Status"] == "no_peak_in_tolerance"
+
+
+def test_rt_localized_missing_charge_weak_peak_is_distinguished():
+    config = _rt_config(rt_localized={"max_charge_gap": 2, "require_consecutive_for_candidate": False})
+    weak = [_rt_peak(15000.0, 7, intensity=10.0, rt=5.01, tier="BelowThreshold")]
+    candidates, _, meta = _run_rt([_rt_peak(15000.0, 6, rt=5.0), _rt_peak(15000.0, 8, rt=5.02)], below=weak, config=config)
+    assert len(candidates) == 1
+    missing = meta["missing_charge_diagnostics"]
+    assert missing[0]["Detection_Status"] == "below_intensity_threshold"
+    assert missing[0]["Nearest_Intensity"] == 10.0
+    assert meta["stats"]["Num_Missing_Charges_With_Weak_Peaks"] == 1
+
+
+def test_rt_localized_single_charge_candidates_are_filtered():
+    candidates, _, meta = _run_rt([_rt_peak(15000.0, 6, rt=5.0), _rt_peak(16000.0, 7, rt=5.0)])
+    assert candidates == []
+    assert meta["stats"]["Num_Raw_Envelope_Candidates"] > 0
+    assert meta["stats"]["Num_Candidates_After_Charge_Filter"] == 0
+
+
+def test_rt_localized_local_relative_intensity_and_weighted_mass():
+    mass = 15000.0
+    peaks = [_rt_peak(mass, 6, intensity=100.0, rt=5.0), _rt_peak(mass + 0.6, 7, intensity=900.0, rt=5.01)]
+    candidates, _, _ = _run_rt(peaks, config=_rt_config(rt_localized={"neutral_mass_estimator": "intensity_weighted_mean", "adjacent_charge_mz_tolerance_ppm": 100}))
+    assert len(candidates) == 1
+    expected = (mass * 100.0 + (mass + 0.6) * 900.0) / 1000.0
+    assert abs(candidates[0].observed_mass - expected) < 0.01
+    assert candidates[0].local_window_max_intensity == 900.0
+    assert round(candidates[0].local_relative_peak_intensity_percent, 1) in {11.1, 100.0}
+
+
+def test_rt_localized_median_estimator():
+    peaks = [_rt_peak(15000.0, 6, rt=5.0), _rt_peak(15001.0, 7, rt=5.01), _rt_peak(15010.0, 8, rt=5.02)]
+    candidates, _, _ = _run_rt(peaks, config=_rt_config(rt_localized={"neutral_mass_estimator": "median", "adjacent_charge_mz_tolerance_ppm": 1000}))
+    assert candidates
+    best = min(candidates, key=lambda candidate: abs(candidate.observed_mass - 15001.0))
+    assert abs(best.observed_mass - 15001.0) < 0.01
+    assert best.neutral_mass_estimator == "median"
+
+
+def test_rt_localized_merges_adjacent_windows_without_duplicate_intensity():
+    peaks = [_rt_peak(15000.0, 6, intensity=1000, rt=5.00, scan="s6"), _rt_peak(15000.0, 7, intensity=2000, rt=5.04, scan="s7")]
+    candidates, _, _ = _run_rt(peaks, config=_rt_config(rt_localized={"rt_window_min": 0.08, "rt_step_min": 0.04}))
+    assert len(candidates) == 1
+    assert candidates[0].merged_across_rt_windows is True
+    assert candidates[0].total_intensity == 3000.0
+
+
+def test_rt_localized_reference_and_target_do_not_change_generation():
+    peaks = [_rt_peak(15000.0, z, rt=5.0 + z * 0.005) for z in [6, 7, 8]]
+    base_candidates, _, _ = _run_rt(peaks)
+    ref_config = _rt_config(reference_masses=[{"label": "external", "mass_da": 15000.0}], target_review_mass_range={"enabled": True, "min_da": 14900, "max_da": 15100})
+    ref_candidates, _, _ = _run_rt(peaks, config=ref_config)
+    assert len(base_candidates) == len(ref_candidates) == 1
+    assert base_candidates[0].observed_mass == ref_candidates[0].observed_mass
+    assert base_candidates[0].charge_states == ref_candidates[0].charge_states
+
+
+def test_legacy_engine_is_maintained():
+    config = {"enabled": True, "min_charge": 6, "max_charge": 8, "min_charge_states": 2, "mass_cluster_tolerance_da": 1.0, "intact_reconstruction": {"engine": "legacy_cluster", "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000}}}
+    candidates, _, meta = reconstruct_intact_masses(PeakTierResult(major=[_rt_peak(15000.0, z, rt=5.0) for z in [6, 7]]), config, {"polarity": "negative"}, None)
+    assert candidates
+    assert all(candidate.reconstruction_engine == "legacy_cluster" for candidate in candidates)
+    assert meta["engine"] == "legacy_cluster"
+
+
+def test_rt_localized_outputs_to_reconstructed_mass_spectrum():
+    candidates, charge_peaks, _ = _run_rt([_rt_peak(15000.0, z, intensity=1000*z, rt=5.0) for z in [6, 7, 8]])
+    rows, _ = build_intact_reconstruction_qc(candidates, charge_peaks, _rt_config(), reconstruction_enabled=True)
+    spectrum = build_reconstructed_mass_spectrum_rows(rows, _rt_config())
+    assert len(spectrum) == 1
+    assert spectrum[0]["Reconstruction_Engine"] == "rt_localized"
+    assert abs(spectrum[0]["Reconstructed_Mass_Da"] - 15000.0) < 0.01
+
+
+def test_rt_localized_excel_sheets_are_present(tmp_path):
+    optional = {
+        "RT_Envelope_Diagnostics": [{"Cluster_ID": "RTL00001", "Reconstruction_Engine": "rt_localized"}],
+        "Missing_Charge_Diagnostics": [{"Cluster_ID": "RTL00001", "Missing_Charge": 7, "Detection_Status": "no_peak_in_tolerance"}],
+        "Intact_Engine_Comparison": [],
+    }
+    report = write_excel_report(
+        output_dir=tmp_path,
+        config=_excel_config({"enabled": True, **_rt_config()}),
+        diagnostics={},
+        intact_results=[],
+        charge_state_peaks=[],
+        warnings=[],
+        modifications=[],
+        rule_set={},
+        pathways=[],
+        theoretical_fragments=[],
+        fragment_ms1_matches=[],
+        known_modification_candidates=[],
+        known_modification_summary=[],
+        optional_results=optional,
+    )
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        assert "RT_Envelope_Diagnostics" in workbook.sheetnames
+        assert "Missing_Charge_Diagnostics" in workbook.sheetnames
+        assert "Intact_Engine_Comparison" in workbook.sheetnames
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+    finally:
+        workbook.close()
+
+
+def test_rt_localized_config_defaults_and_validation():
+    config = RunConfig(
+        analysis={"mode": "full"},
+        instrument={"polarity": "negative"},
+        input={},
+        sequence={"sequence": "ACG"},
+        reconstruction={"enabled": True, "intact_reconstruction": {"engine": "rt_localized", "rt_localized": {}}},
+        digestion={"enabled": True},
+        fragment_mapping={},
+        alkaline_phosphatase={},
+    )
+    validate_config(config)
+    bad = RunConfig(
+        analysis={"mode": "full"},
+        instrument={"polarity": "negative"},
+        input={},
+        sequence={"sequence": "ACG"},
+        reconstruction={"enabled": True, "intact_reconstruction": {"engine": "bad"}},
+        digestion={"enabled": True},
+        fragment_mapping={},
+        alkaline_phosphatase={},
+    )
+    with pytest.raises(ValueError, match="intact_reconstruction.engine"):
+        validate_config(bad)

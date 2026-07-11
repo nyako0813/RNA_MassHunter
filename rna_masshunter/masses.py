@@ -80,3 +80,10 @@ def neutral_mass_from_mz(mz: float, charge: int, polarity: str = "negative", pro
     if str(polarity).lower() == "negative":
         return float(mz) * z + z * proton_mass
     return float(mz) * z - z * proton_mass
+
+
+def mz_from_neutral_mass(neutral_mass: float, charge: int, polarity: str = "negative", proton_mass: float = PROTON_MASS) -> float:
+    z = abs(int(charge))
+    if str(polarity).lower() == "negative":
+        return (float(neutral_mass) - z * proton_mass) / z
+    return (float(neutral_mass) + z * proton_mass) / z

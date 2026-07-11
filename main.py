@@ -105,6 +105,7 @@ def main() -> None:
     tier_result = classify_peak_tiers([], config.peak_filtering, warnings=warnings)
     intact_results = []
     charge_state_peaks = []
+    intact_engine_artifacts = {}
 
     if mzml_path:
         diagnostics = run_mzml_diagnostics(mzml_path, logger, warnings)
@@ -181,7 +182,7 @@ def main() -> None:
 
     reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
     if reconstruction_enabled:
-        intact_results, charge_state_peaks = reconstruct_intact_masses(
+        intact_results, charge_state_peaks, intact_engine_artifacts = reconstruct_intact_masses(
             tier_result,
             config.reconstruction,
             config.instrument,
@@ -217,6 +218,12 @@ def main() -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "disabled_by_config", False, False, "modification_search.enabled=false")
 
     optional_results = {"Workflow_Summary": workflow_rows}
+    if intact_engine_artifacts.get("rt_envelope_diagnostics") is not None:
+        optional_results["RT_Envelope_Diagnostics"] = intact_engine_artifacts.get("rt_envelope_diagnostics", [])
+    if intact_engine_artifacts.get("missing_charge_diagnostics") is not None:
+        optional_results["Missing_Charge_Diagnostics"] = intact_engine_artifacts.get("missing_charge_diagnostics", [])
+    if intact_engine_artifacts.get("engine_comparison") is not None:
+        optional_results["Intact_Engine_Comparison"] = intact_engine_artifacts.get("engine_comparison", [])
     if intact_only:
         skipped_optional_steps = [
             ("MS2_annotation", _as_bool(config.ms2_annotation.get("enabled"), True)),

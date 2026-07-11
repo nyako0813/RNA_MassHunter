@@ -1,7 +1,9 @@
-from statistics import pstdev
+from bisect import bisect_left
+from statistics import median, pstdev
+from time import perf_counter
 from typing import Any
 
-from rna_masshunter.masses import neutral_mass_from_mz
+from rna_masshunter.masses import mz_from_neutral_mass, neutral_mass_from_mz
 from rna_masshunter.models import IntactMassCandidate, PeakTierResult
 
 
@@ -41,6 +43,29 @@ DEFAULT_INTACT_QC_CONFIG = {
         "min_shared_peak_fraction": 0.5,
         "min_shared_charge_fraction": 0.5,
         "require_peak_overlap": True,
+    },
+    "engine": "legacy_cluster",
+    "compare_with_legacy": False,
+    "rt_localized": {
+        "enabled": True,
+        "rt_window_min": 0.10,
+        "rt_step_min": 0.05,
+        "min_scans_per_window": 1,
+        "peak_aggregation": "max",
+        "mz_merge_tolerance_ppm": 10,
+        "adjacent_charge_mz_tolerance_ppm": 20,
+        "max_charge_gap": 1,
+        "min_charge_states": 2,
+        "min_consecutive_charge_states": 2,
+        "require_consecutive_for_candidate": True,
+        "min_local_relative_peak_intensity_percent": 0.1,
+        "neutral_mass_estimator": "intensity_weighted_mean",
+        "merge_across_windows": {
+            "enabled": True,
+            "mass_tolerance_ppm": 10,
+            "rt_overlap_required": True,
+            "min_shared_charge_fraction": 0.5,
+        },
     },
     "mass_spectrum_output": {
         "enabled": True,
@@ -100,6 +125,42 @@ QC_COLUMNS = [
     "Dominant_Target_Review_Eligible_Flag",
     "Reconstruction_Status",
     "Reconstruction_Confidence",
+    "Reconstruction_Engine",
+    "RT_Window_ID",
+    "RT_Window_Start_Min",
+    "RT_Window_End_Min",
+    "RT_Window_Center_Min",
+    "Num_MS1_Scans_In_Window",
+    "Peak_Aggregation_Method",
+    "Anchor_MZ",
+    "Anchor_Charge",
+    "Predicted_Charge_States",
+    "Observed_Charge_States",
+    "Missing_Charge_States",
+    "Missing_Charge_Predicted_MZ",
+    "Num_Predicted_Charges",
+    "Num_Observed_Charges",
+    "Charge_Coverage_Fraction",
+    "Consecutive_Charge_Run_Length",
+    "Longest_Consecutive_Charge_Run",
+    "Charge_Gap_Count",
+    "Charge_Continuity_Fraction",
+    "Peak_Usage_Count",
+    "Shared_Peak_Count",
+    "Shared_Peak_Fraction",
+    "Local_Window_Max_Intensity",
+    "Local_Relative_Peak_Intensity_Percent",
+    "Local_Envelope_Relative_Intensity_Percent",
+    "Neutral_Mass_Estimator",
+    "Neutral_Mass_Unweighted_Mean",
+    "Neutral_Mass_Weighted_Mean",
+    "Neutral_Mass_Median",
+    "Envelope_Internal_Error_Max_ppm",
+    "Envelope_Internal_Error_Mean_ppm",
+    "Envelope_Internal_Error_Median_ppm",
+    "Source_RT_Window_IDs",
+    "Num_Source_RT_Windows",
+    "Merged_Across_RT_Windows",
     "Comparison_Ready_Strict",
     "Comparison_Ready_Review",
     "Comparison_Ready",
@@ -202,6 +263,22 @@ DIAGNOSTIC_COLUMNS = [
     "Dominant_Intact_Eligible_Reference_Label",
     "Failure_Reason_Counts",
     "Reconstruction_Enabled",
+    "Reconstruction_Engine",
+    "Num_RT_Windows",
+    "Num_Local_Peaks",
+    "Num_Anchor_Peaks_Evaluated",
+    "Num_Raw_Envelope_Candidates",
+    "Num_Candidates_After_Charge_Filter",
+    "Num_Candidates_After_RT_Window_Merge",
+    "Num_Candidates_With_Consecutive_Charges",
+    "Num_Candidates_With_Charge_Gaps",
+    "Num_Missing_Charges_Evaluated",
+    "Num_Missing_Charges_With_Weak_Peaks",
+    "Num_Missing_Charges_Not_Detected",
+    "Median_RT_Range_Min",
+    "Median_Internal_Error_ppm",
+    "Median_Charge_Count",
+    "Processing_Time_Seconds",
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Total_Candidates_Before_Mass_Range_Filter",
@@ -255,6 +332,7 @@ COMPARISON_CANDIDATE_COLUMNS = [
     "Comparison_Representative_Rank",
     "Cluster_ID",
     "Reconstructed_Mass",
+    "Reconstruction_Engine",
     "Intact_Envelope_Group_ID",
     "Reconstruction_Status",
     "Comparison_Ready",
@@ -280,6 +358,7 @@ TARGET_REVIEW_CANDIDATE_COLUMNS = [
     "Target_Review_Rank",
     "Cluster_ID",
     "Reconstructed_Mass",
+    "Reconstruction_Engine",
     "Intact_Envelope_Group_ID",
     "Comparison_Representative_Rank",
     "Reconstruction_Status",
@@ -306,6 +385,7 @@ RECONSTRUCTED_MASS_SPECTRUM_COLUMNS = [
     "Relative_Intensity_Percent",
     "Intensity_Method",
     "Cluster_ID",
+    "Reconstruction_Engine",
     "Intact_Envelope_Group_ID",
     "Group_Representative",
     "Comparison_Representative",
@@ -324,6 +404,72 @@ RECONSTRUCTED_MASS_SPECTRUM_COLUMNS = [
     "Best_Reference_Label",
     "Reference_Mass_Error_ppm",
     "Limiting_Factors",
+]
+
+RT_ENVELOPE_DIAGNOSTIC_COLUMNS = [
+    "Cluster_ID",
+    "Reconstruction_Engine",
+    "RT_Window_ID",
+    "RT_Window_Start_Min",
+    "RT_Window_End_Min",
+    "RT_Window_Center_Min",
+    "Num_MS1_Scans_In_Window",
+    "Peak_Aggregation_Method",
+    "Anchor_MZ",
+    "Anchor_Charge",
+    "Reconstructed_Mass",
+    "Predicted_Charge_States",
+    "Observed_Charge_States",
+    "Missing_Charge_States",
+    "Num_Predicted_Charges",
+    "Num_Observed_Charges",
+    "Charge_Coverage_Fraction",
+    "Consecutive_Charge_Run_Length",
+    "Longest_Consecutive_Charge_Run",
+    "Charge_Gap_Count",
+    "Charge_Continuity_Fraction",
+    "Local_Window_Max_Intensity",
+    "Local_Envelope_Relative_Intensity_Percent",
+    "Neutral_Mass_Estimator",
+    "Neutral_Mass_Unweighted_Mean",
+    "Neutral_Mass_Weighted_Mean",
+    "Neutral_Mass_Median",
+    "Envelope_Internal_Error_Max_ppm",
+    "Envelope_Internal_Error_Mean_ppm",
+    "Envelope_Internal_Error_Median_ppm",
+    "Source_RT_Window_IDs",
+    "Num_Source_RT_Windows",
+    "Merged_Across_RT_Windows",
+    "Notes",
+]
+
+MISSING_CHARGE_DIAGNOSTIC_COLUMNS = [
+    "Cluster_ID",
+    "RT_Window_ID",
+    "Reconstructed_Mass",
+    "Missing_Charge",
+    "Predicted_MZ",
+    "Nearest_Observed_MZ",
+    "Error_ppm",
+    "Nearest_Intensity",
+    "Detection_Status",
+    "Notes",
+]
+
+ENGINE_COMPARISON_COLUMNS = [
+    "Legacy_Cluster_ID",
+    "RT_Localized_Cluster_ID",
+    "Legacy_Mass",
+    "RT_Localized_Mass",
+    "Mass_Delta_Da",
+    "Legacy_Charge_Count",
+    "RT_Localized_Charge_Count",
+    "Legacy_RT_Range",
+    "RT_Localized_RT_Range",
+    "Legacy_Internal_Error_ppm",
+    "RT_Localized_Internal_Error_ppm",
+    "Peak_Overlap_Fraction",
+    "Notes",
 ]
 
 SEVERE_LIMITING_FACTORS = {
@@ -433,6 +579,47 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
             target_max,
             target_min,
         )
+    engine = str(merged.get("engine") or "legacy_cluster")
+    merged["engine"] = engine if engine in {"legacy_cluster", "rt_localized"} else "legacy_cluster"
+    merged["compare_with_legacy"] = _as_bool(merged.get("compare_with_legacy"), False)
+    rt_localized = merged.get("rt_localized") or {}
+    if not isinstance(rt_localized, dict):
+        rt_localized = {}
+    peak_aggregation = str(rt_localized.get("peak_aggregation") or "max")
+    if peak_aggregation not in {"max", "sum", "mean"}:
+        peak_aggregation = "max"
+    estimator = str(rt_localized.get("neutral_mass_estimator") or "intensity_weighted_mean")
+    if estimator not in {"unweighted_mean", "intensity_weighted_mean", "median"}:
+        estimator = "intensity_weighted_mean"
+    merge_cfg = rt_localized.get("merge_across_windows") or {}
+    if not isinstance(merge_cfg, dict):
+        merge_cfg = {}
+    merged["rt_localized"] = {
+        "enabled": _as_bool(rt_localized.get("enabled"), True),
+        "rt_window_min": float(rt_localized.get("rt_window_min") if rt_localized.get("rt_window_min") is not None else 0.10),
+        "rt_step_min": float(rt_localized.get("rt_step_min") if rt_localized.get("rt_step_min") is not None else 0.05),
+        "min_scans_per_window": int(rt_localized.get("min_scans_per_window") or 1),
+        "peak_aggregation": peak_aggregation,
+        "mz_merge_tolerance_ppm": float(rt_localized.get("mz_merge_tolerance_ppm") if rt_localized.get("mz_merge_tolerance_ppm") is not None else 10),
+        "adjacent_charge_mz_tolerance_ppm": float(rt_localized.get("adjacent_charge_mz_tolerance_ppm") if rt_localized.get("adjacent_charge_mz_tolerance_ppm") is not None else 20),
+        "max_charge_gap": int(rt_localized.get("max_charge_gap") or 1),
+        "min_charge_states": int(rt_localized.get("min_charge_states") or 2),
+        "min_consecutive_charge_states": int(rt_localized.get("min_consecutive_charge_states") or 2),
+        "require_consecutive_for_candidate": _as_bool(rt_localized.get("require_consecutive_for_candidate"), True),
+        "min_local_relative_peak_intensity_percent": float(rt_localized.get("min_local_relative_peak_intensity_percent") if rt_localized.get("min_local_relative_peak_intensity_percent") is not None else 0.1),
+        "neutral_mass_estimator": estimator,
+        "merge_across_windows": {
+            "enabled": _as_bool(merge_cfg.get("enabled"), True),
+            "mass_tolerance_ppm": float(merge_cfg.get("mass_tolerance_ppm") if merge_cfg.get("mass_tolerance_ppm") is not None else 10),
+            "rt_overlap_required": _as_bool(merge_cfg.get("rt_overlap_required"), True),
+            "min_shared_charge_fraction": float(merge_cfg.get("min_shared_charge_fraction") if merge_cfg.get("min_shared_charge_fraction") is not None else 0.5),
+        },
+    }
+    if merged["rt_localized"]["rt_window_min"] <= 0:
+        merged["rt_localized"]["rt_window_min"] = 0.10
+    if merged["rt_localized"]["rt_step_min"] <= 0:
+        merged["rt_localized"]["rt_step_min"] = merged["rt_localized"]["rt_window_min"]
+
     grouping = merged.get("envelope_grouping") or {}
     if not isinstance(grouping, dict):
         grouping = {}
@@ -939,6 +1126,7 @@ def build_reconstructed_mass_spectrum_rows(
             "Relative_Intensity_Percent": None,
             "Intensity_Method": row.get("Intensity_Method") or output_config["intensity_method"],
             "Cluster_ID": row.get("Cluster_ID"),
+            "Reconstruction_Engine": row.get("Reconstruction_Engine"),
             "Intact_Envelope_Group_ID": row.get("Intact_Envelope_Group_ID"),
             "Group_Representative": row.get("Group_Representative"),
             "Comparison_Representative": row.get("Comparison_Representative"),
@@ -1235,6 +1423,42 @@ def build_intact_reconstruction_qc(
             "_supporting_charge_set": set(supporting_charge_states),
             "Reconstruction_Status": status,
             "Reconstruction_Confidence": confidence,
+            "Reconstruction_Engine": _candidate_extra(candidate, "reconstruction_engine", "legacy_cluster"),
+            "RT_Window_ID": _candidate_extra(candidate, "rt_window_id", ""),
+            "RT_Window_Start_Min": _candidate_extra(candidate, "rt_window_start_min"),
+            "RT_Window_End_Min": _candidate_extra(candidate, "rt_window_end_min"),
+            "RT_Window_Center_Min": _candidate_extra(candidate, "rt_window_center_min"),
+            "Num_MS1_Scans_In_Window": _candidate_extra(candidate, "num_ms1_scans_in_window", 0),
+            "Peak_Aggregation_Method": _candidate_extra(candidate, "peak_aggregation_method", ""),
+            "Anchor_MZ": _candidate_extra(candidate, "anchor_mz"),
+            "Anchor_Charge": _candidate_extra(candidate, "anchor_charge"),
+            "Predicted_Charge_States": _candidate_extra(candidate, "predicted_charge_states", ""),
+            "Observed_Charge_States": _candidate_extra(candidate, "observed_charge_states", ""),
+            "Missing_Charge_States": _candidate_extra(candidate, "missing_charge_states", ""),
+            "Missing_Charge_Predicted_MZ": _candidate_extra(candidate, "missing_charge_predicted_mz", ""),
+            "Num_Predicted_Charges": _candidate_extra(candidate, "num_predicted_charges", 0),
+            "Num_Observed_Charges": _candidate_extra(candidate, "num_observed_charges", 0),
+            "Charge_Coverage_Fraction": _candidate_extra(candidate, "charge_coverage_fraction", 0.0),
+            "Consecutive_Charge_Run_Length": _candidate_extra(candidate, "consecutive_charge_run_length", 0),
+            "Longest_Consecutive_Charge_Run": _candidate_extra(candidate, "longest_consecutive_charge_run", 0),
+            "Charge_Gap_Count": _candidate_extra(candidate, "charge_gap_count", 0),
+            "Charge_Continuity_Fraction": _candidate_extra(candidate, "charge_continuity_fraction", 0.0),
+            "Peak_Usage_Count": _candidate_extra(candidate, "peak_usage_count", 0),
+            "Shared_Peak_Count": _candidate_extra(candidate, "shared_peak_count", 0),
+            "Shared_Peak_Fraction": _candidate_extra(candidate, "shared_peak_fraction", 0.0),
+            "Local_Window_Max_Intensity": _candidate_extra(candidate, "local_window_max_intensity", 0.0),
+            "Local_Relative_Peak_Intensity_Percent": _candidate_extra(candidate, "local_relative_peak_intensity_percent", 0.0),
+            "Local_Envelope_Relative_Intensity_Percent": _candidate_extra(candidate, "local_envelope_relative_intensity_percent", 0.0),
+            "Neutral_Mass_Estimator": _candidate_extra(candidate, "neutral_mass_estimator", ""),
+            "Neutral_Mass_Unweighted_Mean": _candidate_extra(candidate, "neutral_mass_unweighted_mean"),
+            "Neutral_Mass_Weighted_Mean": _candidate_extra(candidate, "neutral_mass_weighted_mean"),
+            "Neutral_Mass_Median": _candidate_extra(candidate, "neutral_mass_median"),
+            "Envelope_Internal_Error_Max_ppm": _candidate_extra(candidate, "envelope_internal_error_max_ppm"),
+            "Envelope_Internal_Error_Mean_ppm": _candidate_extra(candidate, "envelope_internal_error_mean_ppm"),
+            "Envelope_Internal_Error_Median_ppm": _candidate_extra(candidate, "envelope_internal_error_median_ppm"),
+            "Source_RT_Window_IDs": _candidate_extra(candidate, "source_rt_window_ids", ""),
+            "Num_Source_RT_Windows": _candidate_extra(candidate, "num_source_rt_windows", 0),
+            "Merged_Across_RT_Windows": _candidate_extra(candidate, "merged_across_rt_windows", False),
             "Comparison_Ready_Strict": comparison_ready_strict,
             "Comparison_Ready_Review": comparison_ready_review,
             "Comparison_Ready": comparison_ready,
@@ -1342,6 +1566,7 @@ def build_intact_reconstruction_diagnostics(
     reconstruction_enabled: bool = True,
 ) -> list[dict[str, Any]]:
     qc_config = _qc_config(reconstruction_config or {})
+    engine_stats = (reconstruction_config or {}).get("_intact_engine_stats") or {}
     status_counts = {status: 0 for status in ["Reliable", "Review", "Insufficient", "Failed"]}
     reason_counts: dict[str, int] = {}
     for row in qc_rows:
@@ -1450,6 +1675,22 @@ def build_intact_reconstruction_diagnostics(
         "Dominant_Intact_Eligible_Reference_Label": dominant_eligible.get("Best_Reference_Label"),
         "Failure_Reason_Counts": reason_summary,
         "Reconstruction_Enabled": reconstruction_enabled,
+        "Reconstruction_Engine": engine_stats.get("Reconstruction_Engine", qc_config.get("engine", "legacy_cluster")),
+        "Num_RT_Windows": engine_stats.get("Num_RT_Windows", 0),
+        "Num_Local_Peaks": engine_stats.get("Num_Local_Peaks", 0),
+        "Num_Anchor_Peaks_Evaluated": engine_stats.get("Num_Anchor_Peaks_Evaluated", 0),
+        "Num_Raw_Envelope_Candidates": engine_stats.get("Num_Raw_Envelope_Candidates", len(qc_rows)),
+        "Num_Candidates_After_Charge_Filter": engine_stats.get("Num_Candidates_After_Charge_Filter", len(qc_rows)),
+        "Num_Candidates_After_RT_Window_Merge": engine_stats.get("Num_Candidates_After_RT_Window_Merge", len(qc_rows)),
+        "Num_Candidates_With_Consecutive_Charges": engine_stats.get("Num_Candidates_With_Consecutive_Charges", sum(1 for row in qc_rows if row.get("Longest_Consecutive_Charge_Run", 0) >= 2)),
+        "Num_Candidates_With_Charge_Gaps": engine_stats.get("Num_Candidates_With_Charge_Gaps", sum(1 for row in qc_rows if row.get("Charge_Gap_Count", 0))),
+        "Num_Missing_Charges_Evaluated": engine_stats.get("Num_Missing_Charges_Evaluated", 0),
+        "Num_Missing_Charges_With_Weak_Peaks": engine_stats.get("Num_Missing_Charges_With_Weak_Peaks", 0),
+        "Num_Missing_Charges_Not_Detected": engine_stats.get("Num_Missing_Charges_Not_Detected", 0),
+        "Median_RT_Range_Min": engine_stats.get("Median_RT_Range_Min"),
+        "Median_Internal_Error_ppm": engine_stats.get("Median_Internal_Error_ppm"),
+        "Median_Charge_Count": engine_stats.get("Median_Charge_Count"),
+        "Processing_Time_Seconds": engine_stats.get("Processing_Time_Seconds"),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -1476,25 +1717,549 @@ def build_intact_reconstruction_diagnostics(
     }]
 
 
-def reconstruct_intact_masses(
+
+def _ppm_error(observed: float, expected: float) -> float:
+    if not expected:
+        return 0.0
+    return (float(observed) - float(expected)) / float(expected) * 1_000_000
+
+
+def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
+    return abs(_ppm_error(observed, expected)) <= tolerance_ppm
+
+
+def _longest_consecutive_run(charges: list[int]) -> int:
+    if not charges:
+        return 0
+    ordered = sorted(set(charges))
+    best = current = 1
+    for left, right in zip(ordered, ordered[1:]):
+        if right == left + 1:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 1
+    return best
+
+
+def _charge_gap_count(charges: list[int]) -> int:
+    if len(set(charges)) < 2:
+        return 0
+    ordered = sorted(set(charges))
+    return max(0, (ordered[-1] - ordered[0] + 1) - len(ordered))
+
+
+def _charge_continuity_fraction_value(charges: list[int]) -> float:
+    if not charges:
+        return 0.0
+    ordered = sorted(set(charges))
+    span = ordered[-1] - ordered[0] + 1
+    return len(ordered) / span if span else 0.0
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _weighted_mean(values: list[float], weights: list[float]) -> float | None:
+    denominator = sum(weights)
+    if not values or denominator <= 0:
+        return _mean(values)
+    return sum(value * weight for value, weight in zip(values, weights)) / denominator
+
+
+def _internal_error_stats(values: list[float], center: float) -> tuple[float | None, float | None, float | None]:
+    if not values or not center:
+        return None, None, None
+    errors = [abs(value - center) / center * 1_000_000 for value in values]
+    return max(errors), _mean(errors), median(errors)
+
+
+def _candidate_extra(candidate: IntactMassCandidate, field: str, default: Any = None) -> Any:
+    return getattr(candidate, field, default)
+
+
+def _set_candidate_extra(candidate: IntactMassCandidate, **values: Any) -> None:
+    for key, value in values.items():
+        setattr(candidate, key, value)
+
+
+def _rt_localized_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
+    return _qc_config(reconstruction_config or {})["rt_localized"]
+
+
+def _peak_rows_from_tier_result(tier_result: PeakTierResult, include_below: bool = False) -> list[dict[str, Any]]:
+    peaks = list(tier_result.usable_peaks)
+    if include_below:
+        peaks += list(tier_result.below_threshold)
+    rows = []
+    for index, peak in enumerate(peaks, start=1):
+        rows.append({
+            "Peak_ID": f"{peak.scan_id or 'scan_na'}|rt={_format_float(peak.rt, 5)}|mz={_format_float(peak.mz, 6)}|i={index}",
+            "mz": float(peak.mz),
+            "Intensity": float(peak.intensity),
+            "RT": peak.rt,
+            "Scan_ID": peak.scan_id,
+            "Peak_Tier": peak.tier or "",
+        })
+    return rows
+
+
+def _rt_windows(peak_rows: list[dict[str, Any]], rt_config: dict[str, Any]) -> list[dict[str, Any]]:
+    rts = sorted({float(row["RT"]) for row in peak_rows if row.get("RT") is not None})
+    if not rts:
+        return [{"RT_Window_ID": "RT00001", "start": None, "end": None, "center": None, "rows": peak_rows}]
+    width = float(rt_config["rt_window_min"])
+    step = float(rt_config["rt_step_min"])
+    start = min(rts)
+    stop = max(rts)
+    windows = []
+    index = 1
+    current = start
+    epsilon = 1e-9
+    while current <= stop + epsilon:
+        end = current + width
+        rows = [row for row in peak_rows if row.get("RT") is not None and current - epsilon <= float(row["RT"]) <= end + epsilon]
+        scans = {row.get("Scan_ID") or row.get("RT") for row in rows}
+        if rows and len(scans) >= int(rt_config["min_scans_per_window"]):
+            windows.append({
+                "RT_Window_ID": f"RT{index:05d}",
+                "start": current,
+                "end": end,
+                "center": current + width / 2.0,
+                "rows": rows,
+            })
+            index += 1
+        current += step
+    return windows
+
+
+def _aggregate_peak_group(group: list[dict[str, Any]], window: dict[str, Any], rt_config: dict[str, Any]) -> dict[str, Any]:
+    method = rt_config["peak_aggregation"]
+    intensities = [float(row.get("Intensity") or 0.0) for row in group]
+    if method == "sum":
+        intensity = sum(intensities)
+    elif method == "mean":
+        intensity = sum(intensities) / len(intensities)
+    else:
+        intensity = max(intensities)
+    mz = _weighted_mean([float(row["mz"]) for row in group], intensities) or float(group[0]["mz"])
+    rts = [float(row["RT"]) for row in group if row.get("RT") is not None]
+    return {
+        "Local_Peak_ID": "",
+        "mz": mz,
+        "Intensity": intensity,
+        "Max_Intensity": max(intensities) if intensities else intensity,
+        "RT": sum(rts) / len(rts) if rts else window.get("center"),
+        "Scan_ID": ";".join(sorted({str(row.get("Scan_ID")) for row in group if row.get("Scan_ID") not in {None, ""}})),
+        "Peak_Tier": "; ".join(sorted({str(row.get("Peak_Tier") or "") for row in group if row.get("Peak_Tier")})),
+        "Source_Peak_IDs": sorted({str(row.get("Peak_ID")) for row in group}),
+        "Source_RT_Values": sorted({float(row["RT"]) for row in group if row.get("RT") is not None}),
+        "Num_Contributing_Scans": len({row.get("Scan_ID") or row.get("RT") for row in group}),
+        "RT_Window_ID": window["RT_Window_ID"],
+        "RT_Window_Start_Min": window.get("start"),
+        "RT_Window_End_Min": window.get("end"),
+        "RT_Window_Center_Min": window.get("center"),
+    }
+
+
+def _local_peak_table(window: dict[str, Any], rt_config: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = sorted(window.get("rows") or [], key=lambda row: float(row["mz"]))
+    if not rows:
+        return []
+    groups: list[list[dict[str, Any]]] = []
+    for row in rows:
+        if not groups:
+            groups.append([row])
+            continue
+        current = _weighted_mean([float(item["mz"]) for item in groups[-1]], [float(item.get("Intensity") or 0.0) for item in groups[-1]]) or float(groups[-1][0]["mz"])
+        if _within_ppm(float(row["mz"]), current, rt_config["mz_merge_tolerance_ppm"]):
+            groups[-1].append(row)
+        else:
+            groups.append([row])
+    local_peaks = []
+    for index, group in enumerate(groups, start=1):
+        local = _aggregate_peak_group(group, window, rt_config)
+        local["Local_Peak_ID"] = f"{window['RT_Window_ID']}_LP{index:05d}"
+        local_peaks.append(local)
+    return local_peaks
+
+
+def _nearest_peak(local_peaks: list[dict[str, Any]], mz_values: list[float], target_mz: float, tolerance_ppm: float) -> tuple[dict[str, Any] | None, float | None]:
+    if not local_peaks:
+        return None, None
+    position = bisect_left(mz_values, target_mz)
+    best = None
+    best_error = None
+    for index in (position - 1, position, position + 1):
+        if 0 <= index < len(local_peaks):
+            candidate = local_peaks[index]
+            error = _ppm_error(float(candidate["mz"]), target_mz)
+            if best is None or abs(error) < abs(best_error):
+                best = candidate
+                best_error = error
+    if best is not None and abs(best_error) <= tolerance_ppm:
+        return best, best_error
+    return None, best_error
+
+
+def _missing_charge_rows(
+    cluster_id: str,
+    window_id: str,
+    reconstructed_mass: float,
+    observed_charges: list[int],
+    local_peaks_all: list[dict[str, Any]],
+    mz_values_all: list[float],
+    rt_config: dict[str, Any],
+    instrument_config: dict[str, Any],
+    usable_peak_ids: set[str],
+    usable_source_peak_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    if len(observed_charges) < 2:
+        return []
+    rows = []
+    polarity = instrument_config.get("polarity", "negative")
+    for charge in range(min(observed_charges), max(observed_charges) + 1):
+        if charge in observed_charges:
+            continue
+        predicted_mz = mz_from_neutral_mass(reconstructed_mass, charge, polarity)
+        nearest, error = _nearest_peak(local_peaks_all, mz_values_all, predicted_mz, rt_config["adjacent_charge_mz_tolerance_ppm"])
+        if nearest is None:
+            status = "no_peak_in_tolerance"
+            nearest_mz = None
+            nearest_intensity = None
+        elif usable_source_peak_ids and set(nearest.get("Source_Peak_IDs", [])) & usable_source_peak_ids:
+            status = "detected"
+            nearest_mz = nearest["mz"]
+            nearest_intensity = nearest["Intensity"]
+        else:
+            status = "below_intensity_threshold"
+            nearest_mz = nearest["mz"]
+            nearest_intensity = nearest["Intensity"]
+        rows.append({
+            "Cluster_ID": cluster_id,
+            "RT_Window_ID": window_id,
+            "Reconstructed_Mass": reconstructed_mass,
+            "Missing_Charge": charge,
+            "Predicted_MZ": predicted_mz,
+            "Nearest_Observed_MZ": nearest_mz,
+            "Error_ppm": error if nearest is not None else None,
+            "Nearest_Intensity": nearest_intensity,
+            "Detection_Status": status,
+            "Notes": "",
+        })
+    return rows
+
+
+def _build_rt_localized_candidates(
+    tier_result: PeakTierResult,
+    reconstruction_config: dict[str, Any],
+    instrument_config: dict[str, Any],
+    theoretical_mass: float | None,
+) -> tuple[list[IntactMassCandidate], list[dict[str, Any]], dict[str, Any]]:
+    started = perf_counter()
+    qc_config = _qc_config(reconstruction_config or {})
+    rt_config = qc_config["rt_localized"]
+    min_charge = int(reconstruction_config.get("min_charge", 5))
+    max_charge = int(reconstruction_config.get("max_charge", 40))
+    polarity = instrument_config.get("polarity", "negative")
+    usable_rows = _peak_rows_from_tier_result(tier_result, include_below=False)
+    all_rows = _peak_rows_from_tier_result(tier_result, include_below=True)
+    windows = _rt_windows(usable_rows, rt_config)
+    candidates: list[IntactMassCandidate] = []
+    charge_state_peaks: list[dict[str, Any]] = []
+    rt_diagnostics: list[dict[str, Any]] = []
+    missing_diagnostics: list[dict[str, Any]] = []
+    raw_candidate_count = 0
+    charge_filtered_count = 0
+    anchor_count = 0
+    local_peak_count = 0
+    local_peak_usage: dict[str, int] = {}
+    raw_candidate_records: list[dict[str, Any]] = []
+    for window in windows:
+        local_peaks = _local_peak_table(window, rt_config)
+        if window.get("start") is None:
+            all_window_rows = all_rows
+        else:
+            all_window_rows = [
+                row for row in all_rows
+                if row.get("RT") is not None and float(window["start"]) <= float(row["RT"]) <= float(window["end"])
+            ]
+        all_window = {**window, "rows": all_window_rows}
+        local_peaks_all = _local_peak_table(all_window, rt_config)
+        local_peak_count += len(local_peaks)
+        local_peaks = sorted(local_peaks, key=lambda row: row["mz"])
+        local_peaks_all = sorted(local_peaks_all, key=lambda row: row["mz"])
+        mz_values = [float(row["mz"]) for row in local_peaks]
+        mz_values_all = [float(row["mz"]) for row in local_peaks_all]
+        local_max = max((float(row["Intensity"]) for row in local_peaks), default=0.0)
+        usable_peak_ids = {row["Local_Peak_ID"] for row in local_peaks}
+        usable_source_peak_ids = {peak_id for row in local_peaks for peak_id in row.get("Source_Peak_IDs", [])}
+        for anchor in local_peaks:
+            local_rel_peak = (float(anchor["Intensity"]) / local_max * 100.0) if local_max else 0.0
+            if local_rel_peak < rt_config["min_local_relative_peak_intensity_percent"]:
+                continue
+            anchor_count += 1
+            for charge in range(min_charge, max_charge + 1):
+                anchor_mass = neutral_mass_from_mz(anchor["mz"], charge, polarity)
+                in_range, _, _, _ = _neutral_mass_range_status(anchor_mass, qc_config)
+                if not in_range:
+                    continue
+                predicted_charges = sorted(set(range(max(min_charge, charge - rt_config["max_charge_gap"]), min(max_charge, charge + rt_config["max_charge_gap"]) + 1)))
+                observed: dict[int, dict[str, Any]] = {charge: anchor}
+                for predicted_charge in predicted_charges:
+                    if predicted_charge == charge:
+                        continue
+                    predicted_mz = mz_from_neutral_mass(anchor_mass, predicted_charge, polarity)
+                    peak, _ = _nearest_peak(local_peaks, mz_values, predicted_mz, rt_config["adjacent_charge_mz_tolerance_ppm"])
+                    if peak is not None:
+                        observed[predicted_charge] = peak
+                observed_charges = sorted(observed)
+                raw_candidate_count += 1
+                longest_run = _longest_consecutive_run(observed_charges)
+                if len(observed_charges) < rt_config["min_charge_states"]:
+                    continue
+                if rt_config["require_consecutive_for_candidate"] and longest_run < rt_config["min_consecutive_charge_states"]:
+                    continue
+                charge_filtered_count += 1
+                neutral_masses = [neutral_mass_from_mz(observed[z]["mz"], z, polarity) for z in observed_charges]
+                intensities = [float(observed[z]["Intensity"]) for z in observed_charges]
+                unweighted = _mean(neutral_masses)
+                weighted = _weighted_mean(neutral_masses, intensities)
+                med = median(neutral_masses)
+                estimator = rt_config["neutral_mass_estimator"]
+                reconstructed_mass = weighted if estimator == "intensity_weighted_mean" else med if estimator == "median" else unweighted
+                if reconstructed_mass is None:
+                    continue
+                internal_max, internal_mean, internal_median = _internal_error_stats(neutral_masses, reconstructed_mass)
+                source_ids = sorted({peak_id for peak in observed.values() for peak_id in peak.get("Source_Peak_IDs", [])})
+                local_ids = sorted({peak["Local_Peak_ID"] for peak in observed.values()})
+                total_intensity = sum(float(observed[z]["Intensity"]) for z in observed_charges)
+                envelope_local_rel = (total_intensity / local_max * 100.0) if local_max else 0.0
+                cluster_id = f"RTL_RAW_{len(raw_candidate_records) + 1:06d}"
+                gap_count = _charge_gap_count(observed_charges)
+                missing_rows = _missing_charge_rows(cluster_id, window["RT_Window_ID"], reconstructed_mass, observed_charges, local_peaks_all, mz_values_all, rt_config, instrument_config, usable_peak_ids, usable_source_peak_ids)
+                record = {
+                    "cluster_id": cluster_id,
+                    "mass": reconstructed_mass,
+                    "charges": observed_charges,
+                    "observed": observed,
+                    "neutral_masses": neutral_masses,
+                    "intensities": intensities,
+                    "source_peak_ids": source_ids,
+                    "local_peak_ids": local_ids,
+                    "total_intensity": total_intensity,
+                    "rt_window_ids": [window["RT_Window_ID"]],
+                    "window": window,
+                    "local_max": local_max,
+                    "local_rel_peak": local_rel_peak,
+                    "local_rel_envelope": envelope_local_rel,
+                    "anchor_mz": anchor["mz"],
+                    "anchor_charge": charge,
+                    "predicted_charges": predicted_charges,
+                    "missing_rows": missing_rows,
+                    "unweighted": unweighted,
+                    "weighted": weighted,
+                    "median": med,
+                    "internal_max": internal_max,
+                    "internal_mean": internal_mean,
+                    "internal_median": internal_median,
+                    "gap_count": gap_count,
+                    "longest_run": longest_run,
+                    "continuity_fraction": _charge_continuity_fraction_value(observed_charges),
+                }
+                raw_candidate_records.append(record)
+                for local_id in local_ids:
+                    local_peak_usage[local_id] = local_peak_usage.get(local_id, 0) + 1
+    merge_cfg = rt_config["merge_across_windows"]
+    merged_records: list[dict[str, Any]] = []
+    for record in sorted(raw_candidate_records, key=lambda item: (item["mass"], item["window"].get("center") or 0.0)):
+        target = None
+        if merge_cfg.get("enabled", True):
+            for existing in merged_records:
+                mass_ppm = abs(_ppm_error(record["mass"], existing["mass"]))
+                shared_charges = len(set(record["charges"]) & set(existing["charges"]))
+                charge_fraction = shared_charges / max(min(len(record["charges"]), len(existing["charges"])), 1)
+                rt_ok = True
+                if merge_cfg.get("rt_overlap_required", True):
+                    rt_ok = not (record["window"].get("start") is not None and existing["window"].get("end") is not None and (record["window"]["start"] > existing["window"]["end"] or existing["window"]["start"] > record["window"]["end"]))
+                if mass_ppm <= merge_cfg["mass_tolerance_ppm"] and charge_fraction >= merge_cfg["min_shared_charge_fraction"] and rt_ok:
+                    target = existing
+                    break
+        if target is None:
+            merged_records.append(record)
+        else:
+            seen = set(target["source_peak_ids"])
+            for peak_id in record["source_peak_ids"]:
+                if peak_id not in seen:
+                    seen.add(peak_id)
+            target["source_peak_ids"] = sorted(seen)
+            target["rt_window_ids"] = sorted(set(target["rt_window_ids"] + record["rt_window_ids"]))
+            if record["total_intensity"] > target["total_intensity"]:
+                keep_ids = target["rt_window_ids"]
+                record["rt_window_ids"] = keep_ids
+                target.update(record)
+                target["rt_window_ids"] = keep_ids
+            target["merged"] = True
+    for index, record in enumerate(merged_records, start=1):
+        cluster_id = f"RTL{index:05d}"
+        record["cluster_id"] = cluster_id
+        mass_error_da = record["mass"] - theoretical_mass if theoretical_mass is not None else None
+        mass_error_ppm = (mass_error_da / theoretical_mass * 1_000_000) if theoretical_mass else None
+        candidate = IntactMassCandidate(
+            observed_mass=record["mass"],
+            charge_state_count=len(record["charges"]),
+            charge_states=record["charges"],
+            supporting_peak_count=len(record["source_peak_ids"]),
+            total_intensity=record["total_intensity"],
+            theoretical_mass=theoretical_mass,
+            mass_error_da=mass_error_da,
+            mass_error_ppm=mass_error_ppm,
+            confidence=_confidence(len(record["charges"]), int(reconstruction_config.get("min_charge_states", 3))),
+            cluster_id=cluster_id,
+        )
+        missing_charge_states = [row["Missing_Charge"] for row in record["missing_rows"]]
+        _set_candidate_extra(
+            candidate,
+            reconstruction_engine="rt_localized",
+            rt_window_id=record["window"]["RT_Window_ID"],
+            rt_window_start_min=record["window"].get("start"),
+            rt_window_end_min=record["window"].get("end"),
+            rt_window_center_min=record["window"].get("center"),
+            num_ms1_scans_in_window=len({row.get("Scan_ID") or row.get("RT") for row in record["window"].get("rows", [])}),
+            peak_aggregation_method=rt_config["peak_aggregation"],
+            anchor_mz=record["anchor_mz"],
+            anchor_charge=record["anchor_charge"],
+            predicted_charge_states="; ".join(map(str, record["predicted_charges"])),
+            observed_charge_states="; ".join(map(str, record["charges"])),
+            missing_charge_states="; ".join(map(str, missing_charge_states)),
+            missing_charge_predicted_mz="; ".join(_format_float(row["Predicted_MZ"], 6) for row in record["missing_rows"]),
+            num_predicted_charges=len(record["predicted_charges"]),
+            num_observed_charges=len(record["charges"]),
+            charge_coverage_fraction=len(record["charges"]) / max(len(record["predicted_charges"]), 1),
+            consecutive_charge_run_length=record["longest_run"],
+            longest_consecutive_charge_run=record["longest_run"],
+            charge_gap_count=record["gap_count"],
+            charge_continuity_fraction=record["continuity_fraction"],
+            peak_usage_count=max((local_peak_usage.get(local_id, 1) for local_id in record["local_peak_ids"]), default=1),
+            shared_peak_count=sum(1 for local_id in record["local_peak_ids"] if local_peak_usage.get(local_id, 1) > 1),
+            shared_peak_fraction=sum(1 for local_id in record["local_peak_ids"] if local_peak_usage.get(local_id, 1) > 1) / max(len(record["local_peak_ids"]), 1),
+            local_window_max_intensity=record["local_max"],
+            local_relative_peak_intensity_percent=record["local_rel_peak"],
+            local_envelope_relative_intensity_percent=record["local_rel_envelope"],
+            neutral_mass_estimator=rt_config["neutral_mass_estimator"],
+            neutral_mass_unweighted_mean=record["unweighted"],
+            neutral_mass_weighted_mean=record["weighted"],
+            neutral_mass_median=record["median"],
+            envelope_internal_error_max_ppm=record["internal_max"],
+            envelope_internal_error_mean_ppm=record["internal_mean"],
+            envelope_internal_error_median_ppm=record["internal_median"],
+            source_rt_window_ids="; ".join(record["rt_window_ids"]),
+            num_source_rt_windows=len(record["rt_window_ids"]),
+            merged_across_rt_windows=bool(record.get("merged") or len(record["rt_window_ids"]) > 1),
+        )
+        candidates.append(candidate)
+        for charge in record["charges"]:
+            peak = record["observed"][charge]
+            charge_state_peaks.append({
+                "Cluster_ID": cluster_id,
+                "mz": peak["mz"],
+                "Intensity": peak["Intensity"],
+                "RT": peak.get("RT"),
+                "Scan_ID": peak.get("Scan_ID"),
+                "Charge": charge,
+                "Neutral_Mass": neutral_mass_from_mz(peak["mz"], charge, polarity),
+                "Peak_Tier": peak.get("Peak_Tier"),
+                "RT_Window_ID": record["window"]["RT_Window_ID"],
+                "Local_Peak_ID": peak["Local_Peak_ID"],
+            })
+        for row in record["missing_rows"]:
+            row = dict(row)
+            row["Cluster_ID"] = cluster_id
+            missing_diagnostics.append(row)
+        rt_diagnostics.append({
+            "Cluster_ID": cluster_id,
+            "Reconstruction_Engine": "rt_localized",
+            "RT_Window_ID": record["window"]["RT_Window_ID"],
+            "RT_Window_Start_Min": record["window"].get("start"),
+            "RT_Window_End_Min": record["window"].get("end"),
+            "RT_Window_Center_Min": record["window"].get("center"),
+            "Num_MS1_Scans_In_Window": len({row.get("Scan_ID") or row.get("RT") for row in record["window"].get("rows", [])}),
+            "Peak_Aggregation_Method": rt_config["peak_aggregation"],
+            "Anchor_MZ": record["anchor_mz"],
+            "Anchor_Charge": record["anchor_charge"],
+            "Reconstructed_Mass": record["mass"],
+            "Predicted_Charge_States": "; ".join(map(str, record["predicted_charges"])),
+            "Observed_Charge_States": "; ".join(map(str, record["charges"])),
+            "Missing_Charge_States": "; ".join(map(str, missing_charge_states)),
+            "Num_Predicted_Charges": len(record["predicted_charges"]),
+            "Num_Observed_Charges": len(record["charges"]),
+            "Charge_Coverage_Fraction": len(record["charges"]) / max(len(record["predicted_charges"]), 1),
+            "Consecutive_Charge_Run_Length": record["longest_run"],
+            "Longest_Consecutive_Charge_Run": record["longest_run"],
+            "Charge_Gap_Count": record["gap_count"],
+            "Charge_Continuity_Fraction": record["continuity_fraction"],
+            "Local_Window_Max_Intensity": record["local_max"],
+            "Local_Envelope_Relative_Intensity_Percent": record["local_rel_envelope"],
+            "Neutral_Mass_Estimator": rt_config["neutral_mass_estimator"],
+            "Neutral_Mass_Unweighted_Mean": record["unweighted"],
+            "Neutral_Mass_Weighted_Mean": record["weighted"],
+            "Neutral_Mass_Median": record["median"],
+            "Envelope_Internal_Error_Max_ppm": record["internal_max"],
+            "Envelope_Internal_Error_Mean_ppm": record["internal_mean"],
+            "Envelope_Internal_Error_Median_ppm": record["internal_median"],
+            "Source_RT_Window_IDs": "; ".join(record["rt_window_ids"]),
+            "Num_Source_RT_Windows": len(record["rt_window_ids"]),
+            "Merged_Across_RT_Windows": bool(record.get("merged") or len(record["rt_window_ids"]) > 1),
+            "Notes": "",
+        })
+    candidates.sort(key=lambda item: (item.charge_state_count < int(reconstruction_config.get("min_charge_states", 3)), -item.charge_state_count, -item.total_intensity))
+    missing_weak = sum(1 for row in missing_diagnostics if row.get("Detection_Status") == "below_intensity_threshold")
+    missing_not = sum(1 for row in missing_diagnostics if row.get("Detection_Status") == "no_peak_in_tolerance")
+    metadata = {
+        "engine": "rt_localized",
+        "rt_envelope_diagnostics": rt_diagnostics,
+        "missing_charge_diagnostics": missing_diagnostics,
+        "engine_comparison": [],
+        "stats": {
+            "Reconstruction_Engine": "rt_localized",
+            "Num_RT_Windows": len(windows),
+            "Num_Local_Peaks": local_peak_count,
+            "Num_Anchor_Peaks_Evaluated": anchor_count,
+            "Num_Raw_Envelope_Candidates": raw_candidate_count,
+            "Num_Candidates_After_Charge_Filter": charge_filtered_count,
+            "Num_Candidates_After_RT_Window_Merge": len(candidates),
+            "Num_Candidates_With_Consecutive_Charges": sum(1 for c in candidates if getattr(c, "longest_consecutive_charge_run", 0) >= rt_config["min_consecutive_charge_states"]),
+            "Num_Candidates_With_Charge_Gaps": sum(1 for c in candidates if getattr(c, "charge_gap_count", 0) > 0),
+            "Num_Missing_Charges_Evaluated": len(missing_diagnostics),
+            "Num_Missing_Charges_With_Weak_Peaks": missing_weak,
+            "Num_Missing_Charges_Not_Detected": missing_not,
+            "Median_RT_Range_Min": median([c.rt_range_min for c in candidates if c.rt_range_min is not None]) if any(c.rt_range_min is not None for c in candidates) else None,
+            "Median_Internal_Error_ppm": median([getattr(c, "envelope_internal_error_max_ppm", 0.0) or 0.0 for c in candidates]) if candidates else None,
+            "Median_Charge_Count": median([len(c.charge_states) for c in candidates]) if candidates else None,
+            "Processing_Time_Seconds": perf_counter() - started,
+        },
+    }
+    return candidates, charge_state_peaks, metadata
+
+
+def _legacy_reconstruct_intact_masses(
     tier_result: PeakTierResult,
     reconstruction_config: dict[str, Any],
     instrument_config: dict[str, Any],
     theoretical_mass: float | None = None,
-    warnings: list[dict[str, Any]] | None = None,
-) -> tuple[list[IntactMassCandidate], list[dict[str, Any]]]:
+) -> tuple[list[IntactMassCandidate], list[dict[str, Any]], dict[str, Any]]:
+    started = perf_counter()
     min_charge = int(reconstruction_config.get("min_charge", 5))
     max_charge = int(reconstruction_config.get("max_charge", 40))
     min_charge_states = int(reconstruction_config.get("min_charge_states", 3))
     tolerance = float(reconstruction_config.get("mass_cluster_tolerance_da", 1.0))
     polarity = instrument_config.get("polarity", "negative")
-
     observations = []
     for peak in tier_result.usable_peaks:
         for charge in range(min_charge, max_charge + 1):
             neutral_mass = neutral_mass_from_mz(peak.mz, charge, polarity)
             observations.append({"peak": peak, "charge": charge, "neutral_mass": neutral_mass})
-
     observations.sort(key=lambda row: row["neutral_mass"])
     clusters: list[list[dict[str, Any]]] = []
     for observation in observations:
@@ -1506,7 +2271,6 @@ def reconstruct_intact_masses(
             clusters[-1].append(observation)
         else:
             clusters.append([observation])
-
     candidates: list[IntactMassCandidate] = []
     charge_state_peaks: list[dict[str, Any]] = []
     for index, cluster in enumerate(clusters, start=1):
@@ -1528,22 +2292,159 @@ def reconstruct_intact_masses(
             confidence=_confidence(len(charges), min_charge_states),
             cluster_id=cluster_id,
         )
+        _set_candidate_extra(candidate, reconstruction_engine="legacy_cluster")
         candidates.append(candidate)
         for row in cluster:
             peak = row["peak"]
-            charge_state_peaks.append(
-                {
-                    "Cluster_ID": cluster_id,
-                    "mz": peak.mz,
-                    "Intensity": peak.intensity,
-                    "RT": peak.rt,
-                    "Scan_ID": peak.scan_id,
-                    "Charge": row["charge"],
-                    "Neutral_Mass": row["neutral_mass"],
-                    "Peak_Tier": peak.tier,
-                }
-            )
-
+            charge_state_peaks.append({
+                "Cluster_ID": cluster_id,
+                "mz": peak.mz,
+                "Intensity": peak.intensity,
+                "RT": peak.rt,
+                "Scan_ID": peak.scan_id,
+                "Charge": row["charge"],
+                "Neutral_Mass": row["neutral_mass"],
+                "Peak_Tier": peak.tier,
+            })
     candidates.sort(key=lambda item: (item.charge_state_count < min_charge_states, -item.charge_state_count, -item.total_intensity))
+    metadata = {
+        "engine": "legacy_cluster",
+        "rt_envelope_diagnostics": [],
+        "missing_charge_diagnostics": [],
+        "engine_comparison": [],
+        "stats": {
+            "Reconstruction_Engine": "legacy_cluster",
+            "Num_RT_Windows": 0,
+            "Num_Local_Peaks": 0,
+            "Num_Anchor_Peaks_Evaluated": 0,
+            "Num_Raw_Envelope_Candidates": len(observations),
+            "Num_Candidates_After_Charge_Filter": len(candidates),
+            "Num_Candidates_After_RT_Window_Merge": len(candidates),
+            "Num_Candidates_With_Consecutive_Charges": sum(1 for c in candidates if _longest_consecutive_run(c.charge_states) >= 2),
+            "Num_Candidates_With_Charge_Gaps": sum(1 for c in candidates if _charge_gap_count(c.charge_states) > 0),
+            "Num_Missing_Charges_Evaluated": 0,
+            "Num_Missing_Charges_With_Weak_Peaks": 0,
+            "Num_Missing_Charges_Not_Detected": 0,
+            "Median_RT_Range_Min": None,
+            "Median_Internal_Error_ppm": None,
+            "Median_Charge_Count": median([len(c.charge_states) for c in candidates]) if candidates else None,
+            "Processing_Time_Seconds": perf_counter() - started,
+        },
+    }
+    return candidates, charge_state_peaks, metadata
+
+
+
+def _finalize_engine_stats(metadata: dict[str, Any], candidates: list[IntactMassCandidate]) -> None:
+    stats = metadata.setdefault("stats", {})
+    rt_ranges = [candidate.rt_range_min for candidate in candidates if candidate.rt_range_min is not None]
+    internal_errors = [candidate.envelope_internal_error_ppm for candidate in candidates if candidate.envelope_internal_error_ppm is not None]
+    charge_counts = [len(candidate.charge_states) for candidate in candidates]
+    if rt_ranges:
+        stats["Median_RT_Range_Min"] = median(rt_ranges)
+    if internal_errors:
+        stats["Median_Internal_Error_ppm"] = median(internal_errors)
+    if charge_counts:
+        stats["Median_Charge_Count"] = median(charge_counts)
+
+def build_intact_engine_comparison_rows(
+    legacy_candidates: list[IntactMassCandidate],
+    legacy_peaks: list[dict[str, Any]],
+    rt_candidates: list[IntactMassCandidate],
+    rt_peaks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    legacy_by_cluster = {candidate.cluster_id: candidate for candidate in legacy_candidates}
+    rt_by_cluster = {candidate.cluster_id: candidate for candidate in rt_candidates}
+    legacy_peak_sets: dict[str, set[str]] = {}
+    rt_peak_sets: dict[str, set[str]] = {}
+    for row in legacy_peaks:
+        legacy_peak_sets.setdefault(str(row.get("Cluster_ID")), set()).add(_supporting_peak_id(row))
+    for row in rt_peaks:
+        rt_peak_sets.setdefault(str(row.get("Cluster_ID")), set()).add(_supporting_peak_id(row))
+    rows = []
+    used_rt: set[str] = set()
+    for legacy in legacy_candidates:
+        best = None
+        best_delta = None
+        for rt in rt_candidates:
+            delta = abs(rt.observed_mass - legacy.observed_mass)
+            if best is None or delta < best_delta:
+                best = rt
+                best_delta = delta
+        if best is None:
+            rows.append({"Legacy_Cluster_ID": legacy.cluster_id, "Notes": "no_rt_localized_candidate"})
+            continue
+        used_rt.add(best.cluster_id)
+        left = legacy_peak_sets.get(legacy.cluster_id, set())
+        right = rt_peak_sets.get(best.cluster_id, set())
+        overlap = len(left & right) / max(min(len(left), len(right)), 1) if (left or right) else 0.0
+        rows.append({
+            "Legacy_Cluster_ID": legacy.cluster_id,
+            "RT_Localized_Cluster_ID": best.cluster_id,
+            "Legacy_Mass": legacy.observed_mass,
+            "RT_Localized_Mass": best.observed_mass,
+            "Mass_Delta_Da": best.observed_mass - legacy.observed_mass,
+            "Legacy_Charge_Count": len(legacy.charge_states),
+            "RT_Localized_Charge_Count": len(best.charge_states),
+            "Legacy_RT_Range": getattr(legacy, "rt_range_min", None),
+            "RT_Localized_RT_Range": getattr(best, "rt_range_min", None),
+            "Legacy_Internal_Error_ppm": getattr(legacy, "envelope_internal_error_ppm", None),
+            "RT_Localized_Internal_Error_ppm": getattr(best, "envelope_internal_error_ppm", None),
+            "Peak_Overlap_Fraction": overlap,
+            "Notes": "nearest_mass_match",
+        })
+    for rt in rt_candidates:
+        if rt.cluster_id not in used_rt:
+            rows.append({
+                "Legacy_Cluster_ID": "",
+                "RT_Localized_Cluster_ID": rt.cluster_id,
+                "RT_Localized_Mass": rt.observed_mass,
+                "RT_Localized_Charge_Count": len(rt.charge_states),
+                "Notes": "rt_localized_only",
+            })
+    return rows
+
+
+def reconstruct_intact_masses(
+    tier_result: PeakTierResult,
+    reconstruction_config: dict[str, Any],
+    instrument_config: dict[str, Any],
+    theoretical_mass: float | None = None,
+    warnings: list[dict[str, Any]] | None = None,
+) -> tuple[list[IntactMassCandidate], list[dict[str, Any]], dict[str, Any]]:
+    qc_config = _qc_config(reconstruction_config or {})
+    engine = qc_config.get("engine", "legacy_cluster")
+    if engine == "rt_localized":
+        candidates, charge_state_peaks, metadata = _build_rt_localized_candidates(
+            tier_result,
+            reconstruction_config,
+            instrument_config,
+            theoretical_mass,
+        )
+        reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
+        build_intact_reconstruction_qc(candidates, charge_state_peaks, reconstruction_config, reconstruction_enabled=True)
+        _finalize_engine_stats(metadata, candidates)
+        reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
+        if qc_config.get("compare_with_legacy", False):
+            legacy_candidates, legacy_peaks, legacy_metadata = _legacy_reconstruct_intact_masses(
+                tier_result,
+                reconstruction_config,
+                instrument_config,
+                theoretical_mass,
+            )
+            build_intact_reconstruction_qc(legacy_candidates, legacy_peaks, reconstruction_config, reconstruction_enabled=True)
+            metadata["engine_comparison"] = build_intact_engine_comparison_rows(legacy_candidates, legacy_peaks, candidates, charge_state_peaks)
+            metadata["legacy_candidate_count"] = len(legacy_candidates)
+            metadata["legacy_processing_time_seconds"] = legacy_metadata.get("stats", {}).get("Processing_Time_Seconds")
+        return candidates, charge_state_peaks, metadata
+    candidates, charge_state_peaks, metadata = _legacy_reconstruct_intact_masses(
+        tier_result,
+        reconstruction_config,
+        instrument_config,
+        theoretical_mass,
+    )
+    reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
     build_intact_reconstruction_qc(candidates, charge_state_peaks, reconstruction_config, reconstruction_enabled=True)
-    return candidates, charge_state_peaks
+    _finalize_engine_stats(metadata, candidates)
+    reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
+    return candidates, charge_state_peaks, metadata

@@ -28,6 +28,8 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "mass_cluster_tolerance_da": 1.0,
         "max_charge_state_peak_rows": 100000,
         "intact_reconstruction": {
+            "engine": "legacy_cluster",
+            "compare_with_legacy": False,
             "min_charge_states_for_reliable": 3,
             "min_charge_states_for_review": 2,
             "require_contiguous_charge_states": True,
@@ -55,6 +57,27 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "min_shared_peak_fraction": 0.5,
                 "min_shared_charge_fraction": 0.5,
                 "require_peak_overlap": True,
+            },
+            "rt_localized": {
+                "enabled": True,
+                "rt_window_min": 0.10,
+                "rt_step_min": 0.05,
+                "min_scans_per_window": 1,
+                "peak_aggregation": "max",
+                "mz_merge_tolerance_ppm": 10,
+                "adjacent_charge_mz_tolerance_ppm": 20,
+                "max_charge_gap": 1,
+                "min_charge_states": 2,
+                "min_consecutive_charge_states": 2,
+                "require_consecutive_for_candidate": True,
+                "min_local_relative_peak_intensity_percent": 0.1,
+                "neutral_mass_estimator": "intensity_weighted_mean",
+                "merge_across_windows": {
+                    "enabled": True,
+                    "mass_tolerance_ppm": 10,
+                    "rt_overlap_required": True,
+                    "min_shared_charge_fraction": 0.5,
+                },
             },
             "mass_spectrum_output": {
                 "enabled": True,
@@ -273,7 +296,18 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
     reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
     if analysis_mode == "intact_only" and not reconstruction_enabled:
         raise ValueError("analysis.mode=intact_only requires intact_reconstruction.enabled=true")
-    spectrum_config = (config.reconstruction.get("intact_reconstruction") or {}).get("mass_spectrum_output") or {}
+    intact_config = config.reconstruction.get("intact_reconstruction") or {}
+    engine = str(intact_config.get("engine") or "legacy_cluster")
+    if engine not in {"legacy_cluster", "rt_localized"}:
+        raise ValueError("intact_reconstruction.engine must be one of: legacy_cluster, rt_localized")
+    rt_localized = intact_config.get("rt_localized") or {}
+    aggregation = str(rt_localized.get("peak_aggregation") or "max")
+    if aggregation not in {"max", "sum", "mean"}:
+        raise ValueError("intact_reconstruction.rt_localized.peak_aggregation must be one of: max, sum, mean")
+    estimator = str(rt_localized.get("neutral_mass_estimator") or "intensity_weighted_mean")
+    if estimator not in {"unweighted_mean", "intensity_weighted_mean", "median"}:
+        raise ValueError("intact_reconstruction.rt_localized.neutral_mass_estimator must be one of: unweighted_mean, intensity_weighted_mean, median")
+    spectrum_config = intact_config.get("mass_spectrum_output") or {}
     intensity_method = str(spectrum_config.get("intensity_method") or "total_supporting_intensity")
     if intensity_method not in {"total_supporting_intensity", "mean_supporting_intensity", "max_supporting_intensity"}:
         raise ValueError("intact_reconstruction.mass_spectrum_output.intensity_method must be one of: total_supporting_intensity, mean_supporting_intensity, max_supporting_intensity")
