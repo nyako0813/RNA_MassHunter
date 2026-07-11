@@ -100,6 +100,17 @@ class IntactMassCandidate:
     neutral_mass_search_min_da: float | None = None
     neutral_mass_search_max_da: float | None = None
     neutral_mass_range_status: str = ""
+    in_target_review_mass_range: bool = False
+    target_review_mass_range_status: str = ""
+    target_review_priority: str = ""
+    envelope_qc_eligible: bool = False
+    intact_review_eligible: bool = False
+    intact_strict_eligible: bool = False
+    intact_envelope_qc_score: float | None = None
+    intact_envelope_qc_rank: int | None = None
+    strict_eligible_rank: int | None = None
+    review_eligible_rank: int | None = None
+    dominant_intact_envelope_flag: bool = False
     rt_min: float | None = None
     rt_max: float | None = None
     rt_mean: float | None = None
@@ -110,6 +121,9 @@ class IntactMassCandidate:
     mean_supporting_intensity: float = 0.0
     max_supporting_intensity: float = 0.0
     relative_envelope_intensity_percent: float = 0.0
+    relative_overall_envelope_intensity_percent: float = 0.0
+    relative_in_range_raw_intensity_percent: float = 0.0
+    relative_intact_eligible_intensity_percent: float = 0.0
     supporting_peak_classes: str = ""
     trace_only_envelope: bool = False
     competing_envelope_count: int = 0

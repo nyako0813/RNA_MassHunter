@@ -46,6 +46,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "reference_masses": [],
             "reference_mass_tolerance_ppm": 20,
             "neutral_mass_range": {"enabled": True, "min_da": 20000, "max_da": 30000},
+            "target_review_mass_range": {"enabled": False, "min_da": None, "max_da": None},
         },
     },
     "digestion": {

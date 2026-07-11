@@ -33,6 +33,7 @@ DEFAULT_INTACT_QC_CONFIG = {
     "reference_masses": [],
     "reference_mass_tolerance_ppm": 20,
     "neutral_mass_range": {"enabled": True, "min_da": 20000, "max_da": 30000},
+    "target_review_mass_range": {"enabled": False, "min_da": None, "max_da": None},
 }
 
 QC_COLUMNS = [
@@ -43,6 +44,17 @@ QC_COLUMNS = [
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Neutral_Mass_Range_Status",
+    "In_Target_Review_Mass_Range",
+    "Target_Review_Mass_Range_Status",
+    "Target_Review_Priority",
+    "Envelope_QC_Eligible",
+    "Intact_Review_Eligible",
+    "Intact_Strict_Eligible",
+    "Intact_Envelope_QC_Score",
+    "Intact_Envelope_QC_Rank",
+    "Strict_Eligible_Rank",
+    "Review_Eligible_Rank",
+    "Dominant_Intact_Envelope_Flag",
     "Reconstruction_Status",
     "Reconstruction_Confidence",
     "Comparison_Ready_Strict",
@@ -53,6 +65,9 @@ QC_COLUMNS = [
     "Mean_Supporting_Intensity",
     "Max_Supporting_Intensity",
     "Relative_Envelope_Intensity_Percent",
+    "Relative_Overall_Envelope_Intensity_Percent",
+    "Relative_In_Range_Raw_Intensity_Percent",
+    "Relative_Intact_Eligible_Intensity_Percent",
     "Supporting_Peak_Classes",
     "Trace_Only_Envelope",
     "Num_Supporting_Charge_States",
@@ -88,6 +103,9 @@ DIAGNOSTIC_COLUMNS = [
     "Review_Count",
     "Insufficient_Count",
     "Failed_Count",
+    "Envelope_QC_Eligible_Count",
+    "Intact_Strict_Eligible_Count",
+    "Intact_Review_Eligible_Count",
     "Comparison_Ready_Strict_Count",
     "Comparison_Ready_Review_Count",
     "Comparison_Ready_Count",
@@ -107,6 +125,18 @@ DIAGNOSTIC_COLUMNS = [
     "Dominant_Envelope_In_Mass_Range_Intensity",
     "Dominant_Envelope_In_Mass_Range_Status",
     "Dominant_Envelope_In_Mass_Range_Comparison_Ready",
+    "Dominant_Envelope_In_Search_Range_Raw_Mass",
+    "Dominant_Envelope_In_Search_Range_Raw_Intensity",
+    "Dominant_Intact_Strict_Envelope_Mass",
+    "Dominant_Intact_Strict_Envelope_Intensity",
+    "Dominant_Intact_Strict_QC_Score",
+    "Dominant_Intact_Review_Envelope_Mass",
+    "Dominant_Intact_Review_Envelope_Intensity",
+    "Dominant_Intact_Review_QC_Score",
+    "Dominant_Intact_Eligible_Envelope_Mass",
+    "Dominant_Intact_Eligible_Envelope_Intensity",
+    "Dominant_Intact_Eligible_QC_Score",
+    "Dominant_Intact_Eligible_Reference_Label",
     "Failure_Reason_Counts",
     "Reconstruction_Enabled",
     "Neutral_Mass_Search_Min_Da",
@@ -114,6 +144,8 @@ DIAGNOSTIC_COLUMNS = [
     "Total_Candidates_Before_Mass_Range_Filter",
     "Total_Candidates_In_Mass_Range",
     "Total_Candidates_Outside_Mass_Range",
+    "Target_Review_Mass_Range_Settings",
+    "Target_Review_Candidate_Count",
     "Search_Mode",
     "Intensity_Normalization_Method",
     "RT_Tolerance_Settings",
@@ -171,6 +203,15 @@ def _as_reference_masses(value: Any) -> list[dict[str, Any]]:
     return references
 
 
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
     raw = reconstruction_config.get("intact_reconstruction") or reconstruction_config.get("qc") or {}
     merged = {**DEFAULT_INTACT_QC_CONFIG, **raw}
@@ -214,6 +255,21 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         merged["neutral_mass_range"]["min_da"], merged["neutral_mass_range"]["max_da"] = (
             merged["neutral_mass_range"]["max_da"],
             merged["neutral_mass_range"]["min_da"],
+        )
+    target_range = merged.get("target_review_mass_range") or {}
+    if not isinstance(target_range, dict):
+        target_range = {}
+    merged["target_review_mass_range"] = {
+        "enabled": _as_bool(target_range.get("enabled"), False),
+        "min_da": _optional_float(target_range.get("min_da")),
+        "max_da": _optional_float(target_range.get("max_da")),
+    }
+    target_min = merged["target_review_mass_range"]["min_da"]
+    target_max = merged["target_review_mass_range"]["max_da"]
+    if target_min is not None and target_max is not None and target_min > target_max:
+        merged["target_review_mass_range"]["min_da"], merged["target_review_mass_range"]["max_da"] = (
+            target_max,
+            target_min,
         )
     return merged
 
@@ -300,6 +356,88 @@ def _neutral_mass_range_status(observed_mass: float, qc_config: dict[str, Any]) 
     return in_range, min_da, max_da, "in_range" if in_range else "outside_range"
 
 
+def _target_review_range_status(observed_mass: float, qc_config: dict[str, Any]) -> tuple[bool, str, str]:
+    target_range = qc_config["target_review_mass_range"]
+    if not target_range.get("enabled", False):
+        return False, "not_configured", "not_configured"
+    if target_range.get("min_da") is None or target_range.get("max_da") is None:
+        return False, "not_configured", "not_configured"
+    min_da = float(target_range["min_da"])
+    max_da = float(target_range["max_da"])
+    in_range = min_da <= observed_mass <= max_da
+    status = "in_range" if in_range else "outside_range"
+    priority = "target_review" if in_range else "outside_target_review"
+    return in_range, status, priority
+
+
+def _target_review_settings(qc_config: dict[str, Any]) -> str:
+    target_range = qc_config["target_review_mass_range"]
+    if not target_range.get("enabled", False):
+        return "disabled"
+    if target_range.get("min_da") is None or target_range.get("max_da") is None:
+        return "not_configured"
+    return f"enabled:{target_range['min_da']}-{target_range['max_da']} Da"
+
+
+def _rt_rank_score(value: str) -> int:
+    return {"consistent": 2, "review": 1}.get(str(value or ""), 0)
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _small_metric_score(value: Any, limit: float, points: float) -> float:
+    if value is None or value == "":
+        return points
+    numeric = _safe_float(value, limit)
+    if limit <= 0:
+        return points
+    return max(0.0, points * (1.0 - min(numeric / limit, 1.0)))
+
+
+def _intact_qc_score(row: dict[str, Any], qc_config: dict[str, Any]) -> float:
+    score = 0.0
+    if row.get("Intact_Strict_Eligible"):
+        score += 30.0
+    elif row.get("Intact_Review_Eligible"):
+        score += 22.0
+    elif row.get("Envelope_QC_Eligible"):
+        score += 12.0
+    if row.get("Charge_State_Continuity") == "contiguous":
+        score += 12.0
+    score += min(_safe_float(row.get("Num_Supporting_Charge_States")), 6.0) * 4.0
+    score += {"consistent": 12.0, "review": 6.0}.get(str(row.get("RT_Consistency") or ""), 0.0)
+    score += _small_metric_score(row.get("Envelope_Internal_Error_ppm"), qc_config["max_envelope_internal_error_ppm"], 10.0)
+    score += _small_metric_score(row.get("Neutral_Mass_SD"), qc_config["max_neutral_mass_sd_da"], 8.0)
+    score += _small_metric_score(row.get("Neutral_Mass_Range"), qc_config["max_neutral_mass_range_da"], 8.0)
+    score += min(_safe_float(row.get("Relative_Overall_Envelope_Intensity_Percent")), 100.0) / 100.0 * 8.0
+    return round(score, 3)
+
+
+def _dominant_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        bool(row.get("Intact_Strict_Eligible")),
+        bool(row.get("Intact_Review_Eligible")),
+        row.get("Charge_State_Continuity") == "contiguous",
+        _safe_float(row.get("Num_Supporting_Charge_States")),
+        _rt_rank_score(str(row.get("RT_Consistency") or "")),
+        -_safe_float(row.get("Envelope_Internal_Error_ppm"), 1_000_000.0),
+        -_safe_float(row.get("Neutral_Mass_SD"), 1_000_000.0),
+        -_safe_float(row.get("Neutral_Mass_Range"), 1_000_000.0),
+        _safe_float(row.get("Total_Supporting_Intensity")),
+    )
+
+
+def _dominant_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return max(rows, key=_dominant_sort_key, default={})
+
+
 def _reference_match(observed_mass: float, qc_config: dict[str, Any]) -> tuple[str, float | None, float | None, float | None, bool]:
     references = qc_config.get("reference_masses") or []
     if not references:
@@ -375,6 +513,7 @@ def build_intact_reconstruction_qc(
         unmodified_delta_ppm = candidate.mass_error_ppm
         reference_label, reference_mass, reference_error_da, reference_error_ppm, reference_matched = _reference_match(reconstructed_mass, qc_config)
         in_mass_range, neutral_search_min, neutral_search_max, neutral_range_status = _neutral_mass_range_status(reconstructed_mass, qc_config)
+        in_target_range, target_range_status, target_review_priority = _target_review_range_status(reconstructed_mass, qc_config)
 
         factors: list[str] = []
         if len(charges) < qc_config["min_charge_states_for_review"]:
@@ -435,26 +574,30 @@ def build_intact_reconstruction_qc(
         factors = list(dict.fromkeys(factors))
         severe_factors = list(dict.fromkeys(severe_factors))
         confidence = {"Reliable": "High", "Review": "Medium", "Insufficient": "Low", "Failed": "None"}.get(status, "Low")
-        comparison_ready_strict = (
+        envelope_qc_eligible = (
             in_mass_range
-            and status == "Reliable"
-            and contiguous_ok
-            and basic_internal_ok
-            and reliable_rt_ok
-            and reliable_intensity_ok
-            and trace_ok_for_reliable
-            and not severe_factors
-        )
-        comparison_ready_review = (
-            in_mass_range
-            and status == "Review"
-            and "Review" in qc_config["comparison_ready_statuses"]
+            and reconstruction_enabled
             and len(charges) >= qc_config["min_charge_states_for_review"]
             and basic_internal_ok
             and review_rt_ok
-            and review_intensity_ok
-            and not any(factor in severe_factors for factor in {"insufficient_charge_states", "internal_mass_error_too_large", "mass_spread_too_large", "rt_inconsistent", "insufficient_intensity_support"})
+            and not severe_factors
         )
+        intact_strict_eligible = (
+            envelope_qc_eligible
+            and status == "Reliable"
+            and contiguous_ok
+            and reliable_rt_ok
+            and reliable_intensity_ok
+            and trace_ok_for_reliable
+        )
+        intact_review_eligible = (
+            envelope_qc_eligible
+            and not intact_strict_eligible
+            and "Review" in qc_config["comparison_ready_statuses"]
+            and review_intensity_ok
+        )
+        comparison_ready_strict = intact_strict_eligible
+        comparison_ready_review = intact_review_eligible
         comparison_ready = comparison_ready_strict or comparison_ready_review
         readiness_reason = "strict" if comparison_ready_strict else "review" if comparison_ready_review else _primary_factor(factors) or "not_ready"
         primary_factor = _primary_factor(factors)
@@ -479,6 +622,12 @@ def build_intact_reconstruction_qc(
         candidate.neutral_mass_search_min_da = neutral_search_min
         candidate.neutral_mass_search_max_da = neutral_search_max
         candidate.neutral_mass_range_status = neutral_range_status
+        candidate.in_target_review_mass_range = in_target_range
+        candidate.target_review_mass_range_status = target_range_status
+        candidate.target_review_priority = target_review_priority
+        candidate.envelope_qc_eligible = envelope_qc_eligible
+        candidate.intact_review_eligible = intact_review_eligible
+        candidate.intact_strict_eligible = intact_strict_eligible
         candidate.rt_min = rt_min
         candidate.rt_max = rt_max
         candidate.rt_mean = rt_mean
@@ -509,6 +658,17 @@ def build_intact_reconstruction_qc(
             "Neutral_Mass_Search_Min_Da": neutral_search_min,
             "Neutral_Mass_Search_Max_Da": neutral_search_max,
             "Neutral_Mass_Range_Status": neutral_range_status,
+            "In_Target_Review_Mass_Range": in_target_range,
+            "Target_Review_Mass_Range_Status": target_range_status,
+            "Target_Review_Priority": target_review_priority,
+            "Envelope_QC_Eligible": envelope_qc_eligible,
+            "Intact_Review_Eligible": intact_review_eligible,
+            "Intact_Strict_Eligible": intact_strict_eligible,
+            "Intact_Envelope_QC_Score": None,
+            "Intact_Envelope_QC_Rank": None,
+            "Strict_Eligible_Rank": None,
+            "Review_Eligible_Rank": None,
+            "Dominant_Intact_Envelope_Flag": False,
             "Reconstruction_Status": status,
             "Reconstruction_Confidence": confidence,
             "Comparison_Ready_Strict": comparison_ready_strict,
@@ -519,6 +679,9 @@ def build_intact_reconstruction_qc(
             "Mean_Supporting_Intensity": mean_intensity,
             "Max_Supporting_Intensity": max_supporting_intensity,
             "Relative_Envelope_Intensity_Percent": relative_intensity,
+            "Relative_Overall_Envelope_Intensity_Percent": relative_intensity,
+            "Relative_In_Range_Raw_Intensity_Percent": None,
+            "Relative_Intact_Eligible_Intensity_Percent": None,
             "Supporting_Peak_Classes": peak_classes,
             "Trace_Only_Envelope": trace_only,
             "Num_Supporting_Charge_States": len(charges),
@@ -548,6 +711,43 @@ def build_intact_reconstruction_qc(
             "Primary_Limiting_Factor": primary_factor,
         })
 
+    max_in_range_intensity = max((_safe_float(row.get("Total_Supporting_Intensity")) for row in qc_rows if row.get("In_Neutral_Mass_Search_Range")), default=0.0)
+    eligible_rows = [row for row in qc_rows if row.get("Intact_Strict_Eligible") or row.get("Intact_Review_Eligible")]
+    max_eligible_intensity = max((_safe_float(row.get("Total_Supporting_Intensity")) for row in eligible_rows), default=0.0)
+    for row in qc_rows:
+        total = _safe_float(row.get("Total_Supporting_Intensity"))
+        row["Relative_In_Range_Raw_Intensity_Percent"] = (total / max_in_range_intensity * 100.0) if max_in_range_intensity and row.get("In_Neutral_Mass_Search_Range") else 0.0
+        row["Relative_Intact_Eligible_Intensity_Percent"] = (total / max_eligible_intensity * 100.0) if max_eligible_intensity and (row.get("Intact_Strict_Eligible") or row.get("Intact_Review_Eligible")) else 0.0
+        row["Intact_Envelope_QC_Score"] = _intact_qc_score(row, qc_config)
+
+    ranked_rows = sorted(qc_rows, key=_dominant_sort_key, reverse=True)
+    for rank, row in enumerate(ranked_rows, start=1):
+        row["Intact_Envelope_QC_Rank"] = rank
+    strict_rows = sorted([row for row in qc_rows if row.get("Intact_Strict_Eligible")], key=_dominant_sort_key, reverse=True)
+    for rank, row in enumerate(strict_rows, start=1):
+        row["Strict_Eligible_Rank"] = rank
+    review_rows = sorted([row for row in qc_rows if row.get("Intact_Review_Eligible")], key=_dominant_sort_key, reverse=True)
+    for rank, row in enumerate(review_rows, start=1):
+        row["Review_Eligible_Rank"] = rank
+    dominant_eligible = strict_rows[0] if strict_rows else review_rows[0] if review_rows else None
+    if dominant_eligible is not None:
+        dominant_eligible["Dominant_Intact_Envelope_Flag"] = True
+
+    candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
+    for row in qc_rows:
+        candidate = candidates_by_cluster.get(str(row.get("Cluster_ID") or ""))
+        if candidate is None:
+            continue
+        candidate.relative_overall_envelope_intensity_percent = row["Relative_Overall_Envelope_Intensity_Percent"]
+        candidate.relative_in_range_raw_intensity_percent = row["Relative_In_Range_Raw_Intensity_Percent"]
+        candidate.relative_intact_eligible_intensity_percent = row["Relative_Intact_Eligible_Intensity_Percent"]
+        candidate.intact_envelope_qc_score = row["Intact_Envelope_QC_Score"]
+        candidate.intact_envelope_qc_rank = row["Intact_Envelope_QC_Rank"]
+        candidate.strict_eligible_rank = row["Strict_Eligible_Rank"]
+        candidate.review_eligible_rank = row["Review_Eligible_Rank"]
+        candidate.dominant_intact_envelope_flag = row["Dominant_Intact_Envelope_Flag"]
+
+
     diagnostic_rows = build_intact_reconstruction_diagnostics(qc_rows, reconstruction_config, reconstruction_enabled)
     return qc_rows, diagnostic_rows
 
@@ -575,8 +775,14 @@ def build_intact_reconstruction_diagnostics(
     reason_summary = "; ".join(f"{key}:{value}" for key, value in sorted(reason_counts.items()))
     in_range_rows = [row for row in qc_rows if row.get("In_Neutral_Mass_Search_Range")]
     outside_rows = [row for row in qc_rows if not row.get("In_Neutral_Mass_Search_Range")]
-    dominant = max(qc_rows, key=lambda row: float(row.get("Total_Supporting_Intensity") or 0.0), default={})
-    dominant_in_range = max(in_range_rows, key=lambda row: float(row.get("Total_Supporting_Intensity") or 0.0), default={})
+    dominant = max(qc_rows, key=lambda row: _safe_float(row.get("Total_Supporting_Intensity")), default={})
+    dominant_in_range = max(in_range_rows, key=lambda row: _safe_float(row.get("Total_Supporting_Intensity")), default={})
+    strict_rows = [row for row in qc_rows if row.get("Intact_Strict_Eligible")]
+    review_rows = [row for row in qc_rows if row.get("Intact_Review_Eligible")]
+    dominant_strict = _dominant_row(strict_rows)
+    dominant_review = _dominant_row(review_rows)
+    dominant_eligible = dominant_strict or dominant_review
+    target_review_rows = [row for row in qc_rows if row.get("In_Target_Review_Mass_Range")]
     references = qc_config.get("reference_masses") or []
     reference_summary = "; ".join(f"{item['label']}={item['mass_da']}" for item in references) or "not_configured"
     rt_settings = (
@@ -589,6 +795,9 @@ def build_intact_reconstruction_diagnostics(
         "Review_Count": status_counts["Review"],
         "Insufficient_Count": status_counts["Insufficient"],
         "Failed_Count": status_counts["Failed"],
+        "Envelope_QC_Eligible_Count": sum(1 for row in qc_rows if row.get("Envelope_QC_Eligible")),
+        "Intact_Strict_Eligible_Count": len(strict_rows),
+        "Intact_Review_Eligible_Count": len(review_rows),
         "Comparison_Ready_Strict_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready_Strict")),
         "Comparison_Ready_Review_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready_Review")),
         "Comparison_Ready_Count": sum(1 for row in qc_rows if row.get("Comparison_Ready")),
@@ -608,6 +817,18 @@ def build_intact_reconstruction_diagnostics(
         "Dominant_Envelope_In_Mass_Range_Intensity": dominant_in_range.get("Total_Supporting_Intensity"),
         "Dominant_Envelope_In_Mass_Range_Status": dominant_in_range.get("Reconstruction_Status"),
         "Dominant_Envelope_In_Mass_Range_Comparison_Ready": dominant_in_range.get("Comparison_Ready"),
+        "Dominant_Envelope_In_Search_Range_Raw_Mass": dominant_in_range.get("Reconstructed_Mass"),
+        "Dominant_Envelope_In_Search_Range_Raw_Intensity": dominant_in_range.get("Total_Supporting_Intensity"),
+        "Dominant_Intact_Strict_Envelope_Mass": dominant_strict.get("Reconstructed_Mass"),
+        "Dominant_Intact_Strict_Envelope_Intensity": dominant_strict.get("Total_Supporting_Intensity"),
+        "Dominant_Intact_Strict_QC_Score": dominant_strict.get("Intact_Envelope_QC_Score"),
+        "Dominant_Intact_Review_Envelope_Mass": dominant_review.get("Reconstructed_Mass"),
+        "Dominant_Intact_Review_Envelope_Intensity": dominant_review.get("Total_Supporting_Intensity"),
+        "Dominant_Intact_Review_QC_Score": dominant_review.get("Intact_Envelope_QC_Score"),
+        "Dominant_Intact_Eligible_Envelope_Mass": dominant_eligible.get("Reconstructed_Mass"),
+        "Dominant_Intact_Eligible_Envelope_Intensity": dominant_eligible.get("Total_Supporting_Intensity"),
+        "Dominant_Intact_Eligible_QC_Score": dominant_eligible.get("Intact_Envelope_QC_Score"),
+        "Dominant_Intact_Eligible_Reference_Label": dominant_eligible.get("Best_Reference_Label"),
         "Failure_Reason_Counts": reason_summary,
         "Reconstruction_Enabled": reconstruction_enabled,
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
@@ -615,8 +836,10 @@ def build_intact_reconstruction_diagnostics(
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
         "Total_Candidates_In_Mass_Range": len(in_range_rows),
         "Total_Candidates_Outside_Mass_Range": len(outside_rows),
+        "Target_Review_Mass_Range_Settings": _target_review_settings(qc_config),
+        "Target_Review_Candidate_Count": len(target_review_rows),
         "Search_Mode": qc_config["search_mode"],
-        "Intensity_Normalization_Method": "relative_to_max_total_supporting_intensity_in_run",
+        "Intensity_Normalization_Method": "overall, in-range raw, and intact-eligible relative intensity are reported separately",
         "RT_Tolerance_Settings": rt_settings,
         "Reference_Masses_Used": reference_summary,
         "Min_Charge_States_For_Reliable": qc_config["min_charge_states_for_reliable"],
@@ -630,7 +853,7 @@ def build_intact_reconstruction_diagnostics(
         "Min_Relative_Envelope_Intensity_Percent_For_Review": qc_config["min_relative_envelope_intensity_percent_for_review"],
         "Max_Competing_Envelopes": qc_config["max_competing_envelopes"],
         "Comparison_Ready_Statuses": "; ".join(map(str, qc_config["comparison_ready_statuses"])),
-        "Notes": "Reliable emphasizes charge-envelope internal quality, RT consistency, and signal support. Comparison_Ready also requires In_Neutral_Mass_Search_Range. Neutral mass search range is the absolute intact reconstruction range; default is 20000-30000 Da. Unmodified_Theory_Delta is annotation only; reference mass matches do not confirm modification identity. Dominant overall envelope uses maximum Total_Supporting_Intensity; dominant in-range envelope is used for intact full-length review.",
+        "Notes": "Reliable emphasizes charge-envelope internal quality, RT consistency, and signal support. Comparison_Ready requires intact eligibility, not only neutral mass range membership. Neutral mass search range is the absolute intact reconstruction range; default is 20000-30000 Da. Target review mass range is optional prioritization only. Reference mass matches do not confirm modification identity. Raw in-range dominant is intensity-only; Dominant_Intact_Eligible uses QC eligibility and ranking.",
     }]
 
 

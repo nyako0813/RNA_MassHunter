@@ -287,6 +287,231 @@ def test_dominant_envelope_in_search_range_ignores_out_of_range_overall_dominant
     assert diag["Dominant_Envelope_In_Mass_Range_Intensity"] == 50000
 
 
+def test_bad_high_intensity_in_range_candidate_is_raw_dominant_not_intact_dominant():
+    bad = _candidate("BAD_RAW", [10, 11, 12], mass=22286.0, intensity=90000, theoretical_mass=UNMODIFIED_MASS)
+    good = _candidate("GOOD", [10, 11, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("BAD_RAW", [10, 11, 12], masses=[22284.0, 22286.0, 22288.0], rts=[1.0, 1.4, 1.8], intensity=30000) + _peaks(
+        "GOOD", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000
+    )
+    rows, diag = _qc([bad, good], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert diag["Dominant_Envelope_In_Search_Range_Raw_Mass"] == 22286.0
+    assert by_cluster["BAD_RAW"]["Envelope_QC_Eligible"] is False
+    assert by_cluster["BAD_RAW"]["Comparison_Ready"] is False
+    assert diag["Dominant_Intact_Eligible_Envelope_Mass"] == MODIFIED_MASS
+    assert by_cluster["GOOD"]["Dominant_Intact_Envelope_Flag"] is True
+
+
+def test_good_qc_candidate_can_be_intact_eligible_despite_lower_intensity():
+    bad = _candidate("BAD", [10, 11, 12], mass=22286.0, intensity=90000, theoretical_mass=UNMODIFIED_MASS)
+    good = _candidate("LOW_GOOD", [10, 11, 12], mass=LOW_FULL_LENGTH_MASS, intensity=15000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("BAD", [10, 11, 12], masses=[22284.0, 22286.0, 22288.0], rts=[1.0, 1.4, 1.8], intensity=30000) + _peaks(
+        "LOW_GOOD", [10, 11, 12], masses=[25081.99, 25082.0, 25082.01], intensity=5000
+    )
+    rows, _ = _qc([bad, good], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["BAD"]["Intact_Strict_Eligible"] is False
+    assert by_cluster["LOW_GOOD"]["Intact_Strict_Eligible"] is True
+    assert by_cluster["LOW_GOOD"]["Comparison_Ready_Strict"] is True
+
+
+def test_strict_candidate_is_preferred_over_review_candidate():
+    strict = _candidate("STRICT", [10, 11, 12], mass=MODIFIED_MASS, intensity=20000, theoretical_mass=UNMODIFIED_MASS)
+    review = _candidate("REVIEW", [10, 12], mass=LOW_FULL_LENGTH_MASS, intensity=80000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("STRICT", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=7000) + _peaks(
+        "REVIEW", [10, 12], masses=[25081.99, 25082.01], rts=[3.0, 3.1], intensity=40000
+    )
+    rows, diag = _qc([strict, review], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["STRICT"]["Intact_Strict_Eligible"] is True
+    assert by_cluster["REVIEW"]["Intact_Review_Eligible"] is True
+    assert diag["Dominant_Intact_Eligible_Envelope_Mass"] == MODIFIED_MASS
+    assert by_cluster["STRICT"]["Dominant_Intact_Envelope_Flag"] is True
+
+
+def test_review_top_is_dominant_when_no_strict_candidate_exists():
+    better_review = _candidate("REVIEW_A", [10, 12, 13], mass=MODIFIED_MASS, intensity=25000, theoretical_mass=UNMODIFIED_MASS)
+    lower_review = _candidate("REVIEW_B", [10, 12], mass=LOW_FULL_LENGTH_MASS, intensity=50000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("REVIEW_A", [10, 12, 13], masses=[25325.49, 25325.50, 25325.51], rts=[2.0, 2.1, 2.2], intensity=8000) + _peaks(
+        "REVIEW_B", [10, 12], masses=[25081.99, 25082.01], rts=[3.0, 3.1], intensity=25000
+    )
+    rows, diag = _qc([better_review, lower_review], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert diag["Intact_Strict_Eligible_Count"] == 0
+    assert by_cluster["REVIEW_A"]["Intact_Review_Eligible"] is True
+    assert by_cluster["REVIEW_B"]["Intact_Review_Eligible"] is True
+    assert diag["Dominant_Intact_Review_Envelope_Mass"] == MODIFIED_MASS
+    assert diag["Dominant_Intact_Eligible_Envelope_Mass"] == MODIFIED_MASS
+
+
+def test_trace_only_alone_does_not_remove_review_eligibility():
+    candidate = _candidate("TRACE_REVIEW", [10, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("TRACE_REVIEW", [10, 12], masses=[25325.49, 25325.51], rts=[2.0, 2.1], intensity=10000, tier="Trace")
+    rows, _ = _qc([candidate], peaks)
+    row = rows[0]
+    assert row["Trace_Only_Envelope"] is True
+    assert row["Intact_Review_Eligible"] is True
+    assert row["Comparison_Ready_Review"] is True
+    assert "trace_only_envelope" in row["Comparison_Readiness_Reason"] or row["Comparison_Readiness_Reason"] == "review"
+
+
+def test_relative_intact_eligible_intensity_is_normalized_within_eligible_candidates():
+    bad = _candidate("BAD", [10, 11, 12], mass=22286.0, intensity=90000, theoretical_mass=UNMODIFIED_MASS)
+    eligible_max = _candidate("ELIGIBLE_MAX", [10, 11, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    eligible_half = _candidate("ELIGIBLE_HALF", [10, 12], mass=LOW_FULL_LENGTH_MASS, intensity=15000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = (
+        _peaks("BAD", [10, 11, 12], masses=[22284.0, 22286.0, 22288.0], rts=[1.0, 1.4, 1.8], intensity=30000)
+        + _peaks("ELIGIBLE_MAX", [10, 11, 12], masses=[25325.49, 25325.5, 25325.51], intensity=10000)
+        + _peaks("ELIGIBLE_HALF", [10, 12], masses=[25081.99, 25082.01], intensity=7500)
+    )
+    rows, _ = _qc([bad, eligible_max, eligible_half], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["BAD"]["Relative_Intact_Eligible_Intensity_Percent"] == 0.0
+    assert by_cluster["ELIGIBLE_MAX"]["Relative_Intact_Eligible_Intensity_Percent"] == 100.0
+    assert by_cluster["ELIGIBLE_HALF"]["Relative_Intact_Eligible_Intensity_Percent"] == 50.0
+
+
+def test_target_review_range_enabled_disabled_and_counts():
+    candidates = [
+        _candidate("M22286", [10, 11, 12], mass=22286.0, intensity=10000, theoretical_mass=UNMODIFIED_MASS),
+        _candidate("M25082", [10, 11, 12], mass=LOW_FULL_LENGTH_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS),
+        _candidate("M25325", [10, 11, 12], mass=MODIFIED_MASS, intensity=40000, theoretical_mass=UNMODIFIED_MASS),
+        _candidate("M25343", [10, 11, 12], mass=25343.0, intensity=35000, theoretical_mass=UNMODIFIED_MASS),
+    ]
+    peaks = (
+        _peaks("M22286", [10, 11, 12], masses=[22285.99, 22286.0, 22286.01], intensity=3000)
+        + _peaks("M25082", [10, 11, 12], masses=[25081.99, 25082.0, 25082.01], intensity=7000)
+        + _peaks("M25325", [10, 11, 12], masses=[25325.49, 25325.5, 25325.51], intensity=8000)
+        + _peaks("M25343", [10, 11, 12], masses=[25342.99, 25343.0, 25343.01], intensity=7500)
+    )
+    default_rows, default_diag = _qc(candidates, peaks)
+    assert {row["Target_Review_Mass_Range_Status"] for row in default_rows} == {"not_configured"}
+    assert default_diag["Target_Review_Mass_Range_Settings"] == "disabled"
+
+    config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "target_review_mass_range": {"enabled": True, "min_da": 24000, "max_da": 26000},
+        }
+    }
+    rows, diag = _qc(candidates, peaks, config=config)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["M22286"]["In_Target_Review_Mass_Range"] is False
+    assert by_cluster["M22286"]["Target_Review_Mass_Range_Status"] == "outside_range"
+    assert by_cluster["M25082"]["In_Target_Review_Mass_Range"] is True
+    assert by_cluster["M25325"]["In_Target_Review_Mass_Range"] is True
+    assert by_cluster["M25343"]["In_Target_Review_Mass_Range"] is True
+    assert diag["Target_Review_Candidate_Count"] == 3
+
+
+def test_sciex_reference_mass_error_for_25325_581():
+    config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "reference_masses": [
+                {"label": "SCiex_25325_5", "mass_da": 25325.5},
+                {"label": "SCiex_25342", "mass_da": 25342.0},
+                {"label": "SCiex_25343", "mass_da": 25343.0},
+            ],
+            "reference_mass_tolerance_ppm": 20,
+        }
+    }
+    candidate = _candidate("REF", [10, 11, 12], mass=25325.581, intensity=40000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("REF", [10, 11, 12], masses=[25325.571, 25325.581, 25325.591], intensity=10000)
+    rows, _ = _qc([candidate], peaks, config=config)
+    row = rows[0]
+    assert row["Reference_Mass_Matched"] is True
+    assert row["Best_Reference_Label"] == "SCiex_25325_5"
+    assert round(row["Reference_Mass_Error_Da"], 3) == 0.081
+    assert round(row["Reference_Mass_Error_ppm"], 1) == 3.2
+    assert row["Reconstruction_Status"] == "Reliable"
+
+
+def test_generic_logic_works_without_reference_masses_or_trna_specific_values():
+    config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "neutral_mass_range": {"enabled": True, "min_da": 15000, "max_da": 16000},
+        }
+    }
+    good = _candidate("GENERIC_GOOD", [6, 7, 8], mass=15555.5, intensity=42000, theoretical_mass=12345.6)
+    out = _candidate("GENERIC_OUT", [6, 7, 8], mass=17000.0, intensity=84000, theoretical_mass=12345.6)
+    peaks = _peaks("GENERIC_GOOD", [6, 7, 8], masses=[15555.49, 15555.50, 15555.51], intensity=14000) + _peaks(
+        "GENERIC_OUT", [6, 7, 8], masses=[16999.99, 17000.00, 17000.01], intensity=28000
+    )
+    rows, diag = _qc([good, out], peaks, config=config)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["GENERIC_GOOD"]["Best_Reference_Label"] == "not_configured"
+    assert by_cluster["GENERIC_GOOD"]["Intact_Strict_Eligible"] is True
+    assert by_cluster["GENERIC_GOOD"]["Comparison_Ready"] is True
+    assert by_cluster["GENERIC_OUT"]["In_Neutral_Mass_Search_Range"] is False
+    assert by_cluster["GENERIC_OUT"]["Comparison_Ready"] is False
+    assert diag["Dominant_Intact_Eligible_Envelope_Mass"] == 15555.5
+
+
+def test_reference_annotations_do_not_change_qc_score_rank_or_dominant_selection():
+    candidates_without_ref = [
+        _candidate("A", [6, 7, 8], mass=15555.5, intensity=40000, theoretical_mass=12345.6),
+        _candidate("B", [6, 8], mass=15620.0, intensity=50000, theoretical_mass=12345.6),
+    ]
+    peaks = _peaks("A", [6, 7, 8], masses=[15555.49, 15555.50, 15555.51], intensity=13000) + _peaks(
+        "B", [6, 8], masses=[15619.99, 15620.01], rts=[3.0, 3.1], intensity=25000
+    )
+    base_config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "neutral_mass_range": {"enabled": True, "min_da": 15000, "max_da": 16000},
+        }
+    }
+    ref_config = {
+        "intact_reconstruction": {
+            **base_config["intact_reconstruction"],
+            "reference_masses": [{"label": "external_check_A", "mass_da": 15555.5}],
+            "reference_mass_tolerance_ppm": 20,
+        }
+    }
+    rows_no_ref, diag_no_ref = _qc(candidates_without_ref, peaks, config=base_config)
+    candidates_with_ref = [
+        _candidate("A", [6, 7, 8], mass=15555.5, intensity=40000, theoretical_mass=12345.6),
+        _candidate("B", [6, 8], mass=15620.0, intensity=50000, theoretical_mass=12345.6),
+    ]
+    rows_with_ref, diag_with_ref = _qc(candidates_with_ref, peaks, config=ref_config)
+    no_ref = {row["Cluster_ID"]: row for row in rows_no_ref}
+    with_ref = {row["Cluster_ID"]: row for row in rows_with_ref}
+    for cluster_id in ["A", "B"]:
+        for field in [
+            "Reconstruction_Status",
+            "Envelope_QC_Eligible",
+            "Intact_Strict_Eligible",
+            "Intact_Review_Eligible",
+            "Comparison_Ready",
+            "Intact_Envelope_QC_Score",
+            "Intact_Envelope_QC_Rank",
+            "Dominant_Intact_Envelope_Flag",
+        ]:
+            assert with_ref[cluster_id][field] == no_ref[cluster_id][field]
+    assert diag_with_ref["Dominant_Intact_Eligible_Envelope_Mass"] == diag_no_ref["Dominant_Intact_Eligible_Envelope_Mass"]
+    assert with_ref["A"]["Reference_Mass_Matched"] is True
+    assert no_ref["A"]["Reference_Mass_Matched"] is False
+
+
+def test_target_review_range_enabled_without_bounds_is_not_configured_and_non_filtering():
+    config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "neutral_mass_range": {"enabled": True, "min_da": 15000, "max_da": 16000},
+            "target_review_mass_range": {"enabled": True},
+        }
+    }
+    candidate = _candidate("NO_BOUNDS", [6, 7, 8], mass=15555.5, intensity=40000, theoretical_mass=12345.6)
+    peaks = _peaks("NO_BOUNDS", [6, 7, 8], masses=[15555.49, 15555.50, 15555.51], intensity=13000)
+    rows, diag = _qc([candidate], peaks, config=config)
+    assert rows[0]["Target_Review_Mass_Range_Status"] == "not_configured"
+    assert rows[0]["Comparison_Ready"] is True
+    assert diag["Target_Review_Mass_Range_Settings"] == "not_configured"
+    assert diag["Target_Review_Candidate_Count"] == 0
+
+
 def _excel_config(reconstruction):
     return SimpleNamespace(
         project={"name": "test"},
@@ -386,9 +611,21 @@ def test_existing_excel_sheets_and_new_columns_are_present(tmp_path):
         assert "Neutral_Mass_Search_Max_Da" in qc_headers
         assert "Neutral_Mass_Range_Status" in qc_headers
         assert "Limiting_Factors" in qc_headers
+        assert "Envelope_QC_Eligible" in qc_headers
+        assert "Intact_Review_Eligible" in qc_headers
+        assert "Intact_Strict_Eligible" in qc_headers
+        assert "Intact_Envelope_QC_Score" in qc_headers
+        assert "Relative_Intact_Eligible_Intensity_Percent" in qc_headers
+        assert "In_Target_Review_Mass_Range" in qc_headers
         assert "Dominant_Envelope_Mass" in diag_headers
         assert "Dominant_Envelope_Overall_Mass" in diag_headers
         assert "Dominant_Envelope_In_Mass_Range_Mass" in diag_headers
+        assert "Dominant_Envelope_In_Search_Range_Raw_Mass" in diag_headers
+        assert "Dominant_Intact_Eligible_Envelope_Mass" in diag_headers
+        assert "Envelope_QC_Eligible_Count" in diag_headers
+        assert "Intact_Strict_Eligible_Count" in diag_headers
+        assert "Intact_Review_Eligible_Count" in diag_headers
+        assert "Target_Review_Candidate_Count" in diag_headers
         assert "Total_Candidates_In_Mass_Range" in diag_headers
         assert "Total_Candidates_Outside_Mass_Range" in diag_headers
     finally:

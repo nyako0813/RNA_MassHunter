@@ -199,6 +199,10 @@ MVP-5.9.1 separates charge-envelope reconstruction quality from proximity to the
 
 MVP-5.9.2 adds an SCiex-style absolute neutral mass search range for intact reconstruction. By default, full-length reconstruction review uses `intact_reconstruction.neutral_mass_range` with `enabled: true`, `min_da: 20000`, and `max_da: 30000`; candidates outside that range are flagged with `In_Neutral_Mass_Search_Range = false`, are not `Comparison_Ready`, and are excluded from the in-range dominant envelope used for full-length RNA review.
 
+## MVP-5.9.3 Dominant Intact Envelope Selection
+
+MVP-5.9.3 separates raw in-range intensity dominance from the Dominant Intact Envelope used for review. The neutral mass search range remains the absolute reconstruction range and can be changed for the analysis target; the default `20000-30000 Da` is only an initial setting. The strongest candidate inside that range is not automatically treated as the best intact envelope; `Dominant_Intact_Eligible` is selected from QC-eligible strict or review candidates using charge support, continuity, RT consistency, mass spread, internal error, and intensity. Optional `target_review_mass_range` settings can prioritize a specific RNA mass window without filtering reconstruction candidates. SCiex or other reference masses are optional external validation annotations: reconstruction, QC eligibility, `Comparison_Ready`, and dominant intact envelope selection work without reference data, and reference agreement is not required for successful reconstruction or modification identity.
+
 
 ## Data Notes
 
