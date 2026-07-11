@@ -5,7 +5,13 @@ from openpyxl import load_workbook
 
 from rna_masshunter.config import validate_config
 from rna_masshunter.excel_report import write_excel_report
-from rna_masshunter.intact_reconstruction import build_intact_reconstruction_qc, build_reconstructed_mass_spectrum_rows, reconstruct_intact_masses
+from rna_masshunter.intact_reconstruction import (
+    _apply_split_envelope_merge,
+    build_intact_engine_comparison_rows,
+    build_intact_reconstruction_qc,
+    build_reconstructed_mass_spectrum_rows,
+    reconstruct_intact_masses,
+)
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.models import IntactMassCandidate, Peak, PeakTierResult, RunConfig
 
@@ -1079,3 +1085,185 @@ def test_rt_localized_config_defaults_and_validation():
     )
     with pytest.raises(ValueError, match="intact_reconstruction.engine"):
         validate_config(bad)
+
+
+
+def test_mvp597_quality_tiers_and_failure_matrix_are_reported():
+    tier1 = _candidate("TIER1", [10, 11, 12], mass=MODIFIED_MASS, intensity=50000, theoretical_mass=UNMODIFIED_MASS)
+    tier2 = _candidate("TIER2", [10, 11], mass=LOW_FULL_LENGTH_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    tier3 = _candidate("TIER3", [10, 11], mass=25343.0, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    tier4 = _candidate("TIER4", [10], mass=25344.0, intensity=10000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = (
+        _peaks("TIER1", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000)
+        + _peaks("TIER2", [10, 11], masses=[25081.99, 25082.01], intensity=10000)
+        + _peaks("TIER3", [10, 11], masses=[25342.0, 25344.0], intensity=10000)
+        + _peaks("TIER4", [10], masses=[25344.0], intensity=10000)
+    )
+    rows, diag = _qc([tier1, tier2, tier3, tier4], peaks)
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["TIER1"]["Intact_Quality_Tier"] == "Tier_1_high_quality"
+    assert by_cluster["TIER2"]["Intact_Quality_Tier"] == "Tier_2_supported"
+    assert by_cluster["TIER3"]["Intact_Quality_Tier"] == "Tier_3_weak"
+    assert by_cluster["TIER4"]["Intact_Quality_Tier"] == "Tier_4_rejected"
+    assert by_cluster["TIER1"]["Comparison_Ready_Strict"] is True
+    assert by_cluster["TIER2"]["Comparison_Ready_Review"] is True
+    assert by_cluster["TIER3"]["Comparison_Ready"] is False
+    assert by_cluster["TIER3"]["Pass_Neutral_Mass_Range"] is False
+    assert "neutral_mass_range" in by_cluster["TIER3"]["Review_Failure_Reasons"]
+    assert "Tier_1_high_quality:1" in diag["Candidate_Count_By_Quality_Tier"]
+    assert "Tier_4_rejected:1" in diag["Candidate_Count_By_Quality_Tier"]
+
+
+def test_mvp597_comparison_ready_tiers_are_configurable():
+    config = {
+        "intact_reconstruction": {
+            **BASE_QC_CONFIG["intact_reconstruction"],
+            "comparison_ready_tiers": {"strict": ["Tier_1_high_quality"], "review": ["Tier_1_high_quality", "Tier_2_supported", "Tier_3_weak"]},
+        }
+    }
+    weak = _candidate("WEAK", [10, 11], mass=25343.0, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    rows, _ = _qc([weak], _peaks("WEAK", [10, 11], masses=[25342.0, 25344.0], intensity=10000), config=config)
+    assert rows[0]["Intact_Quality_Tier"] == "Tier_3_weak"
+    assert rows[0]["Comparison_Ready_Strict"] is False
+    assert rows[0]["Comparison_Ready_Review"] is True
+    assert rows[0]["Comparison_Ready"] is True
+
+
+def test_mvp597_reference_and_target_review_do_not_change_quality_tier_or_comparison_ready():
+    base = _generic_config()
+    annotated = _generic_config(
+        reference_masses=[{"label": "external", "mass_da": 15000.0}],
+        target_review_mass_range={"enabled": True, "min_da": 14900, "max_da": 15100},
+    )
+    candidate_a = _candidate("GEN", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    candidate_b = _candidate("GEN", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    peaks = _peaks("GEN", [6, 7, 8], masses=[14999.99, 15000.0, 15000.01], intensity=10000)
+    base_rows, _ = _qc([candidate_a], peaks, config=base)
+    annotated_rows, _ = _qc([candidate_b], peaks, config=annotated)
+    for field in ["Intact_Quality_Tier", "Quality_Tier_Rank", "Comparison_Ready", "Intact_Strict_Eligible", "Intact_Envelope_QC_Score"]:
+        assert annotated_rows[0][field] == base_rows[0][field]
+    assert annotated_rows[0]["Reference_Mass_Matched"] is True
+    assert annotated_rows[0]["In_Target_Review_Mass_Range"] is True
+
+
+def test_mvp597_charge_extension_reports_weak_and_missing_neighbor_charges():
+    peaks = [_rt_peak(15000.0, 6, intensity=1000, rt=5.0), _rt_peak(15000.0, 7, intensity=900, rt=5.01)]
+    below = [_rt_peak(15000.0, 8, intensity=5, rt=5.01, tier="Below")]
+    candidates, _, meta = _run_rt(peaks, below=below, config=_rt_config(rt_localized={"charge_extension": {"enabled": True, "max_extension_charges": 2, "weak_peak_tolerance_ppm": 30, "weak_peak_min_local_relative_percent": 0.01, "add_weak_peaks_to_envelope": False}}))
+    assert candidates
+    candidate = candidates[0]
+    assert "8" in candidate.extended_upper_charges_evaluated
+    assert "8" in candidate.extended_weak_charges_detected
+    assert candidate.charge_extension_improved_envelope is True
+    assert meta["stats"]["Missing_Charge_Status_Count"] in {"", None} or isinstance(meta["stats"]["Missing_Charge_Status_Count"], str)
+
+
+def test_mvp597_split_envelope_merge_recalculates_mass_and_gap_metrics():
+    rt_config = _rt_config()["intact_reconstruction"]["rt_localized"]
+    rt_config["split_envelope_merge"] = {"enabled": True, "mass_tolerance_ppm": 20, "rt_tolerance_min": 0.2, "max_charge_gap": 0}
+    window = {"RT_Window_ID": "RT00001", "center": 5.0}
+    record_a = {
+        "mass": 15000.0,
+        "charges": [6, 7],
+        "observed": {6: {"mz": mz_from_neutral_mass(15000.0, 6, "negative"), "Intensity": 1000, "Source_Peak_IDs": ["a6"], "Local_Peak_ID": "a6"}, 7: {"mz": mz_from_neutral_mass(15000.0, 7, "negative"), "Intensity": 900, "Source_Peak_IDs": ["a7"], "Local_Peak_ID": "a7"}},
+        "rt_window_ids": ["RT00001"],
+        "window": window,
+        "local_max": 1000,
+    }
+    record_b = {
+        "mass": 15000.0,
+        "charges": [8, 9],
+        "observed": {8: {"mz": mz_from_neutral_mass(15000.0, 8, "negative"), "Intensity": 800, "Source_Peak_IDs": ["b8"], "Local_Peak_ID": "b8"}, 9: {"mz": mz_from_neutral_mass(15000.0, 9, "negative"), "Intensity": 700, "Source_Peak_IDs": ["b9"], "Local_Peak_ID": "b9"}},
+        "rt_window_ids": ["RT00001"],
+        "window": window,
+        "local_max": 1000,
+    }
+    merged = _apply_split_envelope_merge([record_a, record_b], rt_config, "negative")
+    assert len(merged) == 1
+    assert merged[0]["charges"] == [6, 7, 8, 9]
+    assert merged[0]["split_envelope_merged"] is True
+    assert merged[0]["charge_gaps_after_merge"] == 0
+    assert abs(merged[0]["mass"] - 15000.0) < 0.01
+
+
+def test_mvp597_peak_sharing_can_degrade_quality_tier():
+    candidate = _candidate("SHARED", [10, 11, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    candidate.max_peak_usage_count = 10
+    candidate.mean_peak_usage_count = 10
+    candidate.num_highly_shared_peaks = 3
+    candidate.highly_shared_peak_fraction = 1.0
+    peaks = _peaks("SHARED", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000)
+    rows, _ = _qc([candidate], peaks)
+    assert rows[0]["Peak_Sharing_Status"] == "highly_shared"
+    assert rows[0]["Pass_Peak_Sharing"] is False
+    assert rows[0]["Intact_Quality_Tier"] == "Tier_3_weak"
+    assert rows[0]["Comparison_Ready"] is False
+
+
+def test_mvp597_engine_comparison_reports_match_and_mismatch_statuses():
+    legacy = [_candidate("L1", [6, 7, 8], mass=15000.0, intensity=1000, theoretical_mass=None), _candidate("L2", [6, 7, 8], mass=16000.0, intensity=1000, theoretical_mass=None)]
+    rt = [_candidate("R1", [6, 7, 8], mass=15000.01, intensity=1000, theoretical_mass=None), _candidate("R2", [6, 8], mass=17000.0, intensity=1000, theoretical_mass=None)]
+    rows = build_intact_engine_comparison_rows(legacy, [], rt, [], _generic_config(engine_comparison={"mass_tolerance_ppm": 20, "rt_tolerance_min": 0.15, "min_shared_charge_fraction": 0.5, "require_mass_match": True}))
+    statuses = {row["Legacy_Cluster_ID"] or row["RT_Localized_Cluster_ID"]: row["Engine_Match_Status"] for row in rows}
+    assert statuses["L1"] == "matched"
+    assert statuses["L2"] == "mass_mismatch"
+    assert statuses["R2"] == "rt_localized_only"
+    assert all(row.get("Mass_Delta_Da") is None for row in rows if row["Engine_Match_Status"] != "matched")
+
+
+def test_mvp597_spectrum_minimum_quality_tier_filters_weak_candidates():
+    tier1 = _candidate("SPEC1", [10, 11, 12], mass=MODIFIED_MASS, intensity=50000, theoretical_mass=UNMODIFIED_MASS)
+    tier3 = _candidate("SPEC3", [10, 11], mass=25343.0, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("SPEC1", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000) + _peaks("SPEC3", [10, 11], masses=[25342.0, 25344.0], intensity=10000)
+    rows, _ = _qc([tier1, tier3], peaks)
+    spectrum = build_reconstructed_mass_spectrum_rows(rows, {"intact_reconstruction": {**BASE_QC_CONFIG["intact_reconstruction"], "mass_spectrum_output": {"enabled": True, "representatives_only": False, "minimum_quality_tier": "Tier_2_supported"}}})
+    assert [round(row["Reconstructed_Mass_Da"], 1) for row in spectrum] == [MODIFIED_MASS]
+    assert "Intact_Quality_Tier" in spectrum[0]
+    assert "Peak_Sharing_Status" in spectrum[0]
+
+
+def test_mvp597_rt_engine_qc_summary_sheet_is_written(tmp_path):
+    candidate = _candidate("SUMMARY", [10, 11, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
+    peaks = _peaks("SUMMARY", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000)
+    rows, _ = _qc([candidate], peaks)
+    report = write_excel_report(
+        output_dir=tmp_path,
+        config=_excel_config({"enabled": True, **BASE_QC_CONFIG}),
+        diagnostics={},
+        intact_results=[candidate],
+        charge_state_peaks=peaks,
+        warnings=[],
+        modifications=[],
+        rule_set={},
+        pathways=[],
+        theoretical_fragments=[],
+        fragment_ms1_matches=[],
+        known_modification_candidates=[],
+        known_modification_summary=[],
+        optional_results={},
+    )
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        assert "RT_Engine_QC_Summary" in workbook.sheetnames
+        headers = [cell.value for cell in next(workbook["RT_Engine_QC_Summary"].iter_rows(min_row=3, max_row=3))]
+        assert headers == ["Metric", "Value", "Notes"]
+        values = [row[0] for row in workbook["RT_Engine_QC_Summary"].iter_rows(min_row=4, values_only=True)]
+        assert "Candidate_Count_By_Quality_Tier" in values
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+    finally:
+        workbook.close()
+
+
+def test_mvp597_invalid_spectrum_minimum_quality_tier_is_rejected():
+    config = RunConfig(
+        analysis={"mode": "full"},
+        instrument={"polarity": "negative"},
+        input={},
+        sequence={"sequence": "ACG"},
+        reconstruction={"enabled": True, "intact_reconstruction": {"mass_spectrum_output": {"minimum_quality_tier": "Tier_X"}}},
+        digestion={"enabled": True},
+        fragment_mapping={},
+        alkaline_phosphatase={},
+    )
+    with pytest.raises(ValueError, match="minimum_quality_tier"):
+        validate_config(config)

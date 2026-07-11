@@ -46,6 +46,48 @@ DEFAULT_INTACT_QC_CONFIG = {
     },
     "engine": "legacy_cluster",
     "compare_with_legacy": False,
+    "comparison_ready_tiers": {
+        "strict": ["Tier_1_high_quality"],
+        "review": ["Tier_1_high_quality", "Tier_2_supported"],
+    },
+    "quality_tiers": {
+        "tier1_min_charge_states": 3,
+        "tier1_min_consecutive_charge_states": 3,
+        "tier1_min_local_envelope_relative_intensity_percent": 1.0,
+        "tier2_min_charge_states": 2,
+        "tier2_min_consecutive_charge_states": 2,
+        "tier2_min_local_envelope_relative_intensity_percent": 0.1,
+    },
+    "engine_comparison": {
+        "mass_tolerance_ppm": 20,
+        "rt_tolerance_min": 0.15,
+        "min_shared_charge_fraction": 0.5,
+        "require_mass_match": True,
+    },
+    "competitive_assignment": {
+        "enabled": True,
+        "rt_tolerance_min": 0.15,
+        "close_score_margin": 5.0,
+        "evidence_score_config_version": "MVP-5.9.8a-v1",
+        "score_weights": {
+            "charge_count": 12.0,
+            "consecutive_charge_run": 10.0,
+            "charge_coverage": 8.0,
+            "local_relative_intensity": 5.0,
+            "supporting_scan_count": 3.0,
+            "rt_consistency": 5.0,
+            "extension_support": 2.0,
+            "split_merge_support": 2.0,
+            "internal_error_penalty": 10.0,
+            "neutral_mass_sd_penalty": 5.0,
+            "neutral_mass_range_penalty": 5.0,
+            "rt_range_penalty": 5.0,
+            "peak_sharing_penalty": 12.0,
+            "peak_usage_penalty": 5.0,
+            "charge_gap_penalty": 8.0,
+            "severe_limiting_factor_penalty": 15.0,
+        },
+    },
     "rt_localized": {
         "enabled": True,
         "rt_window_min": 0.10,
@@ -66,6 +108,24 @@ DEFAULT_INTACT_QC_CONFIG = {
             "rt_overlap_required": True,
             "min_shared_charge_fraction": 0.5,
         },
+        "charge_extension": {
+            "enabled": True,
+            "max_extension_charges": 2,
+            "weak_peak_tolerance_ppm": 30,
+            "weak_peak_min_local_relative_percent": 0.01,
+            "add_weak_peaks_to_envelope": False,
+        },
+        "split_envelope_merge": {
+            "enabled": True,
+            "mass_tolerance_ppm": 20,
+            "rt_tolerance_min": 0.10,
+            "max_charge_gap": 1,
+        },
+        "peak_sharing": {
+            "high_usage_threshold": 5,
+            "max_highly_shared_fraction_for_tier1": 0.25,
+            "max_highly_shared_fraction_for_tier2": 0.50,
+        },
     },
     "mass_spectrum_output": {
         "enabled": True,
@@ -75,6 +135,7 @@ DEFAULT_INTACT_QC_CONFIG = {
         "intensity_method": "total_supporting_intensity",
         "normalize_to_percent": True,
         "bin_width_da": None,
+        "minimum_quality_tier": "Tier_3_weak",
     },
 }
 
@@ -161,6 +222,54 @@ QC_COLUMNS = [
     "Source_RT_Window_IDs",
     "Num_Source_RT_Windows",
     "Merged_Across_RT_Windows",
+    "Extended_Lower_Charges_Evaluated",
+    "Extended_Upper_Charges_Evaluated",
+    "Extended_Charges_Detected",
+    "Extended_Weak_Charges_Detected",
+    "Extended_Charges_Not_Detected",
+    "Charge_Extension_Improved_Envelope",
+    "Original_Charge_States",
+    "Final_Charge_States",
+    "Split_Envelope_Group_ID",
+    "Split_Envelope_Member_Count",
+    "Split_Envelope_Merged",
+    "Charge_Gaps_Before_Merge",
+    "Charge_Gaps_After_Merge",
+    "Max_Peak_Usage_Count",
+    "Mean_Peak_Usage_Count",
+    "Num_Highly_Shared_Peaks",
+    "Highly_Shared_Peak_Fraction",
+    "Competing_Candidate_Count",
+    "Peak_Sharing_Status",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Shared_Peak_Competitor_Count",
+    "Maximum_Shared_Peak_Fraction",
+    "Mean_Shared_Peak_Fraction",
+    "Competitor_Cluster_IDs",
+    "Is_Noncompeting_Candidate",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Evidence_Score_Components",
+    "Evidence_Score_Penalties",
+    "Evidence_Score_Config_Version",
+    "Pass_Min_Charge_Count",
+    "Pass_Min_Consecutive_Charge_Count",
+    "Pass_Charge_Continuity",
+    "Pass_Internal_Error",
+    "Pass_Neutral_Mass_SD",
+    "Pass_Neutral_Mass_Range",
+    "Pass_RT_Consistency",
+    "Pass_Local_Intensity",
+    "Pass_Competing_Envelope",
+    "Pass_Peak_Sharing",
+    "Num_Strict_Criteria_Passed",
+    "Num_Review_Criteria_Passed",
+    "Strict_Failure_Reasons",
+    "Review_Failure_Reasons",
+    "Intact_Quality_Tier",
+    "Quality_Tier_Reason",
+    "Quality_Tier_Rank",
     "Comparison_Ready_Strict",
     "Comparison_Ready_Review",
     "Comparison_Ready",
@@ -279,6 +388,36 @@ DIAGNOSTIC_COLUMNS = [
     "Median_Internal_Error_ppm",
     "Median_Charge_Count",
     "Processing_Time_Seconds",
+    "Candidate_Count_By_Quality_Tier",
+    "Strict_Failure_Reason_Counts",
+    "Review_Failure_Reason_Counts",
+    "Charge_Count_Distribution",
+    "Consecutive_Charge_Distribution",
+    "Internal_Error_Distribution",
+    "RT_Range_Distribution",
+    "Peak_Usage_Distribution",
+    "Split_Envelope_Count",
+    "Missing_Charge_Status_Count",
+    "Engine_Match_Status_Count",
+    "Matched_Engine_Candidate_Count",
+    "Legacy_Only_Count",
+    "RT_Localized_Only_Count",
+    "Mass_Mismatch_Count",
+    "RT_Mismatch_Count",
+    "Charge_Overlap_Failure_Count",
+    "Median_Mass_Delta_For_Matched_Only",
+    "Competing_Envelope_Group_Count",
+    "MultiCandidate_Competition_Group_Count",
+    "Noncompeting_Candidate_Count",
+    "Largest_Competition_Group_Size",
+    "Median_Competition_Group_Size",
+    "Mean_Competition_Group_Size",
+    "Competition_Group_Size_Distribution",
+    "Median_Top_Evidence_Score",
+    "Median_Top_vs_Second_Score_Margin",
+    "Competition_Groups_With_Close_Scores",
+    "High_Peak_Sharing_Candidate_Count",
+    "Competitive_Scoring_Time_Seconds",
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Total_Candidates_Before_Mass_Range_Filter",
@@ -336,6 +475,11 @@ COMPARISON_CANDIDATE_COLUMNS = [
     "Intact_Envelope_Group_ID",
     "Reconstruction_Status",
     "Comparison_Ready",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Maximum_Shared_Peak_Fraction",
     "Intact_Envelope_QC_Score",
     "Total_Supporting_Intensity",
     "Reconstructed_Envelope_Intensity",
@@ -390,6 +534,15 @@ RECONSTRUCTED_MASS_SPECTRUM_COLUMNS = [
     "Group_Representative",
     "Comparison_Representative",
     "Reconstruction_Status",
+    "Intact_Quality_Tier",
+    "Quality_Tier_Rank",
+    "Peak_Sharing_Status",
+    "Max_Peak_Usage_Count",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Maximum_Shared_Peak_Fraction",
     "Envelope_QC_Eligible",
     "Intact_Strict_Eligible",
     "Intact_Review_Eligible",
@@ -440,6 +593,27 @@ RT_ENVELOPE_DIAGNOSTIC_COLUMNS = [
     "Source_RT_Window_IDs",
     "Num_Source_RT_Windows",
     "Merged_Across_RT_Windows",
+    "Extended_Lower_Charges_Evaluated",
+    "Extended_Upper_Charges_Evaluated",
+    "Extended_Charges_Detected",
+    "Extended_Weak_Charges_Detected",
+    "Extended_Charges_Not_Detected",
+    "Charge_Extension_Improved_Envelope",
+    "Split_Envelope_Group_ID",
+    "Split_Envelope_Member_Count",
+    "Split_Envelope_Merged",
+    "Charge_Gaps_Before_Merge",
+    "Charge_Gaps_After_Merge",
+    "Max_Peak_Usage_Count",
+    "Mean_Peak_Usage_Count",
+    "Num_Highly_Shared_Peaks",
+    "Highly_Shared_Peak_Fraction",
+    "Peak_Sharing_Status",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Maximum_Shared_Peak_Fraction",
     "Notes",
 ]
 
@@ -469,7 +643,59 @@ ENGINE_COMPARISON_COLUMNS = [
     "Legacy_Internal_Error_ppm",
     "RT_Localized_Internal_Error_ppm",
     "Peak_Overlap_Fraction",
+    "Engine_Match_Status",
+    "Match_Failure_Reason",
+    "Mass_Matched",
+    "RT_Matched",
+    "Charge_Matched",
+    "Peak_Matched",
     "Notes",
+]
+
+RT_ENGINE_QC_SUMMARY_COLUMNS = [
+    "Metric",
+    "Value",
+    "Notes",
+]
+
+COMPETITION_GROUP_COLUMNS = [
+    "Competing_Envelope_Group_ID",
+    "Group_Size",
+    "MultiCandidate_Group",
+    "Top_Ranked_Cluster_ID",
+    "Top_Ranked_Mass",
+    "Top_Evidence_Score",
+    "Second_Evidence_Score",
+    "Score_Margin_Top_vs_Second",
+    "Shared_Local_Peak_Count",
+    "Maximum_Peak_Usage_Count",
+    "Member_Cluster_IDs",
+    "Member_Masses",
+    "Member_Quality_Tiers",
+    "Notes",
+]
+
+COMPETITION_SCORE_COLUMNS = [
+    "Cluster_ID",
+    "Reconstructed_Mass",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Evidence_Score_Components",
+    "Evidence_Score_Penalties",
+    "Intact_Quality_Tier",
+    "Supporting_Charge_Count",
+    "Longest_Consecutive_Charge_Run",
+    "Charge_Coverage_Fraction",
+    "Local_Envelope_Relative_Intensity_Percent",
+    "Envelope_Internal_Error_ppm",
+    "Neutral_Mass_SD",
+    "Neutral_Mass_Range",
+    "RT_Range_Min",
+    "Maximum_Shared_Peak_Fraction",
+    "Max_Peak_Usage_Count",
+    "Limiting_Factors",
 ]
 
 SEVERE_LIMITING_FACTORS = {
@@ -594,6 +820,15 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
     merge_cfg = rt_localized.get("merge_across_windows") or {}
     if not isinstance(merge_cfg, dict):
         merge_cfg = {}
+    extension_cfg = rt_localized.get("charge_extension") or {}
+    if not isinstance(extension_cfg, dict):
+        extension_cfg = {}
+    split_cfg = rt_localized.get("split_envelope_merge") or {}
+    if not isinstance(split_cfg, dict):
+        split_cfg = {}
+    sharing_cfg = rt_localized.get("peak_sharing") or {}
+    if not isinstance(sharing_cfg, dict):
+        sharing_cfg = {}
     merged["rt_localized"] = {
         "enabled": _as_bool(rt_localized.get("enabled"), True),
         "rt_window_min": float(rt_localized.get("rt_window_min") if rt_localized.get("rt_window_min") is not None else 0.10),
@@ -614,6 +849,24 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
             "rt_overlap_required": _as_bool(merge_cfg.get("rt_overlap_required"), True),
             "min_shared_charge_fraction": float(merge_cfg.get("min_shared_charge_fraction") if merge_cfg.get("min_shared_charge_fraction") is not None else 0.5),
         },
+        "charge_extension": {
+            "enabled": _as_bool(extension_cfg.get("enabled"), True),
+            "max_extension_charges": int(extension_cfg.get("max_extension_charges") or 2),
+            "weak_peak_tolerance_ppm": float(extension_cfg.get("weak_peak_tolerance_ppm") if extension_cfg.get("weak_peak_tolerance_ppm") is not None else 30),
+            "weak_peak_min_local_relative_percent": float(extension_cfg.get("weak_peak_min_local_relative_percent") if extension_cfg.get("weak_peak_min_local_relative_percent") is not None else 0.01),
+            "add_weak_peaks_to_envelope": _as_bool(extension_cfg.get("add_weak_peaks_to_envelope"), False),
+        },
+        "split_envelope_merge": {
+            "enabled": _as_bool(split_cfg.get("enabled"), True),
+            "mass_tolerance_ppm": float(split_cfg.get("mass_tolerance_ppm") if split_cfg.get("mass_tolerance_ppm") is not None else 20),
+            "rt_tolerance_min": float(split_cfg.get("rt_tolerance_min") if split_cfg.get("rt_tolerance_min") is not None else 0.10),
+            "max_charge_gap": int(split_cfg.get("max_charge_gap") or 1),
+        },
+        "peak_sharing": {
+            "high_usage_threshold": int(sharing_cfg.get("high_usage_threshold") or 5),
+            "max_highly_shared_fraction_for_tier1": float(sharing_cfg.get("max_highly_shared_fraction_for_tier1") if sharing_cfg.get("max_highly_shared_fraction_for_tier1") is not None else 0.25),
+            "max_highly_shared_fraction_for_tier2": float(sharing_cfg.get("max_highly_shared_fraction_for_tier2") if sharing_cfg.get("max_highly_shared_fraction_for_tier2") is not None else 0.50),
+        },
     }
     if merged["rt_localized"]["rt_window_min"] <= 0:
         merged["rt_localized"]["rt_window_min"] = 0.10
@@ -631,6 +884,36 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "min_shared_charge_fraction": float(grouping.get("min_shared_charge_fraction") if grouping.get("min_shared_charge_fraction") is not None else 0.5),
         "require_peak_overlap": _as_bool(grouping.get("require_peak_overlap"), True),
     }
+    tier_cfg = merged.get("comparison_ready_tiers") or {}
+    if not isinstance(tier_cfg, dict):
+        tier_cfg = {}
+    strict_tiers = tier_cfg.get("strict") or ["Tier_1_high_quality"]
+    review_tiers = tier_cfg.get("review") or ["Tier_1_high_quality", "Tier_2_supported"]
+    if isinstance(strict_tiers, str):
+        strict_tiers = [strict_tiers]
+    if isinstance(review_tiers, str):
+        review_tiers = [review_tiers]
+    merged["comparison_ready_tiers"] = {"strict": list(strict_tiers), "review": list(review_tiers)}
+    quality_cfg = merged.get("quality_tiers") or {}
+    if not isinstance(quality_cfg, dict):
+        quality_cfg = {}
+    merged["quality_tiers"] = {
+        "tier1_min_charge_states": int(quality_cfg.get("tier1_min_charge_states") or 3),
+        "tier1_min_consecutive_charge_states": int(quality_cfg.get("tier1_min_consecutive_charge_states") or 3),
+        "tier1_min_local_envelope_relative_intensity_percent": float(quality_cfg.get("tier1_min_local_envelope_relative_intensity_percent") if quality_cfg.get("tier1_min_local_envelope_relative_intensity_percent") is not None else 1.0),
+        "tier2_min_charge_states": int(quality_cfg.get("tier2_min_charge_states") or 2),
+        "tier2_min_consecutive_charge_states": int(quality_cfg.get("tier2_min_consecutive_charge_states") or 2),
+        "tier2_min_local_envelope_relative_intensity_percent": float(quality_cfg.get("tier2_min_local_envelope_relative_intensity_percent") if quality_cfg.get("tier2_min_local_envelope_relative_intensity_percent") is not None else 0.1),
+    }
+    engine_compare = merged.get("engine_comparison") or {}
+    if not isinstance(engine_compare, dict):
+        engine_compare = {}
+    merged["engine_comparison"] = {
+        "mass_tolerance_ppm": float(engine_compare.get("mass_tolerance_ppm") if engine_compare.get("mass_tolerance_ppm") is not None else 20),
+        "rt_tolerance_min": float(engine_compare.get("rt_tolerance_min") if engine_compare.get("rt_tolerance_min") is not None else 0.15),
+        "min_shared_charge_fraction": float(engine_compare.get("min_shared_charge_fraction") if engine_compare.get("min_shared_charge_fraction") is not None else 0.5),
+        "require_mass_match": _as_bool(engine_compare.get("require_mass_match"), True),
+    }
     spectrum_output = merged.get("mass_spectrum_output") or {}
     if not isinstance(spectrum_output, dict):
         spectrum_output = {}
@@ -645,6 +928,7 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "intensity_method": intensity_method,
         "normalize_to_percent": _as_bool(spectrum_output.get("normalize_to_percent"), True),
         "bin_width_da": _optional_float(spectrum_output.get("bin_width_da")),
+        "minimum_quality_tier": str(spectrum_output.get("minimum_quality_tier") or "Tier_3_weak"),
     }
     return merged
 
@@ -783,6 +1067,159 @@ def _small_metric_score(value: Any, limit: float, points: float) -> float:
         return points
     return max(0.0, points * (1.0 - min(numeric / limit, 1.0)))
 
+
+
+
+def _tier_rank(tier: str) -> int:
+    return {"Tier_1_high_quality": 1, "Tier_2_supported": 2, "Tier_3_weak": 3, "Tier_4_rejected": 4}.get(str(tier or ""), 4)
+
+
+def _tier_allowed(row_tier: str, minimum_tier: str) -> bool:
+    if str(minimum_tier or "").lower() == "all":
+        return True
+    return _tier_rank(row_tier) <= _tier_rank(minimum_tier)
+
+
+def _reason_summary(values: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for value in values:
+        for item in str(value or "").split(";"):
+            item = item.strip()
+            if item:
+                counts[item] = counts.get(item, 0) + 1
+    return "; ".join(f"{key}:{counts[key]}" for key in sorted(counts))
+
+
+def _distribution_summary(values: list[Any]) -> str:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value if value not in {None, ""} else "blank")
+        counts[key] = counts.get(key, 0) + 1
+    return "; ".join(f"{key}:{counts[key]}" for key in sorted(counts))
+
+
+def _binned_distribution(values: list[Any], bins: list[tuple[float, str]]) -> str:
+    counts = {label: 0 for _, label in bins}
+    counts["above"] = 0
+    for value in values:
+        numeric = _safe_float(value, None)
+        if numeric is None:
+            continue
+        placed = False
+        for limit, label in bins:
+            if numeric <= limit:
+                counts[label] += 1
+                placed = True
+                break
+        if not placed:
+            counts["above"] += 1
+    return "; ".join(f"{key}:{value}" for key, value in counts.items() if value)
+
+
+def _quality_matrix_and_tier(
+    *,
+    charges: list[int],
+    continuity: str,
+    neutral_sd: float | None,
+    neutral_range: float | None,
+    envelope_internal_error_ppm: float | None,
+    rt_consistency: str,
+    local_envelope_relative: float,
+    competing: int,
+    severe_factors: list[str],
+    reconstruction_enabled: bool,
+    in_mass_range: bool,
+    qc_config: dict[str, Any],
+    candidate: IntactMassCandidate,
+) -> dict[str, Any]:
+    quality_cfg = qc_config["quality_tiers"]
+    sharing_cfg = qc_config["rt_localized"]["peak_sharing"]
+    charge_count = len(charges)
+    longest_run = int(_candidate_extra(candidate, "longest_consecutive_charge_run", 0) or 0)
+    if longest_run <= 0:
+        longest_run = _longest_consecutive_run(charges)
+    highly_shared_fraction = float(_candidate_extra(candidate, "highly_shared_peak_fraction", _candidate_extra(candidate, "shared_peak_fraction", 0.0)) or 0.0)
+    pass_min_charge = charge_count >= qc_config["min_charge_states_for_review"]
+    pass_min_consecutive = longest_run >= quality_cfg["tier2_min_consecutive_charge_states"]
+    pass_continuity = continuity == "contiguous" or not qc_config["require_contiguous_charge_states"]
+    pass_internal = envelope_internal_error_ppm is None or envelope_internal_error_ppm <= qc_config["max_envelope_internal_error_ppm"]
+    pass_sd = neutral_sd is None or neutral_sd <= qc_config["max_neutral_mass_sd_da"]
+    pass_range = neutral_range is None or neutral_range <= qc_config["max_neutral_mass_range_da"]
+    pass_rt = rt_consistency in {"consistent", "review"}
+    pass_local = local_envelope_relative >= quality_cfg["tier2_min_local_envelope_relative_intensity_percent"]
+    pass_competing = competing <= qc_config["max_competing_envelopes"]
+    pass_peak_sharing = highly_shared_fraction <= sharing_cfg["max_highly_shared_fraction_for_tier2"]
+    strict_checks = {
+        "min_charge_count": charge_count >= quality_cfg["tier1_min_charge_states"],
+        "min_consecutive_charge_count": longest_run >= quality_cfg["tier1_min_consecutive_charge_states"],
+        "charge_continuity": pass_continuity,
+        "internal_error": pass_internal,
+        "neutral_mass_sd": pass_sd,
+        "neutral_mass_range": pass_range,
+        "rt_consistency": rt_consistency == "consistent",
+        "local_intensity": local_envelope_relative >= quality_cfg["tier1_min_local_envelope_relative_intensity_percent"],
+        "competing_envelope": pass_competing,
+        "peak_sharing": highly_shared_fraction <= sharing_cfg["max_highly_shared_fraction_for_tier1"],
+        "severe_warning": not severe_factors,
+        "in_neutral_mass_range": in_mass_range,
+        "reconstruction_enabled": reconstruction_enabled,
+    }
+    review_checks = {
+        "min_charge_count": pass_min_charge,
+        "min_consecutive_charge_count": pass_min_consecutive,
+        "charge_continuity": pass_continuity,
+        "internal_error": pass_internal,
+        "neutral_mass_sd": pass_sd,
+        "neutral_mass_range": pass_range,
+        "rt_consistency": pass_rt,
+        "local_intensity": pass_local,
+        "competing_envelope": pass_competing,
+        "peak_sharing": pass_peak_sharing,
+        "severe_warning": not severe_factors,
+        "in_neutral_mass_range": in_mass_range,
+        "reconstruction_enabled": reconstruction_enabled,
+    }
+    strict_failures = [key for key, ok in strict_checks.items() if not ok]
+    review_failures = [key for key, ok in review_checks.items() if not ok]
+    tier2_blocking_failures = [
+        key
+        for key in review_failures
+        if key not in {"min_consecutive_charge_count", "charge_continuity"}
+    ]
+    if not review_checks["reconstruction_enabled"] or not review_checks["in_neutral_mass_range"] or not review_checks["min_charge_count"]:
+        tier = "Tier_4_rejected"
+        reason = review_failures[0] if review_failures else "not_ready"
+    elif not strict_failures:
+        tier = "Tier_1_high_quality"
+        reason = "strict_criteria_passed"
+    elif not tier2_blocking_failures:
+        tier = "Tier_2_supported"
+        reason = "review_criteria_passed" if not review_failures else "; ".join(review_failures)
+    elif review_checks["min_charge_count"] and review_checks["reconstruction_enabled"] and review_checks["in_neutral_mass_range"]:
+        tier = "Tier_3_weak"
+        reason = "; ".join(review_failures) or "weak_support"
+    else:
+        tier = "Tier_4_rejected"
+        reason = "; ".join(review_failures) or "not_ready"
+    return {
+        "Pass_Min_Charge_Count": pass_min_charge,
+        "Pass_Min_Consecutive_Charge_Count": pass_min_consecutive,
+        "Pass_Charge_Continuity": pass_continuity,
+        "Pass_Internal_Error": pass_internal,
+        "Pass_Neutral_Mass_SD": pass_sd,
+        "Pass_Neutral_Mass_Range": pass_range,
+        "Pass_RT_Consistency": pass_rt,
+        "Pass_Local_Intensity": pass_local,
+        "Pass_Competing_Envelope": pass_competing,
+        "Pass_Peak_Sharing": pass_peak_sharing,
+        "Num_Strict_Criteria_Passed": sum(1 for ok in strict_checks.values() if ok),
+        "Num_Review_Criteria_Passed": sum(1 for ok in review_checks.values() if ok),
+        "Strict_Failure_Reasons": "; ".join(strict_failures),
+        "Review_Failure_Reasons": "; ".join(review_failures),
+        "Intact_Quality_Tier": tier,
+        "Quality_Tier_Reason": reason,
+        "Quality_Tier_Rank": _tier_rank(tier),
+    }
 
 def _intact_qc_score(row: dict[str, Any], qc_config: dict[str, Any]) -> float:
     score = 0.0
@@ -1115,6 +1552,8 @@ def build_reconstructed_mass_spectrum_rows(
             continue
         if not output_config.get("include_qc_ineligible", True) and not (row.get("Intact_Strict_Eligible") or row.get("Intact_Review_Eligible")):
             continue
+        if not _tier_allowed(str(row.get("Intact_Quality_Tier") or "Tier_4_rejected"), output_config.get("minimum_quality_tier", "Tier_3_weak")):
+            continue
         mass = row.get("Reconstructed_Mass")
         intensity = _safe_float(row.get("Reconstructed_Envelope_Intensity"))
         if mass is None or mass == "" or intensity <= 0:
@@ -1131,6 +1570,10 @@ def build_reconstructed_mass_spectrum_rows(
             "Group_Representative": row.get("Group_Representative"),
             "Comparison_Representative": row.get("Comparison_Representative"),
             "Reconstruction_Status": row.get("Reconstruction_Status"),
+            "Intact_Quality_Tier": row.get("Intact_Quality_Tier"),
+            "Quality_Tier_Rank": row.get("Quality_Tier_Rank"),
+            "Peak_Sharing_Status": row.get("Peak_Sharing_Status"),
+            "Max_Peak_Usage_Count": row.get("Max_Peak_Usage_Count"),
             "Envelope_QC_Eligible": row.get("Envelope_QC_Eligible"),
             "Intact_Strict_Eligible": row.get("Intact_Strict_Eligible"),
             "Intact_Review_Eligible": row.get("Intact_Review_Eligible"),
@@ -1226,6 +1669,21 @@ def build_intact_reconstruction_qc(
             if other is not candidate
             and abs(float(other.observed_mass) - reconstructed_mass) <= qc_config["max_neutral_mass_range_da"]
         )
+        raw_local_envelope_relative = _candidate_extra(candidate, "local_envelope_relative_intensity_percent", None)
+        local_envelope_relative = float(raw_local_envelope_relative or 0.0)
+        if local_envelope_relative <= 0.0:
+            local_envelope_relative = relative_intensity
+        max_peak_usage = int(_candidate_extra(candidate, "max_peak_usage_count", _candidate_extra(candidate, "peak_usage_count", 0)) or 0)
+        mean_peak_usage = float(_candidate_extra(candidate, "mean_peak_usage_count", max_peak_usage) or 0.0)
+        highly_shared_count = int(_candidate_extra(candidate, "num_highly_shared_peaks", _candidate_extra(candidate, "shared_peak_count", 0)) or 0)
+        highly_shared_fraction = float(_candidate_extra(candidate, "highly_shared_peak_fraction", _candidate_extra(candidate, "shared_peak_fraction", 0.0)) or 0.0)
+        sharing_cfg = qc_config["rt_localized"]["peak_sharing"]
+        if highly_shared_fraction > sharing_cfg["max_highly_shared_fraction_for_tier2"]:
+            peak_sharing_status = "highly_shared"
+        elif highly_shared_fraction > sharing_cfg["max_highly_shared_fraction_for_tier1"]:
+            peak_sharing_status = "moderately_shared"
+        else:
+            peak_sharing_status = "low_shared"
         unmodified_delta_da = candidate.mass_error_da
         unmodified_delta_ppm = candidate.mass_error_ppm
         reference_label, reference_mass, reference_error_da, reference_error_ppm, reference_matched = _reference_match(reconstructed_mass, qc_config)
@@ -1253,6 +1711,8 @@ def build_intact_reconstruction_qc(
             factors.append("trace_only_envelope")
         if competing > qc_config["max_competing_envelopes"]:
             factors.append("multiple_competing_envelopes")
+        if peak_sharing_status == "highly_shared":
+            factors.append("high_peak_sharing")
         if not in_mass_range:
             factors.append("outside_neutral_mass_search_range")
         factors = list(dict.fromkeys(factors))
@@ -1313,10 +1773,28 @@ def build_intact_reconstruction_qc(
             and "Review" in qc_config["comparison_ready_statuses"]
             and review_intensity_ok
         )
-        comparison_ready_strict = intact_strict_eligible
-        comparison_ready_review = intact_review_eligible
+        quality = _quality_matrix_and_tier(
+            charges=charges,
+            continuity=continuity,
+            neutral_sd=neutral_sd,
+            neutral_range=neutral_range,
+            envelope_internal_error_ppm=envelope_internal_error_ppm,
+            rt_consistency=rt_consistency,
+            local_envelope_relative=local_envelope_relative,
+            competing=competing,
+            severe_factors=severe_factors,
+            reconstruction_enabled=reconstruction_enabled,
+            in_mass_range=in_mass_range,
+            qc_config=qc_config,
+            candidate=candidate,
+        )
+        tier = quality["Intact_Quality_Tier"]
+        comparison_ready_strict = tier in qc_config["comparison_ready_tiers"]["strict"]
+        comparison_ready_review = tier in qc_config["comparison_ready_tiers"]["review"]
         comparison_ready = comparison_ready_strict or comparison_ready_review
-        readiness_reason = "strict" if comparison_ready_strict else "review" if comparison_ready_review else _primary_factor(factors) or "not_ready"
+        intact_strict_eligible = intact_strict_eligible and comparison_ready_strict
+        intact_review_eligible = (intact_review_eligible or comparison_ready_review) and comparison_ready_review
+        readiness_reason = "strict" if comparison_ready_strict else "review" if comparison_ready_review else quality["Quality_Tier_Reason"] or _primary_factor(factors) or "not_ready"
         primary_factor = _primary_factor(factors)
 
         candidate.reconstruction_status = status
@@ -1373,6 +1851,29 @@ def build_intact_reconstruction_qc(
         candidate.comparison_ready_review = comparison_ready_review
         candidate.comparison_ready = comparison_ready
         candidate.comparison_readiness_reason = readiness_reason
+        candidate.max_peak_usage_count = max_peak_usage
+        candidate.mean_peak_usage_count = mean_peak_usage
+        candidate.num_highly_shared_peaks = highly_shared_count
+        candidate.highly_shared_peak_fraction = highly_shared_fraction
+        candidate.competing_candidate_count = competing
+        candidate.peak_sharing_status = peak_sharing_status
+        candidate.pass_min_charge_count = quality["Pass_Min_Charge_Count"]
+        candidate.pass_min_consecutive_charge_count = quality["Pass_Min_Consecutive_Charge_Count"]
+        candidate.pass_charge_continuity = quality["Pass_Charge_Continuity"]
+        candidate.pass_internal_error = quality["Pass_Internal_Error"]
+        candidate.pass_neutral_mass_sd = quality["Pass_Neutral_Mass_SD"]
+        candidate.pass_neutral_mass_range = quality["Pass_Neutral_Mass_Range"]
+        candidate.pass_rt_consistency = quality["Pass_RT_Consistency"]
+        candidate.pass_local_intensity = quality["Pass_Local_Intensity"]
+        candidate.pass_competing_envelope = quality["Pass_Competing_Envelope"]
+        candidate.pass_peak_sharing = quality["Pass_Peak_Sharing"]
+        candidate.num_strict_criteria_passed = quality["Num_Strict_Criteria_Passed"]
+        candidate.num_review_criteria_passed = quality["Num_Review_Criteria_Passed"]
+        candidate.strict_failure_reasons = quality["Strict_Failure_Reasons"]
+        candidate.review_failure_reasons = quality["Review_Failure_Reasons"]
+        candidate.intact_quality_tier = quality["Intact_Quality_Tier"]
+        candidate.quality_tier_reason = quality["Quality_Tier_Reason"]
+        candidate.quality_tier_rank = quality["Quality_Tier_Rank"]
 
         qc_rows.append({
             "Cluster_ID": cluster_id,
@@ -1439,16 +1940,16 @@ def build_intact_reconstruction_qc(
             "Num_Predicted_Charges": _candidate_extra(candidate, "num_predicted_charges", 0),
             "Num_Observed_Charges": _candidate_extra(candidate, "num_observed_charges", 0),
             "Charge_Coverage_Fraction": _candidate_extra(candidate, "charge_coverage_fraction", 0.0),
-            "Consecutive_Charge_Run_Length": _candidate_extra(candidate, "consecutive_charge_run_length", 0),
-            "Longest_Consecutive_Charge_Run": _candidate_extra(candidate, "longest_consecutive_charge_run", 0),
-            "Charge_Gap_Count": _candidate_extra(candidate, "charge_gap_count", 0),
-            "Charge_Continuity_Fraction": _candidate_extra(candidate, "charge_continuity_fraction", 0.0),
+            "Consecutive_Charge_Run_Length": _candidate_extra(candidate, "consecutive_charge_run_length", 0) or _longest_consecutive_run(charges),
+            "Longest_Consecutive_Charge_Run": _candidate_extra(candidate, "longest_consecutive_charge_run", 0) or _longest_consecutive_run(charges),
+            "Charge_Gap_Count": _candidate_extra(candidate, "charge_gap_count", 0) or _charge_gap_count(charges),
+            "Charge_Continuity_Fraction": _candidate_extra(candidate, "charge_continuity_fraction", 0.0) or _charge_continuity_fraction_value(charges),
             "Peak_Usage_Count": _candidate_extra(candidate, "peak_usage_count", 0),
             "Shared_Peak_Count": _candidate_extra(candidate, "shared_peak_count", 0),
             "Shared_Peak_Fraction": _candidate_extra(candidate, "shared_peak_fraction", 0.0),
             "Local_Window_Max_Intensity": _candidate_extra(candidate, "local_window_max_intensity", 0.0),
             "Local_Relative_Peak_Intensity_Percent": _candidate_extra(candidate, "local_relative_peak_intensity_percent", 0.0),
-            "Local_Envelope_Relative_Intensity_Percent": _candidate_extra(candidate, "local_envelope_relative_intensity_percent", 0.0),
+            "Local_Envelope_Relative_Intensity_Percent": local_envelope_relative,
             "Neutral_Mass_Estimator": _candidate_extra(candidate, "neutral_mass_estimator", ""),
             "Neutral_Mass_Unweighted_Mean": _candidate_extra(candidate, "neutral_mass_unweighted_mean"),
             "Neutral_Mass_Weighted_Mean": _candidate_extra(candidate, "neutral_mass_weighted_mean"),
@@ -1459,6 +1960,26 @@ def build_intact_reconstruction_qc(
             "Source_RT_Window_IDs": _candidate_extra(candidate, "source_rt_window_ids", ""),
             "Num_Source_RT_Windows": _candidate_extra(candidate, "num_source_rt_windows", 0),
             "Merged_Across_RT_Windows": _candidate_extra(candidate, "merged_across_rt_windows", False),
+            "Extended_Lower_Charges_Evaluated": _candidate_extra(candidate, "extended_lower_charges_evaluated", ""),
+            "Extended_Upper_Charges_Evaluated": _candidate_extra(candidate, "extended_upper_charges_evaluated", ""),
+            "Extended_Charges_Detected": _candidate_extra(candidate, "extended_charges_detected", ""),
+            "Extended_Weak_Charges_Detected": _candidate_extra(candidate, "extended_weak_charges_detected", ""),
+            "Extended_Charges_Not_Detected": _candidate_extra(candidate, "extended_charges_not_detected", ""),
+            "Charge_Extension_Improved_Envelope": _candidate_extra(candidate, "charge_extension_improved_envelope", False),
+            "Original_Charge_States": _candidate_extra(candidate, "original_charge_states", ""),
+            "Final_Charge_States": _candidate_extra(candidate, "final_charge_states", ""),
+            "Split_Envelope_Group_ID": _candidate_extra(candidate, "split_envelope_group_id", ""),
+            "Split_Envelope_Member_Count": _candidate_extra(candidate, "split_envelope_member_count", 1),
+            "Split_Envelope_Merged": _candidate_extra(candidate, "split_envelope_merged", False),
+            "Charge_Gaps_Before_Merge": _candidate_extra(candidate, "charge_gaps_before_merge", _candidate_extra(candidate, "charge_gap_count", 0)),
+            "Charge_Gaps_After_Merge": _candidate_extra(candidate, "charge_gaps_after_merge", _candidate_extra(candidate, "charge_gap_count", 0)),
+            "Max_Peak_Usage_Count": max_peak_usage,
+            "Mean_Peak_Usage_Count": mean_peak_usage,
+            "Num_Highly_Shared_Peaks": highly_shared_count,
+            "Highly_Shared_Peak_Fraction": highly_shared_fraction,
+            "Competing_Candidate_Count": competing,
+            "Peak_Sharing_Status": peak_sharing_status,
+            **quality,
             "Comparison_Ready_Strict": comparison_ready_strict,
             "Comparison_Ready_Review": comparison_ready_review,
             "Comparison_Ready": comparison_ready,
@@ -1554,6 +2075,9 @@ def build_intact_reconstruction_qc(
         candidate.target_review_group_representative = row["Target_Review_Group_Representative"]
         candidate.target_review_rank = row["Target_Review_Rank"]
         candidate.dominant_target_review_eligible_flag = row["Dominant_Target_Review_Eligible_Flag"]
+        candidate.intact_quality_tier = row.get("Intact_Quality_Tier", candidate.intact_quality_tier)
+        candidate.quality_tier_rank = row.get("Quality_Tier_Rank", candidate.quality_tier_rank)
+        candidate.peak_sharing_status = row.get("Peak_Sharing_Status", candidate.peak_sharing_status)
 
 
     diagnostic_rows = build_intact_reconstruction_diagnostics(qc_rows, reconstruction_config, reconstruction_enabled)
@@ -1615,6 +2139,16 @@ def build_intact_reconstruction_diagnostics(
         f"reliable<={qc_config['max_rt_range_min_for_reliable']} min; "
         f"review<={qc_config['max_rt_range_min_for_review']} min"
     )
+    tier_summary = _distribution_summary([row.get("Intact_Quality_Tier") for row in qc_rows])
+    strict_failure_summary = _reason_summary([row.get("Strict_Failure_Reasons") for row in qc_rows])
+    review_failure_summary = _reason_summary([row.get("Review_Failure_Reasons") for row in qc_rows])
+    charge_count_summary = _distribution_summary([row.get("Num_Supporting_Charge_States") for row in qc_rows])
+    consecutive_summary = _distribution_summary([row.get("Longest_Consecutive_Charge_Run") for row in qc_rows])
+    internal_error_summary = _binned_distribution([row.get("Envelope_Internal_Error_ppm") for row in qc_rows], [(5, "<=5ppm"), (20, "<=20ppm"), (100, "<=100ppm")])
+    rt_range_summary = _binned_distribution([row.get("RT_Range_Min") for row in qc_rows], [(0.05, "<=0.05min"), (0.15, "<=0.15min"), (0.30, "<=0.30min")])
+    peak_usage_summary = _distribution_summary([row.get("Max_Peak_Usage_Count") for row in qc_rows])
+    missing_status_summary = engine_stats.get("Missing_Charge_Status_Count", "")
+    engine_match_summary = engine_stats.get("Engine_Match_Status_Count", "")
     return [{
         "Total_Reconstruction_Candidates": len(qc_rows),
         "Reliable_Count": status_counts["Reliable"],
@@ -1691,6 +2225,24 @@ def build_intact_reconstruction_diagnostics(
         "Median_Internal_Error_ppm": engine_stats.get("Median_Internal_Error_ppm"),
         "Median_Charge_Count": engine_stats.get("Median_Charge_Count"),
         "Processing_Time_Seconds": engine_stats.get("Processing_Time_Seconds"),
+        "Candidate_Count_By_Quality_Tier": tier_summary,
+        "Strict_Failure_Reason_Counts": strict_failure_summary,
+        "Review_Failure_Reason_Counts": review_failure_summary,
+        "Charge_Count_Distribution": charge_count_summary,
+        "Consecutive_Charge_Distribution": consecutive_summary,
+        "Internal_Error_Distribution": internal_error_summary,
+        "RT_Range_Distribution": rt_range_summary,
+        "Peak_Usage_Distribution": peak_usage_summary,
+        "Split_Envelope_Count": engine_stats.get("Split_Envelope_Count", sum(1 for row in qc_rows if row.get("Split_Envelope_Merged"))),
+        "Missing_Charge_Status_Count": missing_status_summary,
+        "Engine_Match_Status_Count": engine_match_summary,
+        "Matched_Engine_Candidate_Count": engine_stats.get("Matched_Engine_Candidate_Count", 0),
+        "Legacy_Only_Count": engine_stats.get("Legacy_Only_Count", 0),
+        "RT_Localized_Only_Count": engine_stats.get("RT_Localized_Only_Count", 0),
+        "Mass_Mismatch_Count": engine_stats.get("Mass_Mismatch_Count", 0),
+        "RT_Mismatch_Count": engine_stats.get("RT_Mismatch_Count", 0),
+        "Charge_Overlap_Failure_Count": engine_stats.get("Charge_Overlap_Failure_Count", 0),
+        "Median_Mass_Delta_For_Matched_Only": engine_stats.get("Median_Mass_Delta_For_Matched_Only"),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -1716,6 +2268,36 @@ def build_intact_reconstruction_diagnostics(
         "Notes": "Reliable emphasizes charge-envelope internal quality, RT consistency, and signal support. Comparison_Ready requires intact eligibility, not only neutral mass range membership. Envelope grouping collapses exact duplicate and overlapping reconstruction candidates before comparison representative export. Reference masses and target review range are annotations only and do not affect global grouping or representative selection.",
     }]
 
+
+
+
+
+def build_rt_engine_qc_summary_rows(diagnostic_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not diagnostic_rows:
+        return []
+    diagnostic = diagnostic_rows[0]
+    metrics = [
+        "Candidate_Count_By_Quality_Tier",
+        "Strict_Failure_Reason_Counts",
+        "Review_Failure_Reason_Counts",
+        "Charge_Count_Distribution",
+        "Consecutive_Charge_Distribution",
+        "Internal_Error_Distribution",
+        "RT_Range_Distribution",
+        "Peak_Usage_Distribution",
+        "Split_Envelope_Count",
+        "Missing_Charge_Status_Count",
+        "Engine_Match_Status_Count",
+        "Matched_Engine_Candidate_Count",
+        "Legacy_Only_Count",
+        "RT_Localized_Only_Count",
+        "Mass_Mismatch_Count",
+        "RT_Mismatch_Count",
+        "Charge_Overlap_Failure_Count",
+        "Median_Mass_Delta_For_Matched_Only",
+        "Processing_Time_Seconds",
+    ]
+    return [{"Metric": metric, "Value": diagnostic.get(metric), "Notes": ""} for metric in metrics]
 
 
 def _ppm_error(observed: float, expected: float) -> float:
@@ -1951,6 +2533,117 @@ def _missing_charge_rows(
     return rows
 
 
+
+def _extension_charge_rows(
+    reconstructed_mass: float,
+    observed_charges: list[int],
+    local_peaks_all: list[dict[str, Any]],
+    mz_values_all: list[float],
+    rt_config: dict[str, Any],
+    instrument_config: dict[str, Any],
+    min_charge: int,
+    max_charge: int,
+    local_max: float,
+    usable_source_peak_ids: set[str],
+) -> dict[str, Any]:
+    extension_cfg = rt_config["charge_extension"]
+    if not extension_cfg.get("enabled", True) or not observed_charges:
+        return {
+            "lower": [], "upper": [], "detected": [], "weak": [], "not_detected": [], "improved": False, "peaks": {}
+        }
+    polarity = instrument_config.get("polarity", "negative")
+    lower = [charge for charge in range(max(min_charge, min(observed_charges) - extension_cfg["max_extension_charges"]), min(observed_charges))]
+    upper = [charge for charge in range(max(observed_charges) + 1, min(max_charge, max(observed_charges) + extension_cfg["max_extension_charges"]) + 1)]
+    detected = []
+    weak = []
+    not_detected = []
+    peaks: dict[int, dict[str, Any]] = {}
+    for charge in lower + upper:
+        predicted_mz = mz_from_neutral_mass(reconstructed_mass, charge, polarity)
+        peak, _ = _nearest_peak(local_peaks_all, mz_values_all, predicted_mz, extension_cfg["weak_peak_tolerance_ppm"])
+        if peak is None:
+            not_detected.append(charge)
+            continue
+        local_rel = (float(peak.get("Intensity") or 0.0) / local_max * 100.0) if local_max else 0.0
+        is_usable = bool(set(peak.get("Source_Peak_IDs", [])) & usable_source_peak_ids)
+        if is_usable:
+            detected.append(charge)
+            peaks[charge] = peak
+        elif local_rel >= extension_cfg["weak_peak_min_local_relative_percent"]:
+            weak.append(charge)
+            peaks[charge] = peak
+        else:
+            not_detected.append(charge)
+    return {
+        "lower": lower,
+        "upper": upper,
+        "detected": detected,
+        "weak": weak,
+        "not_detected": not_detected,
+        "improved": bool(detected or weak),
+        "peaks": peaks,
+    }
+
+
+def _recalculate_record(record: dict[str, Any], rt_config: dict[str, Any], polarity: str) -> None:
+    charges = sorted(record["observed"])
+    record["charges"] = charges
+    record["neutral_masses"] = [neutral_mass_from_mz(record["observed"][z]["mz"], z, polarity) for z in charges]
+    record["intensities"] = [float(record["observed"][z].get("Intensity") or 0.0) for z in charges]
+    record["unweighted"] = _mean(record["neutral_masses"])
+    record["weighted"] = _weighted_mean(record["neutral_masses"], record["intensities"])
+    record["median"] = median(record["neutral_masses"])
+    estimator = rt_config["neutral_mass_estimator"]
+    record["mass"] = record["weighted"] if estimator == "intensity_weighted_mean" else record["median"] if estimator == "median" else record["unweighted"]
+    record["internal_max"], record["internal_mean"], record["internal_median"] = _internal_error_stats(record["neutral_masses"], record["mass"])
+    record["source_peak_ids"] = sorted({peak_id for peak in record["observed"].values() for peak_id in peak.get("Source_Peak_IDs", [])})
+    record["local_peak_ids"] = sorted({peak["Local_Peak_ID"] for peak in record["observed"].values()})
+    record["total_intensity"] = sum(float(record["observed"][z].get("Intensity") or 0.0) for z in charges)
+    record["gap_count"] = _charge_gap_count(charges)
+    record["longest_run"] = _longest_consecutive_run(charges)
+    record["continuity_fraction"] = _charge_continuity_fraction_value(charges)
+    record["local_rel_envelope"] = (record["total_intensity"] / record["local_max"] * 100.0) if record.get("local_max") else 0.0
+
+
+def _apply_split_envelope_merge(records: list[dict[str, Any]], rt_config: dict[str, Any], polarity: str) -> list[dict[str, Any]]:
+    split_cfg = rt_config["split_envelope_merge"]
+    if not split_cfg.get("enabled", True) or len(records) < 2:
+        return records
+    merged: list[dict[str, Any]] = []
+    group_index = 1
+    for record in sorted(records, key=lambda item: (item["mass"], item["window"].get("center") or 0.0)):
+        target = None
+        for existing in merged:
+            mass_ok = abs(_ppm_error(record["mass"], existing["mass"])) <= split_cfg["mass_tolerance_ppm"]
+            rt_delta = abs(float(record["window"].get("center") or 0.0) - float(existing["window"].get("center") or 0.0))
+            rt_ok = rt_delta <= split_cfg["rt_tolerance_min"]
+            combined = sorted(set(record["charges"]) | set(existing["charges"]))
+            gap_before = _charge_gap_count(record["charges"]) + _charge_gap_count(existing["charges"])
+            gap_after = _charge_gap_count(combined)
+            connectable = gap_after <= split_cfg["max_charge_gap"] and combined != sorted(existing["charges"])
+            if mass_ok and rt_ok and connectable:
+                target = existing
+                target["charge_gaps_before_merge"] = gap_before
+                target["charge_gaps_after_merge"] = gap_after
+                break
+        if target is None:
+            record["split_envelope_group_id"] = f"SEG{group_index:05d}"
+            record["split_envelope_member_count"] = 1
+            record["split_envelope_merged"] = False
+            record["charge_gaps_before_merge"] = _charge_gap_count(record["charges"])
+            record["charge_gaps_after_merge"] = _charge_gap_count(record["charges"])
+            merged.append(record)
+            group_index += 1
+        else:
+            for charge, peak in record["observed"].items():
+                if charge not in target["observed"] or float(peak.get("Intensity") or 0.0) > float(target["observed"][charge].get("Intensity") or 0.0):
+                    target["observed"][charge] = peak
+            target["rt_window_ids"] = sorted(set(target["rt_window_ids"] + record["rt_window_ids"]))
+            target["split_envelope_member_count"] = int(target.get("split_envelope_member_count", 1)) + 1
+            target["split_envelope_merged"] = True
+            _recalculate_record(target, rt_config, polarity)
+    return merged
+
 def _build_rt_localized_candidates(
     tier_result: PeakTierResult,
     reconstruction_config: dict[str, Any],
@@ -2038,6 +2731,24 @@ def _build_rt_localized_candidates(
                 envelope_local_rel = (total_intensity / local_max * 100.0) if local_max else 0.0
                 cluster_id = f"RTL_RAW_{len(raw_candidate_records) + 1:06d}"
                 gap_count = _charge_gap_count(observed_charges)
+                extension = _extension_charge_rows(reconstructed_mass, observed_charges, local_peaks_all, mz_values_all, rt_config, instrument_config, min_charge, max_charge, local_max, usable_source_peak_ids)
+                original_charge_states = sorted(observed_charges)
+                if rt_config["charge_extension"].get("add_weak_peaks_to_envelope", False):
+                    for ext_charge, ext_peak in extension["peaks"].items():
+                        observed.setdefault(ext_charge, ext_peak)
+                    observed_charges = sorted(observed)
+                    neutral_masses = [neutral_mass_from_mz(observed[z]["mz"], z, polarity) for z in observed_charges]
+                    intensities = [float(observed[z]["Intensity"]) for z in observed_charges]
+                    unweighted = _mean(neutral_masses)
+                    weighted = _weighted_mean(neutral_masses, intensities)
+                    med = median(neutral_masses)
+                    reconstructed_mass = weighted if estimator == "intensity_weighted_mean" else med if estimator == "median" else unweighted
+                    internal_max, internal_mean, internal_median = _internal_error_stats(neutral_masses, reconstructed_mass)
+                    source_ids = sorted({peak_id for peak in observed.values() for peak_id in peak.get("Source_Peak_IDs", [])})
+                    local_ids = sorted({peak["Local_Peak_ID"] for peak in observed.values()})
+                    total_intensity = sum(float(observed[z]["Intensity"]) for z in observed_charges)
+                    envelope_local_rel = (total_intensity / local_max * 100.0) if local_max else 0.0
+                    gap_count = _charge_gap_count(observed_charges)
                 missing_rows = _missing_charge_rows(cluster_id, window["RT_Window_ID"], reconstructed_mass, observed_charges, local_peaks_all, mz_values_all, rt_config, instrument_config, usable_peak_ids, usable_source_peak_ids)
                 record = {
                     "cluster_id": cluster_id,
@@ -2067,6 +2778,10 @@ def _build_rt_localized_candidates(
                     "gap_count": gap_count,
                     "longest_run": longest_run,
                     "continuity_fraction": _charge_continuity_fraction_value(observed_charges),
+                    "extension": extension,
+                    "original_charge_states": original_charge_states,
+                    "final_charge_states": sorted(observed_charges),
+                    "charge_extension_improved": extension["improved"],
                 }
                 raw_candidate_records.append(record)
                 for local_id in local_ids:
@@ -2101,6 +2816,7 @@ def _build_rt_localized_candidates(
                 target.update(record)
                 target["rt_window_ids"] = keep_ids
             target["merged"] = True
+    merged_records = _apply_split_envelope_merge(merged_records, rt_config, polarity)
     for index, record in enumerate(merged_records, start=1):
         cluster_id = f"RTL{index:05d}"
         record["cluster_id"] = cluster_id
@@ -2119,6 +2835,17 @@ def _build_rt_localized_candidates(
             cluster_id=cluster_id,
         )
         missing_charge_states = [row["Missing_Charge"] for row in record["missing_rows"]]
+        peak_usage_values = [local_peak_usage.get(local_id, 1) for local_id in record["local_peak_ids"]]
+        max_peak_usage = max(peak_usage_values, default=1)
+        mean_peak_usage = _mean(peak_usage_values) or 1.0
+        highly_shared_count = sum(1 for value in peak_usage_values if value >= rt_config["peak_sharing"]["high_usage_threshold"])
+        highly_shared_fraction = highly_shared_count / max(len(record["local_peak_ids"]), 1)
+        if highly_shared_fraction > rt_config["peak_sharing"]["max_highly_shared_fraction_for_tier2"]:
+            peak_sharing_status = "highly_shared"
+        elif highly_shared_fraction > rt_config["peak_sharing"]["max_highly_shared_fraction_for_tier1"]:
+            peak_sharing_status = "moderately_shared"
+        else:
+            peak_sharing_status = "low_shared"
         _set_candidate_extra(
             candidate,
             reconstruction_engine="rt_localized",
@@ -2141,9 +2868,14 @@ def _build_rt_localized_candidates(
             longest_consecutive_charge_run=record["longest_run"],
             charge_gap_count=record["gap_count"],
             charge_continuity_fraction=record["continuity_fraction"],
-            peak_usage_count=max((local_peak_usage.get(local_id, 1) for local_id in record["local_peak_ids"]), default=1),
+            peak_usage_count=max_peak_usage,
             shared_peak_count=sum(1 for local_id in record["local_peak_ids"] if local_peak_usage.get(local_id, 1) > 1),
             shared_peak_fraction=sum(1 for local_id in record["local_peak_ids"] if local_peak_usage.get(local_id, 1) > 1) / max(len(record["local_peak_ids"]), 1),
+            max_peak_usage_count=max_peak_usage,
+            mean_peak_usage_count=mean_peak_usage,
+            num_highly_shared_peaks=highly_shared_count,
+            highly_shared_peak_fraction=highly_shared_fraction,
+            peak_sharing_status=peak_sharing_status,
             local_window_max_intensity=record["local_max"],
             local_relative_peak_intensity_percent=record["local_rel_peak"],
             local_envelope_relative_intensity_percent=record["local_rel_envelope"],
@@ -2157,6 +2889,19 @@ def _build_rt_localized_candidates(
             source_rt_window_ids="; ".join(record["rt_window_ids"]),
             num_source_rt_windows=len(record["rt_window_ids"]),
             merged_across_rt_windows=bool(record.get("merged") or len(record["rt_window_ids"]) > 1),
+            extended_lower_charges_evaluated="; ".join(map(str, record.get("extension", {}).get("lower", []))),
+            extended_upper_charges_evaluated="; ".join(map(str, record.get("extension", {}).get("upper", []))),
+            extended_charges_detected="; ".join(map(str, record.get("extension", {}).get("detected", []))),
+            extended_weak_charges_detected="; ".join(map(str, record.get("extension", {}).get("weak", []))),
+            extended_charges_not_detected="; ".join(map(str, record.get("extension", {}).get("not_detected", []))),
+            charge_extension_improved_envelope=bool(record.get("charge_extension_improved", False)),
+            original_charge_states="; ".join(map(str, record.get("original_charge_states", record["charges"]))),
+            final_charge_states="; ".join(map(str, record.get("final_charge_states", record["charges"]))),
+            split_envelope_group_id=record.get("split_envelope_group_id", ""),
+            split_envelope_member_count=record.get("split_envelope_member_count", 1),
+            split_envelope_merged=record.get("split_envelope_merged", False),
+            charge_gaps_before_merge=record.get("charge_gaps_before_merge", record["gap_count"]),
+            charge_gaps_after_merge=record.get("charge_gaps_after_merge", record["gap_count"]),
         )
         candidates.append(candidate)
         for charge in record["charges"]:
@@ -2211,6 +2956,22 @@ def _build_rt_localized_candidates(
             "Source_RT_Window_IDs": "; ".join(record["rt_window_ids"]),
             "Num_Source_RT_Windows": len(record["rt_window_ids"]),
             "Merged_Across_RT_Windows": bool(record.get("merged") or len(record["rt_window_ids"]) > 1),
+            "Extended_Lower_Charges_Evaluated": "; ".join(map(str, record.get("extension", {}).get("lower", []))),
+            "Extended_Upper_Charges_Evaluated": "; ".join(map(str, record.get("extension", {}).get("upper", []))),
+            "Extended_Charges_Detected": "; ".join(map(str, record.get("extension", {}).get("detected", []))),
+            "Extended_Weak_Charges_Detected": "; ".join(map(str, record.get("extension", {}).get("weak", []))),
+            "Extended_Charges_Not_Detected": "; ".join(map(str, record.get("extension", {}).get("not_detected", []))),
+            "Charge_Extension_Improved_Envelope": bool(record.get("charge_extension_improved", False)),
+            "Split_Envelope_Group_ID": record.get("split_envelope_group_id", ""),
+            "Split_Envelope_Member_Count": record.get("split_envelope_member_count", 1),
+            "Split_Envelope_Merged": record.get("split_envelope_merged", False),
+            "Charge_Gaps_Before_Merge": record.get("charge_gaps_before_merge", record["gap_count"]),
+            "Charge_Gaps_After_Merge": record.get("charge_gaps_after_merge", record["gap_count"]),
+            "Max_Peak_Usage_Count": max_peak_usage,
+            "Mean_Peak_Usage_Count": mean_peak_usage,
+            "Num_Highly_Shared_Peaks": highly_shared_count,
+            "Highly_Shared_Peak_Fraction": highly_shared_fraction,
+            "Peak_Sharing_Status": peak_sharing_status,
             "Notes": "",
         })
     candidates.sort(key=lambda item: (item.charge_state_count < int(reconstruction_config.get("min_charge_states", 3)), -item.charge_state_count, -item.total_intensity))
@@ -2238,6 +2999,8 @@ def _build_rt_localized_candidates(
             "Median_Internal_Error_ppm": median([getattr(c, "envelope_internal_error_max_ppm", 0.0) or 0.0 for c in candidates]) if candidates else None,
             "Median_Charge_Count": median([len(c.charge_states) for c in candidates]) if candidates else None,
             "Processing_Time_Seconds": perf_counter() - started,
+            "Split_Envelope_Count": sum(1 for c in candidates if getattr(c, "split_envelope_merged", False)),
+            "Missing_Charge_Status_Count": _distribution_summary([row.get("Detection_Status") for row in missing_diagnostics]),
         },
     }
     return candidates, charge_state_peaks, metadata
@@ -2352,47 +3115,119 @@ def build_intact_engine_comparison_rows(
     legacy_peaks: list[dict[str, Any]],
     rt_candidates: list[IntactMassCandidate],
     rt_peaks: list[dict[str, Any]],
+    reconstruction_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    legacy_by_cluster = {candidate.cluster_id: candidate for candidate in legacy_candidates}
-    rt_by_cluster = {candidate.cluster_id: candidate for candidate in rt_candidates}
+    qc_config = _qc_config(reconstruction_config or {})
+    match_cfg = qc_config["engine_comparison"]
     legacy_peak_sets: dict[str, set[str]] = {}
     rt_peak_sets: dict[str, set[str]] = {}
     for row in legacy_peaks:
         legacy_peak_sets.setdefault(str(row.get("Cluster_ID")), set()).add(_supporting_peak_id(row))
     for row in rt_peaks:
         rt_peak_sets.setdefault(str(row.get("Cluster_ID")), set()).add(_supporting_peak_id(row))
+
+    rt_by_mass = sorted(rt_candidates, key=lambda candidate: float(candidate.observed_mass or 0.0))
+    rt_masses = [float(candidate.observed_mass or 0.0) for candidate in rt_by_mass]
+
+    def _rt_candidates_for_legacy(legacy: IntactMassCandidate) -> tuple[list[IntactMassCandidate], bool]:
+        if not rt_by_mass:
+            return [], False
+        if not match_cfg.get("require_mass_match", True) or not legacy.observed_mass:
+            return rt_by_mass, True
+        tolerance_da = abs(float(legacy.observed_mass)) * match_cfg["mass_tolerance_ppm"] / 1_000_000
+        lower = float(legacy.observed_mass) - tolerance_da
+        upper = float(legacy.observed_mass) + tolerance_da
+        left = bisect_left(rt_masses, lower)
+        right = bisect_left(rt_masses, upper)
+        while right < len(rt_masses) and rt_masses[right] <= upper:
+            right += 1
+        return rt_by_mass[left:right], right > left
+
     rows = []
     used_rt: set[str] = set()
     for legacy in legacy_candidates:
-        best = None
-        best_delta = None
-        for rt in rt_candidates:
-            delta = abs(rt.observed_mass - legacy.observed_mass)
-            if best is None or delta < best_delta:
-                best = rt
-                best_delta = delta
-        if best is None:
-            rows.append({"Legacy_Cluster_ID": legacy.cluster_id, "Notes": "no_rt_localized_candidate"})
+        candidates_to_check, has_mass_window_candidates = _rt_candidates_for_legacy(legacy)
+        if not candidates_to_check:
+            rows.append({
+                "Legacy_Cluster_ID": legacy.cluster_id,
+                "Legacy_Mass": legacy.observed_mass,
+                "Legacy_Charge_Count": len(legacy.charge_states),
+                "Engine_Match_Status": "mass_mismatch" if rt_candidates and not has_mass_window_candidates else "legacy_only",
+                "Match_Failure_Reason": "no_rt_candidate_within_mass_tolerance" if rt_candidates and not has_mass_window_candidates else "no_rt_localized_candidate",
+                "Mass_Matched": False if rt_candidates else None,
+                "RT_Matched": None,
+                "Charge_Matched": None,
+                "Peak_Matched": None,
+                "Notes": "legacy_not_matched" if rt_candidates else "legacy_only",
+            })
             continue
-        used_rt.add(best.cluster_id)
-        left = legacy_peak_sets.get(legacy.cluster_id, set())
-        right = rt_peak_sets.get(best.cluster_id, set())
-        overlap = len(left & right) / max(min(len(left), len(right)), 1) if (left or right) else 0.0
-        rows.append({
-            "Legacy_Cluster_ID": legacy.cluster_id,
-            "RT_Localized_Cluster_ID": best.cluster_id,
-            "Legacy_Mass": legacy.observed_mass,
-            "RT_Localized_Mass": best.observed_mass,
-            "Mass_Delta_Da": best.observed_mass - legacy.observed_mass,
-            "Legacy_Charge_Count": len(legacy.charge_states),
-            "RT_Localized_Charge_Count": len(best.charge_states),
-            "Legacy_RT_Range": getattr(legacy, "rt_range_min", None),
-            "RT_Localized_RT_Range": getattr(best, "rt_range_min", None),
-            "Legacy_Internal_Error_ppm": getattr(legacy, "envelope_internal_error_ppm", None),
-            "RT_Localized_Internal_Error_ppm": getattr(best, "envelope_internal_error_ppm", None),
-            "Peak_Overlap_Fraction": overlap,
-            "Notes": "nearest_mass_match",
-        })
+        best_row = None
+        best_score = None
+        for rt in candidates_to_check:
+            mass_error_ppm = abs(_ppm_error(rt.observed_mass, legacy.observed_mass)) if legacy.observed_mass else float("inf")
+            mass_matched = mass_error_ppm <= match_cfg["mass_tolerance_ppm"]
+            legacy_rt = getattr(legacy, "rt_mean", None)
+            rt_rt = getattr(rt, "rt_mean", None)
+            rt_delta = abs(float(rt_rt) - float(legacy_rt)) if rt_rt is not None and legacy_rt is not None else None
+            rt_matched = rt_delta is None or rt_delta <= match_cfg["rt_tolerance_min"]
+            shared_charges = len(set(legacy.charge_states) & set(rt.charge_states))
+            charge_overlap = shared_charges / max(min(len(legacy.charge_states), len(rt.charge_states)), 1)
+            charge_matched = charge_overlap >= match_cfg["min_shared_charge_fraction"]
+            left = legacy_peak_sets.get(legacy.cluster_id, set())
+            right = rt_peak_sets.get(rt.cluster_id, set())
+            peak_overlap = len(left & right) / max(min(len(left), len(right)), 1) if (left or right) else 0.0
+            peak_matched = peak_overlap > 0.0
+            if not mass_matched and match_cfg.get("require_mass_match", True):
+                status = "mass_mismatch"
+            elif not rt_matched:
+                status = "rt_mismatch"
+            elif not charge_matched:
+                status = "insufficient_overlap"
+            else:
+                status = "matched"
+            score = (status != "matched", mass_error_ppm, rt_delta if rt_delta is not None else 0.0, -charge_overlap, -peak_overlap)
+            row = {
+                "Legacy_Cluster_ID": legacy.cluster_id,
+                "RT_Localized_Cluster_ID": rt.cluster_id,
+                "Legacy_Mass": legacy.observed_mass,
+                "RT_Localized_Mass": rt.observed_mass,
+                "Mass_Delta_Da": (rt.observed_mass - legacy.observed_mass) if status == "matched" else None,
+                "Legacy_Charge_Count": len(legacy.charge_states),
+                "RT_Localized_Charge_Count": len(rt.charge_states),
+                "Legacy_RT_Range": getattr(legacy, "rt_range_min", None),
+                "RT_Localized_RT_Range": getattr(rt, "rt_range_min", None),
+                "Legacy_Internal_Error_ppm": getattr(legacy, "envelope_internal_error_ppm", None),
+                "RT_Localized_Internal_Error_ppm": getattr(rt, "envelope_internal_error_ppm", None),
+                "Peak_Overlap_Fraction": peak_overlap,
+                "Engine_Match_Status": status,
+                "Match_Failure_Reason": "" if status == "matched" else status,
+                "Mass_Matched": mass_matched,
+                "RT_Matched": rt_matched,
+                "Charge_Matched": charge_matched,
+                "Peak_Matched": peak_matched,
+                "Notes": "criteria_match" if status == "matched" else "not_matched",
+            }
+            if best_row is None or score < best_score:
+                best_row = row
+                best_score = score
+                if status == "matched":
+                    break
+        if best_row is None:
+            continue
+        if best_row["Engine_Match_Status"] == "matched":
+            used_rt.add(str(best_row["RT_Localized_Cluster_ID"]))
+            rows.append(best_row)
+        else:
+            rows.append({
+                **best_row,
+                "RT_Localized_Cluster_ID": "",
+                "RT_Localized_Mass": None,
+                "RT_Localized_Charge_Count": None,
+                "RT_Localized_RT_Range": None,
+                "RT_Localized_Internal_Error_ppm": None,
+                "Peak_Overlap_Fraction": None,
+                "Notes": "legacy_not_matched",
+            })
     for rt in rt_candidates:
         if rt.cluster_id not in used_rt:
             rows.append({
@@ -2400,9 +3235,28 @@ def build_intact_engine_comparison_rows(
                 "RT_Localized_Cluster_ID": rt.cluster_id,
                 "RT_Localized_Mass": rt.observed_mass,
                 "RT_Localized_Charge_Count": len(rt.charge_states),
+                "Engine_Match_Status": "rt_localized_only",
+                "Match_Failure_Reason": "no_matched_legacy_candidate",
                 "Notes": "rt_localized_only",
             })
     return rows
+
+def _engine_comparison_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("Engine_Match_Status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    matched_deltas = [abs(float(row["Mass_Delta_Da"])) for row in rows if row.get("Engine_Match_Status") == "matched" and row.get("Mass_Delta_Da") is not None]
+    return {
+        "Engine_Match_Status_Count": "; ".join(f"{key}:{status_counts[key]}" for key in sorted(status_counts)),
+        "Matched_Engine_Candidate_Count": status_counts.get("matched", 0),
+        "Legacy_Only_Count": status_counts.get("legacy_only", 0),
+        "RT_Localized_Only_Count": status_counts.get("rt_localized_only", 0),
+        "Mass_Mismatch_Count": status_counts.get("mass_mismatch", 0),
+        "RT_Mismatch_Count": status_counts.get("rt_mismatch", 0),
+        "Charge_Overlap_Failure_Count": status_counts.get("insufficient_overlap", 0),
+        "Median_Mass_Delta_For_Matched_Only": median(matched_deltas) if matched_deltas else None,
+    }
 
 
 def reconstruct_intact_masses(
@@ -2433,7 +3287,8 @@ def reconstruct_intact_masses(
                 theoretical_mass,
             )
             build_intact_reconstruction_qc(legacy_candidates, legacy_peaks, reconstruction_config, reconstruction_enabled=True)
-            metadata["engine_comparison"] = build_intact_engine_comparison_rows(legacy_candidates, legacy_peaks, candidates, charge_state_peaks)
+            metadata["engine_comparison"] = build_intact_engine_comparison_rows(legacy_candidates, legacy_peaks, candidates, charge_state_peaks, reconstruction_config)
+            metadata["stats"].update(_engine_comparison_stats(metadata["engine_comparison"]))
             metadata["legacy_candidate_count"] = len(legacy_candidates)
             metadata["legacy_processing_time_seconds"] = legacy_metadata.get("stats", {}).get("Processing_Time_Seconds")
         return candidates, charge_state_peaks, metadata

@@ -196,7 +196,7 @@ def main() -> None:
             "executed",
             True,
             True,
-            output_sheets="Intact_mass_reconstruction; Charge_state_peaks; Intact_Reconstruction_QC; Intact_Reconstruction_Diag; Intact_Envelope_Groups; Intact_Comparison_Candidates; Target_Review_Candidates; Reconstructed_Mass_Spectrum",
+            output_sheets="Intact_mass_reconstruction; Charge_state_peaks; Intact_Reconstruction_QC; Intact_Reconstruction_Diag; Intact_Envelope_Groups; Intact_Comparison_Candidates; Target_Review_Candidates; Reconstructed_Mass_Spectrum; RT_Engine_QC_Summary",
             notes=f"candidates={len(intact_results)}",
         )
     else:

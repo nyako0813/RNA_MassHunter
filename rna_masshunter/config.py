@@ -42,6 +42,18 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "min_relative_envelope_intensity_percent_for_review": 0.1,
             "max_competing_envelopes": 3,
             "comparison_ready_statuses": ["Reliable", "Review"],
+            "comparison_ready_tiers": {
+                "strict": ["Tier_1_high_quality"],
+                "review": ["Tier_1_high_quality", "Tier_2_supported"],
+            },
+            "quality_tiers": {
+                "tier1_min_charge_states": 3,
+                "tier1_min_consecutive_charge_states": 3,
+                "tier1_min_local_envelope_relative_intensity_percent": 1.0,
+                "tier2_min_charge_states": 2,
+                "tier2_min_consecutive_charge_states": 2,
+                "tier2_min_local_envelope_relative_intensity_percent": 0.1,
+            },
             "max_rt_range_min_for_reliable": 0.15,
             "max_rt_range_min_for_review": 0.30,
             "allow_trace_only_reliable": False,
@@ -57,6 +69,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "min_shared_peak_fraction": 0.5,
                 "min_shared_charge_fraction": 0.5,
                 "require_peak_overlap": True,
+            },
+            "engine_comparison": {
+                "mass_tolerance_ppm": 20,
+                "rt_tolerance_min": 0.15,
+                "min_shared_charge_fraction": 0.5,
+                "require_mass_match": True,
             },
             "rt_localized": {
                 "enabled": True,
@@ -78,6 +96,24 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                     "rt_overlap_required": True,
                     "min_shared_charge_fraction": 0.5,
                 },
+                "charge_extension": {
+                    "enabled": True,
+                    "max_extension_charges": 2,
+                    "weak_peak_tolerance_ppm": 30,
+                    "weak_peak_min_local_relative_percent": 0.01,
+                    "add_weak_peaks_to_envelope": False,
+                },
+                "split_envelope_merge": {
+                    "enabled": True,
+                    "mass_tolerance_ppm": 20,
+                    "rt_tolerance_min": 0.10,
+                    "max_charge_gap": 1,
+                },
+                "peak_sharing": {
+                    "high_usage_threshold": 5,
+                    "max_highly_shared_fraction_for_tier1": 0.25,
+                    "max_highly_shared_fraction_for_tier2": 0.50,
+                },
             },
             "mass_spectrum_output": {
                 "enabled": True,
@@ -87,6 +123,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "intensity_method": "total_supporting_intensity",
                 "normalize_to_percent": True,
                 "bin_width_da": None,
+                "minimum_quality_tier": "Tier_3_weak",
             },
         },
     },
@@ -311,6 +348,9 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
     intensity_method = str(spectrum_config.get("intensity_method") or "total_supporting_intensity")
     if intensity_method not in {"total_supporting_intensity", "mean_supporting_intensity", "max_supporting_intensity"}:
         raise ValueError("intact_reconstruction.mass_spectrum_output.intensity_method must be one of: total_supporting_intensity, mean_supporting_intensity, max_supporting_intensity")
+    minimum_quality_tier = str(spectrum_config.get("minimum_quality_tier") or "Tier_3_weak")
+    if minimum_quality_tier not in {"Tier_1_high_quality", "Tier_2_supported", "Tier_3_weak", "all"}:
+        raise ValueError("intact_reconstruction.mass_spectrum_output.minimum_quality_tier must be one of: Tier_1_high_quality, Tier_2_supported, Tier_3_weak, all")
     fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
     if not digestion_enabled and not reconstruction_enabled and warnings is not None:
         add_warning(
