@@ -8,6 +8,7 @@ from rna_masshunter.warnings_manager import add_warning
 
 
 DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
+    "analysis": {"mode": "full"},
     "project": {"name": "RNA_MassHunter_v2", "output_dir": "output", "log_dir": "logs", "cache_dir": ".cache"},
     "input": {"raw_path": "", "mzml_path": "", "msconvert_path": ""},
     "organism": {"group": "archaea", "species": "", "rule_set": "archaea_general"},
@@ -54,6 +55,15 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "min_shared_peak_fraction": 0.5,
                 "min_shared_charge_fraction": 0.5,
                 "require_peak_overlap": True,
+            },
+            "mass_spectrum_output": {
+                "enabled": True,
+                "representatives_only": True,
+                "comparison_ready_only": False,
+                "include_qc_ineligible": True,
+                "intensity_method": "total_supporting_intensity",
+                "normalize_to_percent": True,
+                "bin_width_da": None,
             },
         },
     },
@@ -247,6 +257,10 @@ def load_config(config_path: str | Path, warnings: list[dict[str, Any]] | None =
 
 
 def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = None) -> None:
+    analysis_mode = str((config.analysis or {}).get("mode", "full") or "full").lower()
+    if analysis_mode not in {"full", "intact_only"}:
+        raise ValueError("analysis.mode must be one of: full, intact_only")
+    config.analysis["mode"] = analysis_mode
     polarity = str(config.instrument.get("polarity", "")).lower()
     if polarity not in {"negative", "positive"} and warnings is not None:
         add_warning(warnings, "ERROR", "config", "instrument.polarity must be 'negative' or 'positive'.", polarity)
@@ -257,6 +271,12 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
 
     digestion_enabled = _as_bool(config.digestion.get("enabled"), True)
     reconstruction_enabled = _as_bool(config.reconstruction.get("enabled"), True)
+    if analysis_mode == "intact_only" and not reconstruction_enabled:
+        raise ValueError("analysis.mode=intact_only requires intact_reconstruction.enabled=true")
+    spectrum_config = (config.reconstruction.get("intact_reconstruction") or {}).get("mass_spectrum_output") or {}
+    intensity_method = str(spectrum_config.get("intensity_method") or "total_supporting_intensity")
+    if intensity_method not in {"total_supporting_intensity", "mean_supporting_intensity", "max_supporting_intensity"}:
+        raise ValueError("intact_reconstruction.mass_spectrum_output.intensity_method must be one of: total_supporting_intensity, mean_supporting_intensity, max_supporting_intensity")
     fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
     if not digestion_enabled and not reconstruction_enabled and warnings is not None:
         add_warning(

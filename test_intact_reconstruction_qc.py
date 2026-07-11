@@ -1,10 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
 from openpyxl import load_workbook
 
+from rna_masshunter.config import validate_config
 from rna_masshunter.excel_report import write_excel_report
-from rna_masshunter.intact_reconstruction import build_intact_reconstruction_qc
-from rna_masshunter.models import IntactMassCandidate
+from rna_masshunter.intact_reconstruction import build_intact_reconstruction_qc, build_reconstructed_mass_spectrum_rows
+from rna_masshunter.models import IntactMassCandidate, RunConfig
 
 
 UNMODIFIED_MASS = 25082.3
@@ -634,8 +636,9 @@ def test_grouping_performance_for_ten_thousand_candidates():
 
 
 
-def _excel_config(reconstruction):
+def _excel_config(reconstruction, analysis=None):
     return SimpleNamespace(
+        analysis=analysis or {"mode": "full"},
         project={"name": "test"},
         input={},
         organism={},
@@ -657,10 +660,10 @@ def _excel_config(reconstruction):
     )
 
 
-def _write_empty_excel(tmp_path, reconstruction):
+def _write_empty_excel(tmp_path, reconstruction, analysis=None):
     return write_excel_report(
         output_dir=tmp_path,
-        config=_excel_config(reconstruction),
+        config=_excel_config(reconstruction, analysis=analysis),
         diagnostics={},
         intact_results=[],
         charge_state_peaks=[],
@@ -759,3 +762,111 @@ def test_existing_excel_sheets_and_new_columns_are_present(tmp_path):
         assert "Target_Review_Candidates" in workbook.sheetnames
     finally:
         workbook.close()
+
+
+
+def test_reconstructed_mass_spectrum_defaults_to_total_supporting_intensity_and_mass_sort():
+    low_mass = _candidate("LOW_MASS", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    high_mass = _candidate("HIGH_MASS", [6, 7, 8], mass=15500.0, intensity=60000, theoretical_mass=12000.0)
+    peaks = _peaks("LOW_MASS", [6, 7, 8], masses=[14999.99, 15000.0, 15000.01], intensity=10000) + _peaks(
+        "HIGH_MASS", [6, 7, 8], masses=[15499.99, 15500.0, 15500.01], intensity=20000
+    )
+    rows, _ = _qc([high_mass, low_mass], peaks, config=_generic_config())
+    spectrum = build_reconstructed_mass_spectrum_rows(rows, _generic_config())
+    assert [row["Reconstructed_Mass_Da"] for row in spectrum] == [15000.0, 15500.0]
+    assert [row["Reconstructed_Envelope_Intensity"] for row in spectrum] == [30000.0, 60000.0]
+    assert [row["Intensity_Method"] for row in spectrum] == ["total_supporting_intensity", "total_supporting_intensity"]
+    assert {row["Cluster_ID"]: row["Spectrum_Point_Rank"] for row in spectrum} == {"HIGH_MASS": 1, "LOW_MASS": 2}
+    assert max(row["Relative_Intensity_Percent"] for row in spectrum) == 100.0
+    assert {row["Cluster_ID"]: row["Relative_Intensity_Percent"] for row in spectrum}["LOW_MASS"] == 50.0
+
+
+def test_reconstructed_mass_spectrum_intensity_methods_are_configurable():
+    candidate = _candidate("METHOD", [6, 7, 8], mass=15000.0, intensity=60.0, theoretical_mass=12000.0)
+    peaks = _peaks("METHOD", [6, 7, 8], masses=[14999.99, 15000.0, 15000.01], intensity=10.0)
+    peaks[1]["Intensity"] = 20.0
+    peaks[2]["Intensity"] = 30.0
+    for method, expected in [("total_supporting_intensity", 60.0), ("mean_supporting_intensity", 20.0), ("max_supporting_intensity", 30.0)]:
+        config = _generic_config(mass_spectrum_output={"intensity_method": method})
+        rows, _ = _qc([_candidate("METHOD", [6, 7, 8], mass=15000.0, intensity=60.0, theoretical_mass=12000.0)], peaks, config=config)
+        spectrum = build_reconstructed_mass_spectrum_rows(rows, config)
+        assert spectrum[0]["Reconstructed_Envelope_Intensity"] == expected
+        assert spectrum[0]["Intensity_Method"] == method
+
+
+def test_reconstructed_mass_spectrum_filters_range_representatives_and_readiness():
+    good = _candidate("GOOD", [6, 7, 8], mass=15000.0, intensity=30000, theoretical_mass=12000.0)
+    bad = _candidate("BAD", [6, 7, 8], mass=15000.2, intensity=90000, theoretical_mass=12000.0)
+    out = _candidate("OUT", [6, 7, 8], mass=21000.0, intensity=120000, theoretical_mass=12000.0)
+    peaks = [
+        {"Cluster_ID": "GOOD", "Charge": 6, "Neutral_Mass": 14999.99, "Intensity": 10000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "GOOD", "Charge": 7, "Neutral_Mass": 15000.0, "Intensity": 10000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "GOOD", "Charge": 8, "Neutral_Mass": 15000.01, "Intensity": 10000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "BAD", "Charge": 6, "Neutral_Mass": 14998.5, "Intensity": 30000, "RT": 5.0, "Peak_Tier": "Major", "mz": 2500.0, "Scan_ID": "s1"},
+        {"Cluster_ID": "BAD", "Charge": 7, "Neutral_Mass": 15000.5, "Intensity": 30000, "RT": 5.02, "Peak_Tier": "Major", "mz": 2142.0, "Scan_ID": "s2"},
+        {"Cluster_ID": "BAD", "Charge": 8, "Neutral_Mass": 15002.0, "Intensity": 30000, "RT": 5.04, "Peak_Tier": "Major", "mz": 1875.0, "Scan_ID": "s3"},
+        {"Cluster_ID": "OUT", "Charge": 6, "Neutral_Mass": 20999.99, "Intensity": 40000, "RT": 8.0, "Peak_Tier": "Major", "mz": 3500.0, "Scan_ID": "o1"},
+        {"Cluster_ID": "OUT", "Charge": 7, "Neutral_Mass": 21000.0, "Intensity": 40000, "RT": 8.02, "Peak_Tier": "Major", "mz": 3000.0, "Scan_ID": "o2"},
+        {"Cluster_ID": "OUT", "Charge": 8, "Neutral_Mass": 21000.01, "Intensity": 40000, "RT": 8.04, "Peak_Tier": "Major", "mz": 2625.0, "Scan_ID": "o3"},
+    ]
+    config = _generic_config(mass_spectrum_output={"representatives_only": True, "comparison_ready_only": True, "include_qc_ineligible": False})
+    rows, _ = _qc([good, bad, out], peaks, config=config)
+    spectrum = build_reconstructed_mass_spectrum_rows(rows, config)
+    assert [row["Cluster_ID"] for row in spectrum] == ["GOOD"]
+    assert all(row["Comparison_Ready"] for row in spectrum)
+    assert all(row["Group_Representative"] for row in spectrum)
+
+
+def test_reconstructed_mass_spectrum_empty_when_no_candidates():
+    assert build_reconstructed_mass_spectrum_rows([], _generic_config()) == []
+
+
+def test_excel_includes_reconstructed_mass_spectrum_and_workflow_summary(tmp_path):
+    report = _write_empty_excel(
+        tmp_path,
+        {"enabled": True, **BASE_QC_CONFIG},
+        analysis={"mode": "intact_only"},
+    )
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        assert "Workflow_Summary" in workbook.sheetnames
+        assert "Reconstructed_Mass_Spectrum" in workbook.sheetnames
+        assert "Theoretical_fragments" not in workbook.sheetnames
+        assert "Known_Modification_Candidates" not in workbook.sheetnames
+        spectrum_headers = [cell.value for cell in next(workbook["Reconstructed_Mass_Spectrum"].iter_rows(min_row=3, max_row=3))]
+        assert "Reconstructed_Envelope_Intensity" in spectrum_headers
+        assert "Relative_Intensity_Percent" in spectrum_headers
+        assert "Intensity_Method" in spectrum_headers
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+    finally:
+        workbook.close()
+
+
+def test_intact_only_config_requires_reconstruction_enabled():
+    config = RunConfig(
+        analysis={"mode": "intact_only"},
+        instrument={"polarity": "negative"},
+        input={},
+        sequence={"sequence": "ACG"},
+        reconstruction={"enabled": False, "intact_reconstruction": {}},
+        digestion={"enabled": True},
+        fragment_mapping={},
+        alkaline_phosphatase={},
+    )
+    with pytest.raises(ValueError, match="analysis.mode=intact_only requires intact_reconstruction.enabled=true"):
+        validate_config(config)
+
+
+def test_invalid_reconstructed_spectrum_intensity_method_is_rejected():
+    config = RunConfig(
+        analysis={"mode": "full"},
+        instrument={"polarity": "negative"},
+        input={},
+        sequence={"sequence": "ACG"},
+        reconstruction={"enabled": True, "intact_reconstruction": {"mass_spectrum_output": {"intensity_method": "median"}}},
+        digestion={"enabled": True},
+        fragment_mapping={},
+        alkaline_phosphatase={},
+    )
+    with pytest.raises(ValueError, match="intensity_method must be one of"):
+        validate_config(config)

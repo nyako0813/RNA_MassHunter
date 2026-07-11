@@ -4,6 +4,7 @@ from typing import Any
 
 @dataclass
 class RunConfig:
+    analysis: dict[str, Any] = field(default_factory=dict)
     project: dict[str, Any] = field(default_factory=dict)
     input: dict[str, Any] = field(default_factory=dict)
     organism: dict[str, Any] = field(default_factory=dict)
@@ -139,6 +140,8 @@ class IntactMassCandidate:
     total_supporting_intensity: float = 0.0
     mean_supporting_intensity: float = 0.0
     max_supporting_intensity: float = 0.0
+    reconstructed_envelope_intensity: float = 0.0
+    intensity_method: str = ""
     relative_envelope_intensity_percent: float = 0.0
     relative_overall_envelope_intensity_percent: float = 0.0
     relative_in_range_raw_intensity_percent: float = 0.0

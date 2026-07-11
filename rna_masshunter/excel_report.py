@@ -11,10 +11,12 @@ from rna_masshunter.intact_reconstruction import (
     DIAGNOSTIC_COLUMNS as INTACT_DIAGNOSTIC_COLUMNS,
     GROUP_COLUMNS as INTACT_GROUP_COLUMNS,
     QC_COLUMNS as INTACT_QC_COLUMNS,
+    RECONSTRUCTED_MASS_SPECTRUM_COLUMNS,
     TARGET_REVIEW_CANDIDATE_COLUMNS as INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS,
     build_intact_comparison_candidate_rows,
     build_intact_envelope_group_rows,
     build_intact_reconstruction_qc,
+    build_reconstructed_mass_spectrum_rows,
     build_target_review_candidate_rows,
 )
 from rna_masshunter.ms2_annotation import (
@@ -93,6 +95,8 @@ INTACT_COLUMNS = [
     "Total_Supporting_Intensity",
     "Mean_Supporting_Intensity",
     "Max_Supporting_Intensity",
+    "Reconstructed_Envelope_Intensity",
+    "Intensity_Method",
     "Relative_Envelope_Intensity_Percent",
     "Relative_Overall_Envelope_Intensity_Percent",
     "Relative_In_Range_Raw_Intensity_Percent",
@@ -260,6 +264,18 @@ KNOWN_MODIFICATION_CANDIDATE_COLUMNS = [
     "warnings",
 ]
 
+WORKFLOW_SUMMARY_COLUMNS = [
+    "Analysis_Mode",
+    "Step_Name",
+    "Step_Status",
+    "Enabled_By_Config",
+    "Executed",
+    "Skip_Reason",
+    "Output_Sheets",
+    "Notes",
+]
+
+
 KNOWN_MODIFICATION_SUMMARY_COLUMNS = [
     "Modification_ID",
     "Modification_Name",
@@ -277,6 +293,7 @@ KNOWN_MODIFICATION_SUMMARY_COLUMNS = [
 
 SHEET_DESCRIPTIONS = {
     "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
+    "Workflow_Summary": "Workflow step execution and skip status for the selected analysis mode.",
     "Input_parameters": "Flattened parameters loaded from config.yaml.",
     "mzML_diagnostics": "mzML scan counts, ranges, precursor metadata, and warnings.",
     "Intact_mass_reconstruction": "Reconstructed intact mass clusters, mass errors, and reconstruction QC fields.",
@@ -286,6 +303,7 @@ SHEET_DESCRIPTIONS = {
     "Intact_Envelope_Groups": "Grouped intact envelope candidates and selected group representatives.",
     "Intact_Comparison_Candidates": "Group representative intact candidates suitable for condition comparison.",
     "Target_Review_Candidates": "Optional target review range candidates when configured.",
+    "Reconstructed_Mass_Spectrum": "Neutral-mass reconstructed spectrum points with representative envelope intensities.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
@@ -351,6 +369,9 @@ def _coerce_to_frame(value: Any) -> pd.DataFrame:
 
 
 def _analysis_mode(config) -> str:
+    workflow_mode = str((getattr(config, "analysis", {}) or {}).get("mode") or "full")
+    if workflow_mode == "intact_only":
+        return "intact_only"
     reconstruction_enabled = _as_bool((config.reconstruction or {}).get("enabled"), True)
     digestion_enabled = _as_bool((config.digestion or {}).get("enabled"), True)
     if reconstruction_enabled and digestion_enabled:
@@ -646,6 +667,7 @@ def write_excel_report(
     intact_group_rows = build_intact_envelope_group_rows(intact_qc_rows)
     intact_comparison_rows = build_intact_comparison_candidate_rows(intact_qc_rows)
     intact_target_review_rows = build_target_review_candidate_rows(intact_qc_rows)
+    reconstructed_spectrum_rows = build_reconstructed_mass_spectrum_rows(intact_qc_rows, config.reconstruction or {})
 
     intact_rows = []
     for item in intact_results:
@@ -699,6 +721,8 @@ def write_excel_report(
                 "Total_Supporting_Intensity": raw.get("total_supporting_intensity"),
                 "Mean_Supporting_Intensity": raw.get("mean_supporting_intensity"),
                 "Max_Supporting_Intensity": raw.get("max_supporting_intensity"),
+                "Reconstructed_Envelope_Intensity": raw.get("reconstructed_envelope_intensity"),
+                "Intensity_Method": raw.get("intensity_method"),
                 "Relative_Envelope_Intensity_Percent": raw.get("relative_envelope_intensity_percent"),
                 "Relative_Overall_Envelope_Intensity_Percent": raw.get("relative_overall_envelope_intensity_percent"),
                 "Relative_In_Range_Raw_Intensity_Percent": raw.get("relative_in_range_raw_intensity_percent"),
@@ -762,6 +786,7 @@ def write_excel_report(
     fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
     fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
     input_parameters = {
+        "analysis": getattr(config, "analysis", {}),
         "project": config.project,
         "input": config.input,
         "organism": config.organism,
@@ -781,8 +806,23 @@ def write_excel_report(
         "performance": config.performance,
         "reporting": config.reporting,
     }
+    analysis_mode = str((getattr(config, "analysis", {}) or {}).get("mode") or "full")
+    optional_results = optional_results or {}
+    workflow_summary_rows = optional_results.get("Workflow_Summary") or [
+        {
+            "Analysis_Mode": analysis_mode,
+            "Step_Name": "workflow_summary",
+            "Step_Status": "executed",
+            "Enabled_By_Config": True,
+            "Executed": True,
+            "Skip_Reason": "",
+            "Output_Sheets": "Workflow_Summary",
+            "Notes": "Default summary row generated by report writer.",
+        }
+    ]
 
     data_sheets: dict[str, pd.DataFrame] = {
+        "Workflow_Summary": pd.DataFrame(workflow_summary_rows, columns=WORKFLOW_SUMMARY_COLUMNS),
         "Input_parameters": pd.DataFrame(_flatten_dict(input_parameters)),
         "mzML_diagnostics": pd.DataFrame([diagnostics] if diagnostics else [{}]),
         "Theoretical_fragments": pd.DataFrame(_fragment_rows(theoretical_fragments), columns=THEORETICAL_FRAGMENT_COLUMNS),
@@ -798,9 +838,11 @@ def write_excel_report(
         "Intact_Envelope_Groups": pd.DataFrame(intact_group_rows, columns=INTACT_GROUP_COLUMNS),
         "Intact_Comparison_Candidates": pd.DataFrame(intact_comparison_rows, columns=INTACT_COMPARISON_CANDIDATE_COLUMNS),
         "Target_Review_Candidates": pd.DataFrame(intact_target_review_rows, columns=INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS),
+        "Reconstructed_Mass_Spectrum": pd.DataFrame(reconstructed_spectrum_rows, columns=RECONSTRUCTED_MASS_SPECTRUM_COLUMNS),
     }
     if reconstruction_enabled:
         data_sheets = {
+            "Workflow_Summary": data_sheets["Workflow_Summary"],
             "Input_parameters": data_sheets["Input_parameters"],
             "mzML_diagnostics": data_sheets["mzML_diagnostics"],
             "Intact_mass_reconstruction": pd.DataFrame(intact_rows, columns=INTACT_COLUMNS),
@@ -810,11 +852,28 @@ def write_excel_report(
         }
     else:
         data_sheets = {
+            "Workflow_Summary": data_sheets["Workflow_Summary"],
             "Input_parameters": data_sheets["Input_parameters"],
             "mzML_diagnostics": data_sheets["mzML_diagnostics"],
             **intact_qc_sheets,
             **{key: value for key, value in data_sheets.items() if key not in {"Input_parameters", "mzML_diagnostics"}},
         }
+    if analysis_mode == "intact_only":
+        intact_only_sheet_names = {
+            "Workflow_Summary",
+            "Input_parameters",
+            "mzML_diagnostics",
+            "Intact_mass_reconstruction",
+            "Charge_state_peaks",
+            "Intact_Reconstruction_QC",
+            "Intact_Reconstruction_Diag",
+            "Intact_Envelope_Groups",
+            "Intact_Comparison_Candidates",
+            "Target_Review_Candidates",
+            "Reconstructed_Mass_Spectrum",
+        }
+        data_sheets = {key: value for key, value in data_sheets.items() if key in intact_only_sheet_names}
+
     optional_columns = {
         "P1_Summary": P1_SUMMARY_COLUMNS,
         "P1_Theoretical_Structures": P1_THEORETICAL_COLUMNS,
@@ -838,8 +897,8 @@ def write_excel_report(
         "MS2_Fragment_Evidence": MS2_FRAGMENT_EVIDENCE_COLUMNS,
         "MS2_Peak_Annotations": MS2_ION_MATCH_COLUMNS,
     }
-    for sheet_name, value in (optional_results or {}).items():
-        if sheet_name in {"Index", "Run_summary", "Warnings"}:
+    for sheet_name, value in optional_results.items():
+        if sheet_name in {"Index", "Run_summary", "Warnings", "Workflow_Summary"}:
             continue
         frame = _coerce_to_frame(value)
         columns = optional_columns.get(sheet_name)

@@ -42,6 +42,15 @@ DEFAULT_INTACT_QC_CONFIG = {
         "min_shared_charge_fraction": 0.5,
         "require_peak_overlap": True,
     },
+    "mass_spectrum_output": {
+        "enabled": True,
+        "representatives_only": True,
+        "comparison_ready_only": False,
+        "include_qc_ineligible": True,
+        "intensity_method": "total_supporting_intensity",
+        "normalize_to_percent": True,
+        "bin_width_da": None,
+    },
 }
 
 QC_COLUMNS = [
@@ -98,6 +107,8 @@ QC_COLUMNS = [
     "Total_Supporting_Intensity",
     "Mean_Supporting_Intensity",
     "Max_Supporting_Intensity",
+    "Reconstructed_Envelope_Intensity",
+    "Intensity_Method",
     "Relative_Envelope_Intensity_Percent",
     "Relative_Overall_Envelope_Intensity_Percent",
     "Relative_In_Range_Raw_Intensity_Percent",
@@ -226,6 +237,8 @@ GROUP_COLUMNS = [
     "Representative_QC_Score",
     "Representative_Comparison_Ready",
     "Representative_Total_Intensity",
+    "Representative_Reconstructed_Envelope_Intensity",
+    "Intensity_Method",
     "Representative_Charge_States",
     "Representative_RT_Range",
     "Group_Mass_Min",
@@ -247,6 +260,8 @@ COMPARISON_CANDIDATE_COLUMNS = [
     "Comparison_Ready",
     "Intact_Envelope_QC_Score",
     "Total_Supporting_Intensity",
+    "Reconstructed_Envelope_Intensity",
+    "Intensity_Method",
     "Relative_Intact_Eligible_Intensity_Percent",
     "Supporting_Charge_States",
     "Charge_State_Continuity",
@@ -271,8 +286,37 @@ TARGET_REVIEW_CANDIDATE_COLUMNS = [
     "Comparison_Ready",
     "Intact_Envelope_QC_Score",
     "Total_Supporting_Intensity",
+    "Reconstructed_Envelope_Intensity",
+    "Intensity_Method",
     "Supporting_Charge_States",
     "Charge_State_Continuity",
+    "RT_Range_Min",
+    "Envelope_Internal_Error_ppm",
+    "Neutral_Mass_SD",
+    "Neutral_Mass_Range",
+    "Best_Reference_Label",
+    "Reference_Mass_Error_ppm",
+    "Limiting_Factors",
+]
+
+RECONSTRUCTED_MASS_SPECTRUM_COLUMNS = [
+    "Spectrum_Point_Rank",
+    "Reconstructed_Mass_Da",
+    "Reconstructed_Envelope_Intensity",
+    "Relative_Intensity_Percent",
+    "Intensity_Method",
+    "Cluster_ID",
+    "Intact_Envelope_Group_ID",
+    "Group_Representative",
+    "Comparison_Representative",
+    "Reconstruction_Status",
+    "Envelope_QC_Eligible",
+    "Intact_Strict_Eligible",
+    "Intact_Review_Eligible",
+    "Comparison_Ready",
+    "Num_Supporting_Charge_States",
+    "Supporting_Charge_States",
+    "RT_Mean",
     "RT_Range_Min",
     "Envelope_Internal_Error_ppm",
     "Neutral_Mass_SD",
@@ -400,6 +444,21 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "min_shared_charge_fraction": float(grouping.get("min_shared_charge_fraction") if grouping.get("min_shared_charge_fraction") is not None else 0.5),
         "require_peak_overlap": _as_bool(grouping.get("require_peak_overlap"), True),
     }
+    spectrum_output = merged.get("mass_spectrum_output") or {}
+    if not isinstance(spectrum_output, dict):
+        spectrum_output = {}
+    intensity_method = str(spectrum_output.get("intensity_method") or "total_supporting_intensity")
+    if intensity_method not in {"total_supporting_intensity", "mean_supporting_intensity", "max_supporting_intensity"}:
+        raise ValueError("intact_reconstruction.mass_spectrum_output.intensity_method must be one of: total_supporting_intensity, mean_supporting_intensity, max_supporting_intensity")
+    merged["mass_spectrum_output"] = {
+        "enabled": _as_bool(spectrum_output.get("enabled"), True),
+        "representatives_only": _as_bool(spectrum_output.get("representatives_only"), True),
+        "comparison_ready_only": _as_bool(spectrum_output.get("comparison_ready_only"), False),
+        "include_qc_ineligible": _as_bool(spectrum_output.get("include_qc_ineligible"), True),
+        "intensity_method": intensity_method,
+        "normalize_to_percent": _as_bool(spectrum_output.get("normalize_to_percent"), True),
+        "bin_width_da": _optional_float(spectrum_output.get("bin_width_da")),
+    }
     return merged
 
 
@@ -519,6 +578,14 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _reconstructed_intensity(total_intensity: Any, mean_intensity: Any, max_intensity: Any, method: str) -> float:
+    if method == "mean_supporting_intensity":
+        return _safe_float(mean_intensity)
+    if method == "max_supporting_intensity":
+        return _safe_float(max_intensity)
+    return _safe_float(total_intensity)
 
 
 def _small_metric_score(value: Any, limit: float, points: float) -> float:
@@ -827,6 +894,8 @@ def build_intact_envelope_group_rows(qc_rows: list[dict[str, Any]]) -> list[dict
             "Representative_QC_Score": representative.get("Intact_Envelope_QC_Score"),
             "Representative_Comparison_Ready": representative.get("Comparison_Ready"),
             "Representative_Total_Intensity": representative.get("Total_Supporting_Intensity"),
+            "Representative_Reconstructed_Envelope_Intensity": representative.get("Reconstructed_Envelope_Intensity"),
+            "Intensity_Method": representative.get("Intensity_Method"),
             "Representative_Charge_States": representative.get("Supporting_Charge_States"),
             "Representative_RT_Range": representative.get("RT_Range_Min"),
             "Group_Mass_Min": min(masses) if masses else None,
@@ -839,6 +908,66 @@ def build_intact_envelope_group_rows(qc_rows: list[dict[str, Any]]) -> list[dict
             "Notes": "",
         })
     return rows
+
+
+def build_reconstructed_mass_spectrum_rows(
+    qc_rows: list[dict[str, Any]],
+    reconstruction_config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    qc_config = _qc_config(reconstruction_config or {})
+    output_config = qc_config["mass_spectrum_output"]
+    if not output_config.get("enabled", True):
+        return []
+    rows = []
+    for row in qc_rows:
+        if not row.get("In_Neutral_Mass_Search_Range"):
+            continue
+        if output_config.get("representatives_only", True) and not row.get("Group_Representative"):
+            continue
+        if output_config.get("comparison_ready_only", False) and not row.get("Comparison_Ready"):
+            continue
+        if not output_config.get("include_qc_ineligible", True) and not (row.get("Intact_Strict_Eligible") or row.get("Intact_Review_Eligible")):
+            continue
+        mass = row.get("Reconstructed_Mass")
+        intensity = _safe_float(row.get("Reconstructed_Envelope_Intensity"))
+        if mass is None or mass == "" or intensity <= 0:
+            continue
+        rows.append({
+            "Spectrum_Point_Rank": None,
+            "Reconstructed_Mass_Da": _safe_float(mass),
+            "Reconstructed_Envelope_Intensity": intensity,
+            "Relative_Intensity_Percent": None,
+            "Intensity_Method": row.get("Intensity_Method") or output_config["intensity_method"],
+            "Cluster_ID": row.get("Cluster_ID"),
+            "Intact_Envelope_Group_ID": row.get("Intact_Envelope_Group_ID"),
+            "Group_Representative": row.get("Group_Representative"),
+            "Comparison_Representative": row.get("Comparison_Representative"),
+            "Reconstruction_Status": row.get("Reconstruction_Status"),
+            "Envelope_QC_Eligible": row.get("Envelope_QC_Eligible"),
+            "Intact_Strict_Eligible": row.get("Intact_Strict_Eligible"),
+            "Intact_Review_Eligible": row.get("Intact_Review_Eligible"),
+            "Comparison_Ready": row.get("Comparison_Ready"),
+            "Num_Supporting_Charge_States": row.get("Num_Supporting_Charge_States"),
+            "Supporting_Charge_States": row.get("Supporting_Charge_States"),
+            "RT_Mean": row.get("RT_Mean"),
+            "RT_Range_Min": row.get("RT_Range_Min"),
+            "Envelope_Internal_Error_ppm": row.get("Envelope_Internal_Error_ppm"),
+            "Neutral_Mass_SD": row.get("Neutral_Mass_SD"),
+            "Neutral_Mass_Range": row.get("Neutral_Mass_Range"),
+            "Best_Reference_Label": row.get("Best_Reference_Label"),
+            "Reference_Mass_Error_ppm": row.get("Reference_Mass_Error_ppm"),
+            "Limiting_Factors": row.get("Limiting_Factors"),
+        })
+    ranked = sorted(rows, key=lambda item: _safe_float(item.get("Reconstructed_Envelope_Intensity")), reverse=True)
+    for rank, row in enumerate(ranked, start=1):
+        row["Spectrum_Point_Rank"] = rank
+    max_intensity = max((_safe_float(row.get("Reconstructed_Envelope_Intensity")) for row in rows), default=0.0)
+    for row in rows:
+        if output_config.get("normalize_to_percent", True):
+            row["Relative_Intensity_Percent"] = (_safe_float(row.get("Reconstructed_Envelope_Intensity")) / max_intensity * 100.0) if max_intensity else 0.0
+        else:
+            row["Relative_Intensity_Percent"] = None
+    return sorted(rows, key=lambda item: _safe_float(item.get("Reconstructed_Mass_Da")))
 
 
 def _candidate_projection(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
@@ -862,6 +991,8 @@ def build_intact_reconstruction_qc(
     reconstruction_enabled: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     qc_config = _qc_config(reconstruction_config or {})
+    spectrum_output_config = qc_config["mass_spectrum_output"]
+    intensity_method = spectrum_output_config["intensity_method"]
     peaks_by_cluster: dict[str, list[dict[str, Any]]] = {}
     for row in charge_state_peaks or []:
         peaks_by_cluster.setdefault(str(row.get("Cluster_ID") or ""), []).append(row)
@@ -899,6 +1030,7 @@ def build_intact_reconstruction_qc(
         total_intensity = float(candidate.total_intensity or sum(intensities) or 0.0)
         mean_intensity = sum(intensities) / len(intensities) if intensities else total_intensity / max(len(charges), 1)
         max_supporting_intensity = max(intensities) if intensities else total_intensity
+        reconstructed_intensity = _reconstructed_intensity(total_intensity, mean_intensity, max_supporting_intensity, intensity_method)
         relative_intensity = (total_intensity / max_intensity * 100.0) if max_intensity else 0.0
         competing = sum(
             1
@@ -1039,6 +1171,8 @@ def build_intact_reconstruction_qc(
         candidate.total_supporting_intensity = total_intensity
         candidate.mean_supporting_intensity = mean_intensity
         candidate.max_supporting_intensity = max_supporting_intensity
+        candidate.reconstructed_envelope_intensity = reconstructed_intensity
+        candidate.intensity_method = intensity_method
         candidate.relative_envelope_intensity_percent = relative_intensity
         candidate.supporting_peak_classes = peak_classes
         candidate.trace_only_envelope = trace_only
@@ -1108,6 +1242,8 @@ def build_intact_reconstruction_qc(
             "Total_Supporting_Intensity": total_intensity,
             "Mean_Supporting_Intensity": mean_intensity,
             "Max_Supporting_Intensity": max_supporting_intensity,
+            "Reconstructed_Envelope_Intensity": reconstructed_intensity,
+            "Intensity_Method": intensity_method,
             "Relative_Envelope_Intensity_Percent": relative_intensity,
             "Relative_Overall_Envelope_Intensity_Percent": relative_intensity,
             "Relative_In_Range_Raw_Intensity_Percent": None,
@@ -1173,6 +1309,8 @@ def build_intact_reconstruction_qc(
         candidate.relative_overall_envelope_intensity_percent = row["Relative_Overall_Envelope_Intensity_Percent"]
         candidate.relative_in_range_raw_intensity_percent = row["Relative_In_Range_Raw_Intensity_Percent"]
         candidate.relative_intact_eligible_intensity_percent = row["Relative_Intact_Eligible_Intensity_Percent"]
+        candidate.reconstructed_envelope_intensity = row["Reconstructed_Envelope_Intensity"]
+        candidate.intensity_method = row["Intensity_Method"]
         candidate.intact_envelope_qc_score = row["Intact_Envelope_QC_Score"]
         candidate.intact_envelope_qc_rank = row["Intact_Envelope_QC_Rank"]
         candidate.strict_eligible_rank = row["Strict_Eligible_Rank"]
