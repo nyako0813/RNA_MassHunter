@@ -88,10 +88,39 @@ class IntactMassCandidate:
     neutral_mass_sd: float | None = None
     neutral_mass_range: float | None = None
     max_mass_error_ppm: float | None = None
+    envelope_internal_error_ppm: float | None = None
+    unmodified_theory_delta_da: float | None = None
+    unmodified_theory_delta_ppm: float | None = None
+    best_reference_label: str = ""
+    best_reference_mass_da: float | None = None
+    reference_mass_error_da: float | None = None
+    reference_mass_error_ppm: float | None = None
+    reference_mass_matched: bool = False
+    in_neutral_mass_search_range: bool = False
+    neutral_mass_search_min_da: float | None = None
+    neutral_mass_search_max_da: float | None = None
+    neutral_mass_range_status: str = ""
+    rt_min: float | None = None
+    rt_max: float | None = None
+    rt_mean: float | None = None
+    rt_range_min: float | None = None
+    max_rt_difference_min: float | None = None
+    rt_consistency: str = ""
     total_supporting_intensity: float = 0.0
+    mean_supporting_intensity: float = 0.0
+    max_supporting_intensity: float = 0.0
+    relative_envelope_intensity_percent: float = 0.0
+    supporting_peak_classes: str = ""
+    trace_only_envelope: bool = False
     competing_envelope_count: int = 0
+    limiting_factors: str = ""
+    severe_limiting_factors: str = ""
+    num_limiting_factors: int = 0
     primary_limiting_factor: str = ""
+    comparison_ready_strict: bool = False
+    comparison_ready_review: bool = False
     comparison_ready: bool = False
+    comparison_readiness_reason: str = ""
 
 
 @dataclass

@@ -188,6 +188,18 @@ MVP-5.9 adds quality-control diagnostics for full-length intact mass reconstruct
 
 `Comparison_Ready` means the intact mass candidate has sufficient reconstruction quality for cross-condition full-length mass comparison. It does not confirm modification identity, modification position, or biological causality.
 
+
+## MVP-5.9.1 Intact Envelope Quality Separation
+
+MVP-5.9.1 separates charge-envelope reconstruction quality from proximity to the unmodified theoretical RNA mass. A modified full-length RNA can be far from the unmodified theoretical mass, so `Reliable` is driven by internal envelope consistency, charge-state support, RT consistency, and signal abundance rather than by `Unmodified_Theory_Delta` alone.
+
+`Unmodified_Theory_Delta_Da` and `Unmodified_Theory_Delta_ppm` are annotation fields that can include total modification mass shifts. Optional reference masses can be configured to annotate agreement with external deconvolution results, but reference agreement does not confirm modification identity. `Comparison_Ready` indicates reconstruction quality suitable for cross-condition intact-mass comparison, not modification assignment.
+
+## MVP-5.9.2 Neutral Mass Search Range
+
+MVP-5.9.2 adds an SCiex-style absolute neutral mass search range for intact reconstruction. By default, full-length reconstruction review uses `intact_reconstruction.neutral_mass_range` with `enabled: true`, `min_da: 20000`, and `max_da: 30000`; candidates outside that range are flagged with `In_Neutral_Mass_Search_Range = false`, are not `Comparison_Ready`, and are excluded from the in-range dominant envelope used for full-length RNA review.
+
+
 ## Data Notes
 
 `data/modifications.yaml` is treated as the user-confirmed PDF-derived modification dictionary when present. MVP-4 loads and validates it, then reports known single-modification candidates when observed fragment masses can be explained by dictionary mass shifts. Unknown modification search is still deferred.
@@ -216,3 +228,7 @@ The comparison workbook contains:
 - `Candidate_Delta_Summary`
 
 The report compares candidate presence, review priority, final confidence, final score, candidate positions, and ambiguity status between conditions. It is intended for review prioritization and does not establish modification identity or experimental causality.
+
+## MVP-5.8 Candidate Comparison Report
+
+MVP-5.8 adds
