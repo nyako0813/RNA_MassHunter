@@ -914,6 +914,22 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "min_shared_charge_fraction": float(engine_compare.get("min_shared_charge_fraction") if engine_compare.get("min_shared_charge_fraction") is not None else 0.5),
         "require_mass_match": _as_bool(engine_compare.get("require_mass_match"), True),
     }
+    competitive = merged.get("competitive_assignment") or {}
+    if not isinstance(competitive, dict):
+        competitive = {}
+    default_competitive = DEFAULT_INTACT_QC_CONFIG["competitive_assignment"]
+    default_weights = default_competitive["score_weights"]
+    raw_weights = competitive.get("score_weights") or {}
+    if not isinstance(raw_weights, dict):
+        raw_weights = {}
+    score_weights = {key: float(raw_weights.get(key) if raw_weights.get(key) is not None else value) for key, value in default_weights.items()}
+    merged["competitive_assignment"] = {
+        "enabled": _as_bool(competitive.get("enabled"), True),
+        "rt_tolerance_min": float(competitive.get("rt_tolerance_min") if competitive.get("rt_tolerance_min") is not None else default_competitive["rt_tolerance_min"]),
+        "close_score_margin": float(competitive.get("close_score_margin") if competitive.get("close_score_margin") is not None else default_competitive["close_score_margin"]),
+        "evidence_score_config_version": str(competitive.get("evidence_score_config_version") or default_competitive["evidence_score_config_version"]),
+        "score_weights": score_weights,
+    }
     spectrum_output = merged.get("mass_spectrum_output") or {}
     if not isinstance(spectrum_output, dict):
         spectrum_output = {}
@@ -1220,6 +1236,288 @@ def _quality_matrix_and_tier(
         "Quality_Tier_Reason": reason,
         "Quality_Tier_Rank": _tier_rank(tier),
     }
+
+
+
+def _parse_semicolon_set(value: Any) -> set[str]:
+    return {item.strip() for item in str(value or "").split(";") if item.strip()}
+
+
+def _component_text(items: list[tuple[str, float]]) -> str:
+    return "; ".join(f"{name}={value:.6f}" for name, value in items if abs(value) > 1e-12)
+
+
+def _component_sum(text: str) -> float:
+    total = 0.0
+    for item in str(text or "").split(";"):
+        item = item.strip()
+        if not item or "=" not in item:
+            continue
+        try:
+            total += float(item.split("=", 1)[1])
+        except ValueError:
+            continue
+    return total
+
+
+def _bounded_ratio(value: Any, limit: float, default: float = 0.0) -> float:
+    if limit <= 0:
+        return default
+    return max(0.0, min(_safe_float(value, default) / limit, 1.0))
+
+
+def _evidence_score(row: dict[str, Any], qc_config: dict[str, Any]) -> tuple[float, str, str]:
+    competitive = qc_config["competitive_assignment"]
+    weights = competitive["score_weights"]
+    charge_count = _safe_float(row.get("Num_Supporting_Charge_States"))
+    longest_run = _safe_float(row.get("Longest_Consecutive_Charge_Run"))
+    coverage = max(0.0, min(_safe_float(row.get("Charge_Coverage_Fraction")), 1.0))
+    local_intensity = max(0.0, min(_safe_float(row.get("Local_Envelope_Relative_Intensity_Percent")) / 100.0, 1.0))
+    scan_count = len(_parse_semicolon_set(row.get("Supporting_Scan_IDs"))) or _safe_float(row.get("Supporting_Peak_Count"))
+    rt_consistency = {"consistent": 1.0, "review": 0.5}.get(str(row.get("RT_Consistency") or ""), 0.0)
+    extension_values = _parse_semicolon_set(row.get("Extended_Charges_Detected")) | _parse_semicolon_set(row.get("Extended_Weak_Charges_Detected"))
+    extension_support = min(len(extension_values) / 2.0, 1.0)
+    split_support = 1.0 if row.get("Split_Envelope_Merged") is True else 0.0
+    components = [
+        ("charge_count", weights["charge_count"] * min(charge_count / 5.0, 1.0)),
+        ("consecutive_run", weights["consecutive_charge_run"] * min(longest_run / 5.0, 1.0)),
+        ("charge_coverage", weights["charge_coverage"] * coverage),
+        ("local_intensity", weights["local_relative_intensity"] * local_intensity),
+        ("supporting_scan_count", weights["supporting_scan_count"] * min(scan_count / 5.0, 1.0)),
+        ("rt_consistency", weights["rt_consistency"] * rt_consistency),
+        ("extension_support", weights["extension_support"] * extension_support),
+        ("split_merge_support", weights["split_merge_support"] * split_support),
+    ]
+    severe_count = len(_parse_semicolon_set(row.get("Severe_Limiting_Factors")))
+    penalties = [
+        ("internal_error", -weights["internal_error_penalty"] * _bounded_ratio(row.get("Envelope_Internal_Error_ppm"), qc_config["max_envelope_internal_error_ppm"])),
+        ("neutral_mass_sd", -weights["neutral_mass_sd_penalty"] * _bounded_ratio(row.get("Neutral_Mass_SD"), qc_config["max_neutral_mass_sd_da"])),
+        ("neutral_mass_range", -weights["neutral_mass_range_penalty"] * _bounded_ratio(row.get("Neutral_Mass_Range"), qc_config["max_neutral_mass_range_da"])),
+        ("rt_range", -weights["rt_range_penalty"] * _bounded_ratio(row.get("RT_Range_Min"), qc_config["max_rt_range_min_for_review"])),
+        ("peak_sharing", -weights["peak_sharing_penalty"] * max(0.0, min(_safe_float(row.get("Highly_Shared_Peak_Fraction")), 1.0))),
+        ("peak_usage", -weights["peak_usage_penalty"] * min(max(_safe_float(row.get("Max_Peak_Usage_Count")) - 1.0, 0.0) / 10.0, 1.0)),
+        ("charge_gap", -weights["charge_gap_penalty"] * min(_safe_float(row.get("Charge_Gap_Count")) / 3.0, 1.0)),
+        ("severe_limiting_factor", -weights["severe_limiting_factor_penalty"] * min(severe_count / 3.0, 1.0)),
+    ]
+    score = round(sum(value for _, value in components) + sum(value for _, value in penalties), 6)
+    return score, _component_text(components), _component_text(penalties)
+
+
+def _shared_peak_fraction(left: set[str], right: set[str]) -> float:
+    denominator = min(len(left), len(right))
+    if denominator <= 0:
+        return 0.0
+    return len(left & right) / denominator
+
+
+def apply_competitive_assignment(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> dict[str, Any]:
+    started = perf_counter()
+    competitive = qc_config["competitive_assignment"]
+    stats: dict[str, Any] = {"Competitive_Scoring_Time_Seconds": 0.0}
+    if not qc_rows:
+        stats.update({
+            "Competing_Envelope_Group_Count": 0,
+            "MultiCandidate_Competition_Group_Count": 0,
+            "Noncompeting_Candidate_Count": 0,
+            "Largest_Competition_Group_Size": 0,
+            "Median_Competition_Group_Size": None,
+            "Mean_Competition_Group_Size": None,
+            "Competition_Group_Size_Distribution": "",
+            "Median_Top_Evidence_Score": None,
+            "Median_Top_vs_Second_Score_Margin": None,
+            "Competition_Groups_With_Close_Scores": 0,
+            "High_Peak_Sharing_Candidate_Count": 0,
+        })
+        return stats
+
+    for row in qc_rows:
+        score, components, penalties = _evidence_score(row, qc_config)
+        row["Envelope_Evidence_Score"] = score
+        row["Evidence_Score_Components"] = components
+        row["Evidence_Score_Penalties"] = penalties
+        row["Evidence_Score_Config_Version"] = competitive["evidence_score_config_version"]
+        row.setdefault("Competing_Envelope_Group_ID", "")
+        row.setdefault("Competing_Envelope_Group_Size", 1)
+        row.setdefault("Shared_Peak_Competitor_Count", 0)
+        row.setdefault("Maximum_Shared_Peak_Fraction", 0.0)
+        row.setdefault("Mean_Shared_Peak_Fraction", 0.0)
+        row.setdefault("Competitor_Cluster_IDs", "")
+        row.setdefault("Is_Noncompeting_Candidate", True)
+        row.setdefault("Evidence_Score_Rank_In_Competition", 1)
+
+    if not competitive.get("enabled", True):
+        for index, row in enumerate(sorted(qc_rows, key=lambda item: str(item.get("Cluster_ID") or "")), start=1):
+            row["Competing_Envelope_Group_ID"] = f"CG{index:05d}"
+            row["Competing_Envelope_Group_Size"] = 1
+            row["Is_Noncompeting_Candidate"] = True
+            row["Evidence_Score_Rank_In_Competition"] = 1
+        stats.update(_competition_stats(qc_rows, competitive, perf_counter() - started))
+        return stats
+
+    eligible_rows = [row for row in qc_rows if row.get("In_Neutral_Mass_Search_Range")]
+    ids = [str(row.get("Cluster_ID") or index) for index, row in enumerate(eligible_rows)]
+    dsu = _DisjointSet(ids)
+    by_peak: dict[str, list[dict[str, Any]]] = {}
+    for row in eligible_rows:
+        for peak_id in row.get("_supporting_local_peak_id_set") or set():
+            by_peak.setdefault(str(peak_id), []).append(row)
+    rt_tolerance = competitive["rt_tolerance_min"]
+    for candidates in by_peak.values():
+        ordered = sorted(candidates, key=lambda item: (_safe_float(item.get("RT_Mean")), str(item.get("Cluster_ID") or "")))
+        for index, row in enumerate(ordered):
+            row_rt = _safe_float(row.get("RT_Mean"), None)
+            for other in ordered[index + 1:]:
+                other_rt = _safe_float(other.get("RT_Mean"), None)
+                if row_rt is not None and other_rt is not None and other_rt - row_rt > rt_tolerance:
+                    break
+                if row_rt is None or other_rt is None or abs(other_rt - row_rt) <= rt_tolerance:
+                    dsu.union(str(row.get("Cluster_ID")), str(other.get("Cluster_ID")))
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in eligible_rows:
+        grouped.setdefault(dsu.find(str(row.get("Cluster_ID"))), []).append(row)
+    group_members = list(grouped.values()) + [[row] for row in qc_rows if not row.get("In_Neutral_Mass_Search_Range")]
+    group_members.sort(key=lambda members: min(str(row.get("Cluster_ID") or "") for row in members))
+    for group_index, members in enumerate(group_members, start=1):
+        group_id = f"CG{group_index:05d}"
+        member_ids = [str(row.get("Cluster_ID") or "") for row in members]
+        shared_fractions: dict[str, list[float]] = {member_id: [] for member_id in member_ids}
+        competitor_ids: dict[str, set[str]] = {member_id: set() for member_id in member_ids}
+        for left_index, left in enumerate(members):
+            left_id = str(left.get("Cluster_ID") or "")
+            left_peaks = set(left.get("_supporting_local_peak_id_set") or set())
+            for right in members[left_index + 1:]:
+                right_id = str(right.get("Cluster_ID") or "")
+                right_peaks = set(right.get("_supporting_local_peak_id_set") or set())
+                fraction = _shared_peak_fraction(left_peaks, right_peaks)
+                if fraction > 0.0:
+                    shared_fractions[left_id].append(fraction)
+                    shared_fractions[right_id].append(fraction)
+                    competitor_ids[left_id].add(right_id)
+                    competitor_ids[right_id].add(left_id)
+        ranked = sorted(members, key=_competition_rank_key)
+        for rank, row in enumerate(ranked, start=1):
+            row_id = str(row.get("Cluster_ID") or "")
+            fractions = shared_fractions.get(row_id, [])
+            row["Competing_Envelope_Group_ID"] = group_id
+            row["Competing_Envelope_Group_Size"] = len(members)
+            row["Shared_Peak_Competitor_Count"] = len(competitor_ids.get(row_id, set()))
+            row["Maximum_Shared_Peak_Fraction"] = max(fractions, default=0.0)
+            row["Mean_Shared_Peak_Fraction"] = (sum(fractions) / len(fractions)) if fractions else 0.0
+            row["Competitor_Cluster_IDs"] = "; ".join(sorted(competitor_ids.get(row_id, set())))
+            row["Is_Noncompeting_Candidate"] = len(members) == 1
+            row["Evidence_Score_Rank_In_Competition"] = rank
+    stats.update(_competition_stats(qc_rows, competitive, perf_counter() - started))
+    return stats
+
+
+def _competition_rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        -_safe_float(row.get("Envelope_Evidence_Score")),
+        _safe_float(row.get("Quality_Tier_Rank"), 4.0),
+        -_safe_float(row.get("Num_Supporting_Charge_States")),
+        _safe_float(row.get("Envelope_Internal_Error_ppm"), 1_000_000.0),
+        _safe_float(row.get("Reconstructed_Mass")),
+        str(row.get("Cluster_ID") or ""),
+    )
+
+
+def _competition_stats(qc_rows: list[dict[str, Any]], competitive: dict[str, Any], elapsed: float) -> dict[str, Any]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        group_id = str(row.get("Competing_Envelope_Group_ID") or "")
+        if group_id:
+            groups.setdefault(group_id, []).append(row)
+    sizes = [len(members) for members in groups.values()]
+    top_scores = []
+    margins = []
+    close = 0
+    for members in groups.values():
+        ranked = sorted(members, key=_competition_rank_key)
+        if ranked:
+            top_scores.append(_safe_float(ranked[0].get("Envelope_Evidence_Score")))
+        if len(ranked) > 1:
+            margin = _safe_float(ranked[0].get("Envelope_Evidence_Score")) - _safe_float(ranked[1].get("Envelope_Evidence_Score"))
+            margins.append(margin)
+            if margin <= competitive["close_score_margin"]:
+                close += 1
+    return {
+        "Competing_Envelope_Group_Count": len(groups),
+        "MultiCandidate_Competition_Group_Count": sum(1 for size in sizes if size > 1),
+        "Noncompeting_Candidate_Count": sum(1 for row in qc_rows if row.get("Is_Noncompeting_Candidate")),
+        "Largest_Competition_Group_Size": max(sizes, default=0),
+        "Median_Competition_Group_Size": median(sizes) if sizes else None,
+        "Mean_Competition_Group_Size": (sum(sizes) / len(sizes)) if sizes else None,
+        "Competition_Group_Size_Distribution": _distribution_summary(sizes),
+        "Median_Top_Evidence_Score": median(top_scores) if top_scores else None,
+        "Median_Top_vs_Second_Score_Margin": median(margins) if margins else None,
+        "Competition_Groups_With_Close_Scores": close,
+        "High_Peak_Sharing_Candidate_Count": sum(1 for row in qc_rows if str(row.get("Peak_Sharing_Status") or "") == "highly_shared"),
+        "Competitive_Scoring_Time_Seconds": elapsed,
+    }
+
+
+def build_intact_competition_group_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        group_id = str(row.get("Competing_Envelope_Group_ID") or "")
+        if group_id:
+            groups.setdefault(group_id, []).append(row)
+    rows = []
+    for group_id in sorted(groups):
+        members = groups[group_id]
+        ranked = sorted(members, key=_competition_rank_key)
+        top = ranked[0] if ranked else {}
+        second = ranked[1] if len(ranked) > 1 else {}
+        local_peaks = set()
+        for member in members:
+            local_peaks.update(member.get("_supporting_local_peak_id_set") or set())
+        top_score = top.get("Envelope_Evidence_Score")
+        second_score = second.get("Envelope_Evidence_Score")
+        rows.append({
+            "Competing_Envelope_Group_ID": group_id,
+            "Group_Size": len(members),
+            "MultiCandidate_Group": len(members) > 1,
+            "Top_Ranked_Cluster_ID": top.get("Cluster_ID"),
+            "Top_Ranked_Mass": top.get("Reconstructed_Mass"),
+            "Top_Evidence_Score": top_score,
+            "Second_Evidence_Score": second_score,
+            "Score_Margin_Top_vs_Second": (_safe_float(top_score) - _safe_float(second_score)) if second else None,
+            "Shared_Local_Peak_Count": len(local_peaks),
+            "Maximum_Peak_Usage_Count": max((_safe_float(member.get("Max_Peak_Usage_Count")) for member in members), default=0.0),
+            "Member_Cluster_IDs": "; ".join(str(member.get("Cluster_ID") or "") for member in ranked),
+            "Member_Masses": "; ".join(_format_float(member.get("Reconstructed_Mass"), 6) for member in ranked),
+            "Member_Quality_Tiers": "; ".join(str(member.get("Intact_Quality_Tier") or "") for member in ranked),
+            "Notes": "diagnostic_only_no_candidate_exclusion",
+        })
+    return rows
+
+
+def build_intact_competition_score_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for row in sorted(qc_rows, key=lambda item: (str(item.get("Competing_Envelope_Group_ID") or ""), _safe_float(item.get("Evidence_Score_Rank_In_Competition")), str(item.get("Cluster_ID") or ""))):
+        rows.append({
+            "Cluster_ID": row.get("Cluster_ID"),
+            "Reconstructed_Mass": row.get("Reconstructed_Mass"),
+            "Competing_Envelope_Group_ID": row.get("Competing_Envelope_Group_ID"),
+            "Competing_Envelope_Group_Size": row.get("Competing_Envelope_Group_Size"),
+            "Envelope_Evidence_Score": row.get("Envelope_Evidence_Score"),
+            "Evidence_Score_Rank_In_Competition": row.get("Evidence_Score_Rank_In_Competition"),
+            "Evidence_Score_Components": row.get("Evidence_Score_Components"),
+            "Evidence_Score_Penalties": row.get("Evidence_Score_Penalties"),
+            "Intact_Quality_Tier": row.get("Intact_Quality_Tier"),
+            "Supporting_Charge_Count": row.get("Num_Supporting_Charge_States"),
+            "Longest_Consecutive_Charge_Run": row.get("Longest_Consecutive_Charge_Run"),
+            "Charge_Coverage_Fraction": row.get("Charge_Coverage_Fraction"),
+            "Local_Envelope_Relative_Intensity_Percent": row.get("Local_Envelope_Relative_Intensity_Percent"),
+            "Envelope_Internal_Error_ppm": row.get("Envelope_Internal_Error_ppm"),
+            "Neutral_Mass_SD": row.get("Neutral_Mass_SD"),
+            "Neutral_Mass_Range": row.get("Neutral_Mass_Range"),
+            "RT_Range_Min": row.get("RT_Range_Min"),
+            "Maximum_Shared_Peak_Fraction": row.get("Maximum_Shared_Peak_Fraction"),
+            "Max_Peak_Usage_Count": row.get("Max_Peak_Usage_Count"),
+            "Limiting_Factors": row.get("Limiting_Factors"),
+        })
+    return rows
 
 def _intact_qc_score(row: dict[str, Any], qc_config: dict[str, Any]) -> float:
     score = 0.0
@@ -1574,6 +1872,11 @@ def build_reconstructed_mass_spectrum_rows(
             "Quality_Tier_Rank": row.get("Quality_Tier_Rank"),
             "Peak_Sharing_Status": row.get("Peak_Sharing_Status"),
             "Max_Peak_Usage_Count": row.get("Max_Peak_Usage_Count"),
+            "Competing_Envelope_Group_ID": row.get("Competing_Envelope_Group_ID"),
+            "Competing_Envelope_Group_Size": row.get("Competing_Envelope_Group_Size"),
+            "Envelope_Evidence_Score": row.get("Envelope_Evidence_Score"),
+            "Evidence_Score_Rank_In_Competition": row.get("Evidence_Score_Rank_In_Competition"),
+            "Maximum_Shared_Peak_Fraction": row.get("Maximum_Shared_Peak_Fraction"),
             "Envelope_QC_Eligible": row.get("Envelope_QC_Eligible"),
             "Intact_Strict_Eligible": row.get("Intact_Strict_Eligible"),
             "Intact_Review_Eligible": row.get("Intact_Review_Eligible"),
@@ -1634,6 +1937,9 @@ def build_intact_reconstruction_qc(
         cluster_id = candidate.cluster_id or ""
         cluster_peaks = peaks_by_cluster.get(cluster_id, [])
         supporting_peak_ids = sorted({_supporting_peak_id(row) for row in cluster_peaks})
+        supporting_local_peak_ids = sorted({str(row.get("Local_Peak_ID")) for row in cluster_peaks if row.get("Local_Peak_ID") not in {None, ""}})
+        if not supporting_local_peak_ids:
+            supporting_local_peak_ids = supporting_peak_ids
         supporting_scan_ids = sorted({str(row.get("Scan_ID")) for row in cluster_peaks if row.get("Scan_ID") not in {None, ""}})
         supporting_rt_values = []
         for row in cluster_peaks:
@@ -1824,6 +2130,7 @@ def build_intact_reconstruction_qc(
         candidate.intact_review_eligible = intact_review_eligible
         candidate.intact_strict_eligible = intact_strict_eligible
         candidate.supporting_peak_ids = "; ".join(supporting_peak_ids)
+        candidate.supporting_local_peak_ids = "; ".join(supporting_local_peak_ids)
         candidate.supporting_scan_ids = "; ".join(supporting_scan_ids)
         candidate.supporting_rt_values = "; ".join(f"{value:.5f}" for value in supporting_rt_values)
         candidate.supporting_charge_states = "; ".join(map(str, supporting_charge_states))
@@ -1921,6 +2228,7 @@ def build_intact_reconstruction_qc(
             "Target_Review_Rank": None,
             "Dominant_Target_Review_Eligible_Flag": False,
             "_supporting_peak_id_set": set(supporting_peak_ids),
+            "_supporting_local_peak_id_set": set(supporting_local_peak_ids),
             "_supporting_charge_set": set(supporting_charge_states),
             "Reconstruction_Status": status,
             "Reconstruction_Confidence": confidence,
@@ -1979,6 +2287,18 @@ def build_intact_reconstruction_qc(
             "Highly_Shared_Peak_Fraction": highly_shared_fraction,
             "Competing_Candidate_Count": competing,
             "Peak_Sharing_Status": peak_sharing_status,
+            "Competing_Envelope_Group_ID": "",
+            "Competing_Envelope_Group_Size": 1,
+            "Shared_Peak_Competitor_Count": 0,
+            "Maximum_Shared_Peak_Fraction": 0.0,
+            "Mean_Shared_Peak_Fraction": 0.0,
+            "Competitor_Cluster_IDs": "",
+            "Is_Noncompeting_Candidate": True,
+            "Envelope_Evidence_Score": None,
+            "Evidence_Score_Rank_In_Competition": None,
+            "Evidence_Score_Components": "",
+            "Evidence_Score_Penalties": "",
+            "Evidence_Score_Config_Version": "",
             **quality,
             "Comparison_Ready_Strict": comparison_ready_strict,
             "Comparison_Ready_Review": comparison_ready_review,
@@ -2045,6 +2365,8 @@ def build_intact_reconstruction_qc(
         dominant_eligible["Dominant_Intact_Envelope_Flag"] = True
 
     apply_intact_envelope_grouping(qc_rows, qc_config)
+    competition_stats = apply_competitive_assignment(qc_rows, qc_config)
+    reconstruction_config["_intact_competition_stats"] = competition_stats
 
     candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
     for row in qc_rows:
@@ -2078,6 +2400,18 @@ def build_intact_reconstruction_qc(
         candidate.intact_quality_tier = row.get("Intact_Quality_Tier", candidate.intact_quality_tier)
         candidate.quality_tier_rank = row.get("Quality_Tier_Rank", candidate.quality_tier_rank)
         candidate.peak_sharing_status = row.get("Peak_Sharing_Status", candidate.peak_sharing_status)
+        candidate.competing_envelope_group_id = row.get("Competing_Envelope_Group_ID", candidate.competing_envelope_group_id)
+        candidate.competing_envelope_group_size = row.get("Competing_Envelope_Group_Size", candidate.competing_envelope_group_size)
+        candidate.shared_peak_competitor_count = row.get("Shared_Peak_Competitor_Count", candidate.shared_peak_competitor_count)
+        candidate.maximum_shared_peak_fraction = row.get("Maximum_Shared_Peak_Fraction", candidate.maximum_shared_peak_fraction)
+        candidate.mean_shared_peak_fraction = row.get("Mean_Shared_Peak_Fraction", candidate.mean_shared_peak_fraction)
+        candidate.competitor_cluster_ids = row.get("Competitor_Cluster_IDs", candidate.competitor_cluster_ids)
+        candidate.is_noncompeting_candidate = row.get("Is_Noncompeting_Candidate", candidate.is_noncompeting_candidate)
+        candidate.envelope_evidence_score = row.get("Envelope_Evidence_Score", candidate.envelope_evidence_score)
+        candidate.evidence_score_rank_in_competition = row.get("Evidence_Score_Rank_In_Competition", candidate.evidence_score_rank_in_competition)
+        candidate.evidence_score_components = row.get("Evidence_Score_Components", candidate.evidence_score_components)
+        candidate.evidence_score_penalties = row.get("Evidence_Score_Penalties", candidate.evidence_score_penalties)
+        candidate.evidence_score_config_version = row.get("Evidence_Score_Config_Version", candidate.evidence_score_config_version)
 
 
     diagnostic_rows = build_intact_reconstruction_diagnostics(qc_rows, reconstruction_config, reconstruction_enabled)
@@ -2091,6 +2425,7 @@ def build_intact_reconstruction_diagnostics(
 ) -> list[dict[str, Any]]:
     qc_config = _qc_config(reconstruction_config or {})
     engine_stats = (reconstruction_config or {}).get("_intact_engine_stats") or {}
+    competition_stats = (reconstruction_config or {}).get("_intact_competition_stats") or {}
     status_counts = {status: 0 for status in ["Reliable", "Review", "Insufficient", "Failed"]}
     reason_counts: dict[str, int] = {}
     for row in qc_rows:
@@ -2243,6 +2578,18 @@ def build_intact_reconstruction_diagnostics(
         "RT_Mismatch_Count": engine_stats.get("RT_Mismatch_Count", 0),
         "Charge_Overlap_Failure_Count": engine_stats.get("Charge_Overlap_Failure_Count", 0),
         "Median_Mass_Delta_For_Matched_Only": engine_stats.get("Median_Mass_Delta_For_Matched_Only"),
+        "Competing_Envelope_Group_Count": competition_stats.get("Competing_Envelope_Group_Count", 0),
+        "MultiCandidate_Competition_Group_Count": competition_stats.get("MultiCandidate_Competition_Group_Count", 0),
+        "Noncompeting_Candidate_Count": competition_stats.get("Noncompeting_Candidate_Count", 0),
+        "Largest_Competition_Group_Size": competition_stats.get("Largest_Competition_Group_Size", 0),
+        "Median_Competition_Group_Size": competition_stats.get("Median_Competition_Group_Size"),
+        "Mean_Competition_Group_Size": competition_stats.get("Mean_Competition_Group_Size"),
+        "Competition_Group_Size_Distribution": competition_stats.get("Competition_Group_Size_Distribution", ""),
+        "Median_Top_Evidence_Score": competition_stats.get("Median_Top_Evidence_Score"),
+        "Median_Top_vs_Second_Score_Margin": competition_stats.get("Median_Top_vs_Second_Score_Margin"),
+        "Competition_Groups_With_Close_Scores": competition_stats.get("Competition_Groups_With_Close_Scores", 0),
+        "High_Peak_Sharing_Candidate_Count": competition_stats.get("High_Peak_Sharing_Candidate_Count", 0),
+        "Competitive_Scoring_Time_Seconds": competition_stats.get("Competitive_Scoring_Time_Seconds", 0.0),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -2295,6 +2642,18 @@ def build_rt_engine_qc_summary_rows(diagnostic_rows: list[dict[str, Any]]) -> li
         "RT_Mismatch_Count",
         "Charge_Overlap_Failure_Count",
         "Median_Mass_Delta_For_Matched_Only",
+        "Competing_Envelope_Group_Count",
+        "MultiCandidate_Competition_Group_Count",
+        "Noncompeting_Candidate_Count",
+        "Largest_Competition_Group_Size",
+        "Median_Competition_Group_Size",
+        "Mean_Competition_Group_Size",
+        "Competition_Group_Size_Distribution",
+        "Median_Top_Evidence_Score",
+        "Median_Top_vs_Second_Score_Margin",
+        "Competition_Groups_With_Close_Scores",
+        "High_Peak_Sharing_Candidate_Count",
+        "Competitive_Scoring_Time_Seconds",
         "Processing_Time_Seconds",
     ]
     return [{"Metric": metric, "Value": diagnostic.get(metric), "Notes": ""} for metric in metrics]
@@ -3259,6 +3618,22 @@ def _engine_comparison_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+
+
+def _sync_competition_fields_to_rt_diagnostics(metadata: dict[str, Any], candidates: list[IntactMassCandidate]) -> None:
+    diagnostics = metadata.get("rt_envelope_diagnostics") or []
+    by_cluster = {candidate.cluster_id: candidate for candidate in candidates}
+    for row in diagnostics:
+        candidate = by_cluster.get(row.get("Cluster_ID"))
+        if candidate is None:
+            continue
+        row["Competing_Envelope_Group_ID"] = candidate.competing_envelope_group_id
+        row["Competing_Envelope_Group_Size"] = candidate.competing_envelope_group_size
+        row["Envelope_Evidence_Score"] = candidate.envelope_evidence_score
+        row["Evidence_Score_Rank_In_Competition"] = candidate.evidence_score_rank_in_competition
+        row["Maximum_Shared_Peak_Fraction"] = candidate.maximum_shared_peak_fraction
+
+
 def reconstruct_intact_masses(
     tier_result: PeakTierResult,
     reconstruction_config: dict[str, Any],
@@ -3277,6 +3652,7 @@ def reconstruct_intact_masses(
         )
         reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
         build_intact_reconstruction_qc(candidates, charge_state_peaks, reconstruction_config, reconstruction_enabled=True)
+        _sync_competition_fields_to_rt_diagnostics(metadata, candidates)
         _finalize_engine_stats(metadata, candidates)
         reconstruction_config["_intact_engine_stats"] = metadata.get("stats", {})
         if qc_config.get("compare_with_legacy", False):

@@ -7,6 +7,8 @@ from rna_masshunter.config import validate_config
 from rna_masshunter.excel_report import write_excel_report
 from rna_masshunter.intact_reconstruction import (
     _apply_split_envelope_merge,
+    build_intact_competition_group_rows,
+    build_intact_competition_score_rows,
     build_intact_engine_comparison_rows,
     build_intact_reconstruction_qc,
     build_reconstructed_mass_spectrum_rows,
@@ -1267,3 +1269,209 @@ def test_mvp597_invalid_spectrum_minimum_quality_tier_is_rejected():
     )
     with pytest.raises(ValueError, match="minimum_quality_tier"):
         validate_config(config)
+
+
+
+def _competition_peak(cluster_id, charge, local_peak_id, mass=15000.0, intensity=1000.0, rt=5.0, neutral_offset=0.0):
+    return {
+        "Cluster_ID": cluster_id,
+        "Charge": charge,
+        "Neutral_Mass": mass + neutral_offset,
+        "Intensity": intensity,
+        "RT": rt,
+        "Peak_Tier": "Major",
+        "mz": mz_from_neutral_mass(mass + neutral_offset, charge, "negative"),
+        "Scan_ID": f"scan_{local_peak_id}",
+        "Local_Peak_ID": local_peak_id,
+    }
+
+
+def _competition_candidate(cluster_id, charges, mass=15000.0, intensity=30000.0):
+    return _candidate(cluster_id, charges, mass=mass, intensity=intensity, theoretical_mass=12000.0)
+
+
+def _parse_component_total(text):
+    total = 0.0
+    for item in str(text or "").split(";"):
+        item = item.strip()
+        if item and "=" in item:
+            total += float(item.split("=", 1)[1])
+    return total
+
+
+def test_mvp598a_nonshared_candidates_get_separate_competition_groups():
+    a = _competition_candidate("A", [6, 7])
+    b = _competition_candidate("B", [6, 7], mass=15100.0)
+    peaks = [_competition_peak("A", 6, "p1"), _competition_peak("A", 7, "p2"), _competition_peak("B", 6, "p3", mass=15100.0), _competition_peak("B", 7, "p4", mass=15100.0)]
+    rows, diag = _qc([a, b], peaks, config=_generic_config())
+    assert rows[0]["Competing_Envelope_Group_ID"] != rows[1]["Competing_Envelope_Group_ID"]
+    assert all(row["Is_Noncompeting_Candidate"] is True for row in rows)
+    assert diag["Competing_Envelope_Group_Count"] == 2
+    assert diag["MultiCandidate_Competition_Group_Count"] == 0
+
+
+def test_mvp598a_one_shared_peak_groups_candidates_and_shared_fraction():
+    a = _competition_candidate("A", [6, 7])
+    b = _competition_candidate("B", [6, 7], mass=15000.2)
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared", neutral_offset=0.2), _competition_peak("B", 7, "b7", neutral_offset=0.2)]
+    rows, _ = _qc([a, b], peaks, config=_generic_config())
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["A"]["Competing_Envelope_Group_ID"] == by_cluster["B"]["Competing_Envelope_Group_ID"]
+    assert by_cluster["A"]["Competing_Envelope_Group_Size"] == 2
+    assert by_cluster["A"]["Maximum_Shared_Peak_Fraction"] == 0.5
+    assert by_cluster["A"]["Mean_Shared_Peak_Fraction"] == 0.5
+    assert by_cluster["A"]["Shared_Peak_Competitor_Count"] == 1
+    assert by_cluster["A"]["Is_Noncompeting_Candidate"] is False
+
+
+def test_mvp598a_connected_component_groups_transitive_shared_peaks():
+    a = _competition_candidate("A", [6, 7])
+    b = _competition_candidate("B", [6, 7], mass=15000.1)
+    c = _competition_candidate("C", [6, 7], mass=15000.2)
+    peaks = [
+        _competition_peak("A", 6, "ab"), _competition_peak("A", 7, "a7"),
+        _competition_peak("B", 6, "ab", neutral_offset=0.1), _competition_peak("B", 7, "bc", neutral_offset=0.1),
+        _competition_peak("C", 6, "bc", neutral_offset=0.2), _competition_peak("C", 7, "c7", neutral_offset=0.2),
+    ]
+    rows, diag = _qc([a, b, c], peaks, config=_generic_config())
+    assert len({row["Competing_Envelope_Group_ID"] for row in rows}) == 1
+    assert all(row["Competing_Envelope_Group_Size"] == 3 for row in rows)
+    assert diag["Largest_Competition_Group_Size"] == 3
+
+
+def test_mvp598a_single_candidate_group_has_unique_group_id_and_rank_one():
+    candidate = _competition_candidate("SOLO", [6, 7, 8])
+    peaks = [_competition_peak("SOLO", z, f"s{z}") for z in [6, 7, 8]]
+    rows, _ = _qc([candidate], peaks, config=_generic_config())
+    row = rows[0]
+    assert row["Competing_Envelope_Group_ID"].startswith("CG")
+    assert row["Competing_Envelope_Group_Size"] == 1
+    assert row["Evidence_Score_Rank_In_Competition"] == 1
+    assert row["Is_Noncompeting_Candidate"] is True
+
+
+def test_mvp598a_evidence_score_components_penalties_and_total_match():
+    candidate = _competition_candidate("SCORE", [6, 7, 8], intensity=30000)
+    peaks = [_competition_peak("SCORE", 6, "p6", neutral_offset=-0.5), _competition_peak("SCORE", 7, "p7"), _competition_peak("SCORE", 8, "p8", neutral_offset=0.5)]
+    rows, _ = _qc([candidate], peaks, config=_generic_config())
+    row = rows[0]
+    assert "charge_count=" in row["Evidence_Score_Components"]
+    assert "consecutive_run=" in row["Evidence_Score_Components"]
+    assert "internal_error=" in row["Evidence_Score_Penalties"]
+    total = _parse_component_total(row["Evidence_Score_Components"]) + _parse_component_total(row["Evidence_Score_Penalties"])
+    assert round(total, 6) == row["Envelope_Evidence_Score"]
+
+
+def test_mvp598a_group_rank_descending_and_tie_breaker_deterministic():
+    better = _competition_candidate("A_BETTER", [6, 7, 8], intensity=40000)
+    weaker = _competition_candidate("B_WEAKER", [6, 7], mass=15000.1, intensity=20000)
+    tie_a = _competition_candidate("TIE_A", [6, 7], mass=15100.0, intensity=20000)
+    tie_b = _competition_candidate("TIE_B", [6, 7], mass=15100.0, intensity=20000)
+    peaks = [
+        _competition_peak("A_BETTER", 6, "shared1"), _competition_peak("A_BETTER", 7, "a7"), _competition_peak("A_BETTER", 8, "a8"),
+        _competition_peak("B_WEAKER", 6, "shared1", neutral_offset=0.1), _competition_peak("B_WEAKER", 7, "b7", neutral_offset=0.1),
+        _competition_peak("TIE_A", 6, "shared2", mass=15100.0), _competition_peak("TIE_A", 7, "ta7", mass=15100.0),
+        _competition_peak("TIE_B", 6, "shared2", mass=15100.0), _competition_peak("TIE_B", 7, "tb7", mass=15100.0),
+    ]
+    rows, _ = _qc([weaker, better, tie_b, tie_a], peaks, config=_generic_config())
+    by_cluster = {row["Cluster_ID"]: row for row in rows}
+    assert by_cluster["A_BETTER"]["Evidence_Score_Rank_In_Competition"] == 1
+    assert by_cluster["B_WEAKER"]["Evidence_Score_Rank_In_Competition"] == 2
+    assert by_cluster["TIE_A"]["Evidence_Score_Rank_In_Competition"] == 1
+    assert by_cluster["TIE_B"]["Evidence_Score_Rank_In_Competition"] == 2
+
+
+def test_mvp598a_reference_and_target_review_do_not_change_competition_score_or_rank():
+    candidates = [_competition_candidate("A", [6, 7]), _competition_candidate("B", [6, 7], mass=15000.1)]
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared", neutral_offset=0.1), _competition_peak("B", 7, "b7", neutral_offset=0.1)]
+    base_rows, _ = _qc(candidates, peaks, config=_generic_config())
+    annotated_rows, _ = _qc(
+        [_competition_candidate("A", [6, 7]), _competition_candidate("B", [6, 7], mass=15000.1)],
+        peaks,
+        config=_generic_config(reference_masses=[{"label": "ref", "mass_da": 15000.0}], target_review_mass_range={"enabled": True, "min_da": 14900, "max_da": 15100}),
+    )
+    base = {row["Cluster_ID"]: row for row in base_rows}
+    annotated = {row["Cluster_ID"]: row for row in annotated_rows}
+    for cluster_id in ["A", "B"]:
+        for field in ["Competing_Envelope_Group_Size", "Envelope_Evidence_Score", "Evidence_Score_Rank_In_Competition", "Maximum_Shared_Peak_Fraction"]:
+            assert annotated[cluster_id][field] == base[cluster_id][field]
+
+
+def test_mvp598a_zero_candidates_and_disabled_competition_are_safe():
+    rows, diag = _qc([], [], config=_generic_config())
+    assert rows == []
+    assert diag["Competing_Envelope_Group_Count"] == 0
+    config = _generic_config(competitive_assignment={"enabled": False})
+    candidates = [_competition_candidate("A", [6, 7]), _competition_candidate("B", [6, 7])]
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared"), _competition_peak("B", 7, "b7")]
+    rows, diag = _qc(candidates, peaks, config=config)
+    assert len({row["Competing_Envelope_Group_ID"] for row in rows}) == 2
+    assert diag["MultiCandidate_Competition_Group_Count"] == 0
+
+
+def test_mvp598a_legacy_engine_runs_with_competition_columns():
+    config = {"enabled": True, "min_charge": 6, "max_charge": 7, "min_charge_states": 2, "mass_cluster_tolerance_da": 1.0, "intact_reconstruction": {"engine": "legacy_cluster", "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000}}}
+    candidates, peaks, _ = reconstruct_intact_masses(PeakTierResult(major=[_rt_peak(15000.0, z, rt=5.0) for z in [6, 7]]), config, {"polarity": "negative"}, None)
+    rows, _ = build_intact_reconstruction_qc(candidates, peaks, config)
+    assert rows
+    assert "Competing_Envelope_Group_ID" in rows[0]
+    assert "Envelope_Evidence_Score" in rows[0]
+
+
+def test_mvp598a_competition_excel_sheets_are_present(tmp_path):
+    candidate = _competition_candidate("EXCEL", [6, 7, 8])
+    peaks = [_competition_peak("EXCEL", z, f"p{z}") for z in [6, 7, 8]]
+    build_intact_reconstruction_qc([candidate], peaks, _generic_config())
+    report = write_excel_report(
+        output_dir=tmp_path,
+        config=_excel_config({"enabled": True, **_generic_config()}),
+        diagnostics={},
+        intact_results=[candidate],
+        charge_state_peaks=peaks,
+        warnings=[],
+        modifications=[],
+        rule_set={},
+        pathways=[],
+        theoretical_fragments=[],
+        fragment_ms1_matches=[],
+        known_modification_candidates=[],
+        known_modification_summary=[],
+        optional_results={},
+    )
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        assert "Intact_Competition_Groups" in workbook.sheetnames
+        assert "Intact_Competition_Scores" in workbook.sheetnames
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+        qc_headers = [cell.value for cell in next(workbook["Intact_Reconstruction_QC"].iter_rows(min_row=3, max_row=3))]
+        spectrum_headers = [cell.value for cell in next(workbook["Reconstructed_Mass_Spectrum"].iter_rows(min_row=3, max_row=3))]
+        assert "Competing_Envelope_Group_ID" in qc_headers
+        assert "Envelope_Evidence_Score" in spectrum_headers
+    finally:
+        workbook.close()
+
+
+def test_mvp598a_competition_group_rows_and_score_rows_are_diagnostic_only():
+    a = _competition_candidate("A", [6, 7])
+    b = _competition_candidate("B", [6, 7], mass=15000.1)
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared", neutral_offset=0.1), _competition_peak("B", 7, "b7", neutral_offset=0.1)]
+    rows, _ = _qc([a, b], peaks, config=_generic_config())
+    group_rows = build_intact_competition_group_rows(rows)
+    score_rows = build_intact_competition_score_rows(rows)
+    assert len(group_rows) == 1
+    assert group_rows[0]["MultiCandidate_Group"] is True
+    assert len(score_rows) == 2
+    assert all(row["Comparison_Ready"] == rows[index]["Comparison_Ready"] for index, row in enumerate(rows))
+
+
+def test_mvp598a_competition_performance_smoke():
+    candidates = [_competition_candidate(f"P{i}", [6, 7], mass=15000.0 + i * 0.01, intensity=1000.0 + i) for i in range(500)]
+    peaks = []
+    for i in range(500):
+        shared = f"shared_{i // 5}"
+        peaks.append(_competition_peak(f"P{i}", 6, shared, neutral_offset=i * 0.01))
+        peaks.append(_competition_peak(f"P{i}", 7, f"unique_{i}", neutral_offset=i * 0.01))
+    rows, diag = _qc(candidates, peaks, config=_generic_config())
+    assert len(rows) == 500
+    assert diag["Competing_Envelope_Group_Count"] <= 500
+    assert diag["Competitive_Scoring_Time_Seconds"] < 5.0

@@ -8,6 +8,8 @@ from openpyxl.utils import get_column_letter
 
 from rna_masshunter.intact_reconstruction import (
     COMPARISON_CANDIDATE_COLUMNS as INTACT_COMPARISON_CANDIDATE_COLUMNS,
+    COMPETITION_GROUP_COLUMNS as INTACT_COMPETITION_GROUP_COLUMNS,
+    COMPETITION_SCORE_COLUMNS as INTACT_COMPETITION_SCORE_COLUMNS,
     DIAGNOSTIC_COLUMNS as INTACT_DIAGNOSTIC_COLUMNS,
     ENGINE_COMPARISON_COLUMNS,
     GROUP_COLUMNS as INTACT_GROUP_COLUMNS,
@@ -18,6 +20,8 @@ from rna_masshunter.intact_reconstruction import (
     RT_ENVELOPE_DIAGNOSTIC_COLUMNS,
     TARGET_REVIEW_CANDIDATE_COLUMNS as INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS,
     build_intact_comparison_candidate_rows,
+    build_intact_competition_group_rows,
+    build_intact_competition_score_rows,
     build_intact_envelope_group_rows,
     build_intact_reconstruction_qc,
     build_reconstructed_mass_spectrum_rows,
@@ -148,6 +152,18 @@ INTACT_COLUMNS = [
     "Highly_Shared_Peak_Fraction",
     "Competing_Candidate_Count",
     "Peak_Sharing_Status",
+    "Competing_Envelope_Group_ID",
+    "Competing_Envelope_Group_Size",
+    "Shared_Peak_Competitor_Count",
+    "Maximum_Shared_Peak_Fraction",
+    "Mean_Shared_Peak_Fraction",
+    "Competitor_Cluster_IDs",
+    "Is_Noncompeting_Candidate",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Evidence_Score_Components",
+    "Evidence_Score_Penalties",
+    "Evidence_Score_Config_Version",
     "Pass_Min_Charge_Count",
     "Pass_Min_Consecutive_Charge_Count",
     "Pass_Charge_Continuity",
@@ -385,6 +401,8 @@ SHEET_DESCRIPTIONS = {
     "RT_Engine_QC_Summary": "RT-localized engine quality tier, failure reason, missing charge, split envelope, and engine-match summaries.",
     "Missing_Charge_Diagnostics": "Predicted missing charge-state m/z diagnostics for RT-localized envelopes.",
     "Intact_Engine_Comparison": "Optional comparison between legacy_cluster and rt_localized intact engines.",
+    "Intact_Competition_Groups": "Diagnostic groups of intact candidates sharing supporting local peaks; no candidate exclusion is applied.",
+    "Intact_Competition_Scores": "Envelope-internal evidence scores and rank details within competition groups.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
@@ -746,6 +764,8 @@ def write_excel_report(
         reconstruction_enabled=reconstruction_enabled,
     )
     intact_group_rows = build_intact_envelope_group_rows(intact_qc_rows)
+    intact_competition_group_rows = build_intact_competition_group_rows(intact_qc_rows)
+    intact_competition_score_rows = build_intact_competition_score_rows(intact_qc_rows)
     intact_comparison_rows = build_intact_comparison_candidate_rows(intact_qc_rows)
     intact_target_review_rows = build_target_review_candidate_rows(intact_qc_rows)
     reconstructed_spectrum_rows = build_reconstructed_mass_spectrum_rows(intact_qc_rows, config.reconstruction or {})
@@ -851,6 +871,18 @@ def write_excel_report(
                 "Highly_Shared_Peak_Fraction": raw.get("highly_shared_peak_fraction"),
                 "Competing_Candidate_Count": raw.get("competing_candidate_count"),
                 "Peak_Sharing_Status": raw.get("peak_sharing_status"),
+                "Competing_Envelope_Group_ID": raw.get("competing_envelope_group_id"),
+                "Competing_Envelope_Group_Size": raw.get("competing_envelope_group_size"),
+                "Shared_Peak_Competitor_Count": raw.get("shared_peak_competitor_count"),
+                "Maximum_Shared_Peak_Fraction": raw.get("maximum_shared_peak_fraction"),
+                "Mean_Shared_Peak_Fraction": raw.get("mean_shared_peak_fraction"),
+                "Competitor_Cluster_IDs": raw.get("competitor_cluster_ids"),
+                "Is_Noncompeting_Candidate": raw.get("is_noncompeting_candidate"),
+                "Envelope_Evidence_Score": raw.get("envelope_evidence_score"),
+                "Evidence_Score_Rank_In_Competition": raw.get("evidence_score_rank_in_competition"),
+                "Evidence_Score_Components": raw.get("evidence_score_components"),
+                "Evidence_Score_Penalties": raw.get("evidence_score_penalties"),
+                "Evidence_Score_Config_Version": raw.get("evidence_score_config_version"),
                 "Pass_Min_Charge_Count": raw.get("pass_min_charge_count"),
                 "Pass_Min_Consecutive_Charge_Count": raw.get("pass_min_consecutive_charge_count"),
                 "Pass_Charge_Continuity": raw.get("pass_charge_continuity"),
@@ -990,6 +1022,8 @@ def write_excel_report(
         "Intact_Reconstruction_QC": pd.DataFrame(intact_qc_rows, columns=INTACT_QC_COLUMNS),
         "Intact_Reconstruction_Diag": pd.DataFrame(intact_diagnostic_rows, columns=INTACT_DIAGNOSTIC_COLUMNS),
         "Intact_Envelope_Groups": pd.DataFrame(intact_group_rows, columns=INTACT_GROUP_COLUMNS),
+        "Intact_Competition_Groups": pd.DataFrame(intact_competition_group_rows, columns=INTACT_COMPETITION_GROUP_COLUMNS),
+        "Intact_Competition_Scores": pd.DataFrame(intact_competition_score_rows, columns=INTACT_COMPETITION_SCORE_COLUMNS),
         "Intact_Comparison_Candidates": pd.DataFrame(intact_comparison_rows, columns=INTACT_COMPARISON_CANDIDATE_COLUMNS),
         "Target_Review_Candidates": pd.DataFrame(intact_target_review_rows, columns=INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS),
         "Reconstructed_Mass_Spectrum": pd.DataFrame(reconstructed_spectrum_rows, columns=RECONSTRUCTED_MASS_SPECTRUM_COLUMNS),
@@ -1023,6 +1057,8 @@ def write_excel_report(
             "Intact_Reconstruction_QC",
             "Intact_Reconstruction_Diag",
             "Intact_Envelope_Groups",
+            "Intact_Competition_Groups",
+            "Intact_Competition_Scores",
             "Intact_Comparison_Candidates",
             "Target_Review_Candidates",
             "Reconstructed_Mass_Spectrum",
@@ -1059,6 +1095,8 @@ def write_excel_report(
         "RT_Engine_QC_Summary": RT_ENGINE_QC_SUMMARY_COLUMNS,
         "Missing_Charge_Diagnostics": MISSING_CHARGE_DIAGNOSTIC_COLUMNS,
         "Intact_Engine_Comparison": ENGINE_COMPARISON_COLUMNS,
+        "Intact_Competition_Groups": INTACT_COMPETITION_GROUP_COLUMNS,
+        "Intact_Competition_Scores": INTACT_COMPETITION_SCORE_COLUMNS,
     }
     for sheet_name, value in optional_results.items():
         if sheet_name in {"Index", "Run_summary", "Warnings", "Workflow_Summary"}:
