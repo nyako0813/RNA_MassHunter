@@ -32,6 +32,36 @@ TOP_CANDIDATE_COLUMNS = [
     "Evidence_Summary",
     "Key_Warnings",
     "Recommended_Next_Check",
+    "Modification_Family",
+    "Position_Class",
+    "Position_Prior_Score",
+    "Parent_Base_Compatibility",
+    "MS2_Localization_Evidence",
+    "Structural_Isomer_Group_ID",
+    "Structure_Ambiguity_Status",
+    "Alternative_Structural_Candidates",
+    "Biological_Plausibility_Score",
+    "Biological_Plausibility_Level",
+    "Shadow_Final_Score",
+    "Shadow_Final_Confidence",
+    "Shadow_Only",
+    "Has_Modified_Fragment_Ion_Evidence",
+    "Modified_Fragment_Match_Count",
+    "Unique_Modified_Fragment_Ion_Count",
+    "Modified_Fragment_Ion_Series",
+    "Supporting_Modified_Fragment_Match_IDs",
+    "Best_Modified_Fragment_Error_ppm",
+    "Maximum_Modified_Fragment_Intensity",
+    "Position_Localization_Status",
+    "Position_Discriminating_Ion_Count",
+    "Structure_Resolution_Status",
+    "Alternative_Modification_IDs",
+    "MS2_Identity_Evidence_Level",
+    "Shadow_MS2_Identity_Score",
+    "Shadow_MS2_Identity_Confidence",
+    "Shadow_MS2_Identity_Priority",
+    "MS2_Identity_Evidence_Reason",
+    "MS2_Identity_Warnings",
     "Notes",
 ]
 
@@ -250,6 +280,15 @@ def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config
             row,
             ["Key_Warnings", "Warnings", "Near_Isobaric_Warning", "Confidence_Limiting_Factors", "Limiting_Factors"],
         )
+        structure_status = str(row.get("Structure_Ambiguity_Status") or "")
+        if "unresolved" in structure_status:
+            structure_warnings = [
+                "isobaric structural alternatives remain",
+                "modified-ion evidence does not distinguish structural isomers",
+            ]
+            if has_discriminating:
+                structure_warnings.insert(0, "position localized but modification structure unresolved")
+            warnings = "; ".join(item for item in [warnings, *structure_warnings] if item)
         evidence_summary = str(_first_existing(row, ["Evidence_Summary", "Summary", "Evidence"], ""))
         if not evidence_summary:
             parts = []
@@ -284,6 +323,36 @@ def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config
                 "Evidence_Summary": evidence_summary,
                 "Key_Warnings": warnings,
                 "Recommended_Next_Check": _recommended_next_check(priority, has_discriminating, ambiguity_status, warnings),
+                "Modification_Family": row.get("Modification_Family", ""),
+                "Position_Class": row.get("Position_Class", ""),
+                "Position_Prior_Score": row.get("Position_Prior_Score", ""),
+                "Parent_Base_Compatibility": row.get("Parent_Base_Compatibility", ""),
+                "MS2_Localization_Evidence": row.get("MS2_Localization_Evidence", ""),
+                "Structural_Isomer_Group_ID": row.get("Structural_Isomer_Group_ID", ""),
+                "Structure_Ambiguity_Status": row.get("Structure_Ambiguity_Status", ""),
+                "Alternative_Structural_Candidates": row.get("Alternative_Structural_Candidates", ""),
+                "Biological_Plausibility_Score": row.get("Biological_Plausibility_Score", ""),
+                "Biological_Plausibility_Level": row.get("Biological_Plausibility_Level", ""),
+                "Shadow_Final_Score": row.get("Shadow_Final_Score", ""),
+                "Shadow_Final_Confidence": row.get("Shadow_Final_Confidence", ""),
+                "Shadow_Only": row.get("Shadow_Only", ""),
+                "Has_Modified_Fragment_Ion_Evidence": row.get("Has_Modified_Fragment_Ion_Evidence", ""),
+                "Modified_Fragment_Match_Count": row.get("Modified_Fragment_Match_Count", ""),
+                "Unique_Modified_Fragment_Ion_Count": row.get("Unique_Modified_Fragment_Ion_Count", ""),
+                "Modified_Fragment_Ion_Series": row.get("Modified_Fragment_Ion_Series", ""),
+                "Supporting_Modified_Fragment_Match_IDs": row.get("Supporting_Modified_Fragment_Match_IDs", ""),
+                "Best_Modified_Fragment_Error_ppm": row.get("Best_Modified_Fragment_Error_ppm", ""),
+                "Maximum_Modified_Fragment_Intensity": row.get("Maximum_Modified_Fragment_Intensity", ""),
+                "Position_Localization_Status": row.get("Position_Localization_Status", ""),
+                "Position_Discriminating_Ion_Count": row.get("Position_Discriminating_Ion_Count", ""),
+                "Structure_Resolution_Status": row.get("Structure_Resolution_Status", ""),
+                "Alternative_Modification_IDs": row.get("Alternative_Modification_IDs", ""),
+                "MS2_Identity_Evidence_Level": row.get("MS2_Identity_Evidence_Level", ""),
+                "Shadow_MS2_Identity_Score": row.get("Shadow_MS2_Identity_Score", ""),
+                "Shadow_MS2_Identity_Confidence": row.get("Shadow_MS2_Identity_Confidence", ""),
+                "Shadow_MS2_Identity_Priority": row.get("Shadow_MS2_Identity_Priority", ""),
+                "MS2_Identity_Evidence_Reason": row.get("MS2_Identity_Evidence_Reason", ""),
+                "MS2_Identity_Warnings": row.get("MS2_Identity_Warnings", ""),
                 "Notes": "Review_Priority is for triage order only; Final_Confidence is unchanged.",
             }
         )

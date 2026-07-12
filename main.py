@@ -14,6 +14,7 @@ from rna_masshunter.modification_search import known_modification_candidate_rows
 from rna_masshunter.modifications import load_modifications, validate_modifications
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.ms2_annotation import annotate_ms2
+from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
@@ -271,11 +272,19 @@ def main() -> None:
         ranking_rows, position_prior_rows, plausibility_rows, position_diagnostics = evaluate_biological_position_priors(
             config, ranking_rows, modifications, position_prior_rules
         )
+        ranking_rows, identity_rows = build_ms2_modification_identity(
+            ranking_rows,
+            optional_results.get("MS2_Modified_Ion_Matches", []),
+            optional_results.get("MS2_Modification_Localization_Evidence", []),
+            optional_results.get("Modification_Ambiguity_Groups", []),
+            enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+        )
         optional_results["Modification_Evidence_Summary"] = ranking_summary
         optional_results["Modification_Evidence_Ranking"] = ranking_rows
         optional_results["Modification_Position_Priors"] = position_prior_rows
         optional_results["MS2_Biological_Plausibility"] = plausibility_rows
         optional_results["Biological_Prior_Diagnostics"] = position_diagnostics
+        optional_results["MS2_Modification_Identity"] = identity_rows
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [
