@@ -56,7 +56,7 @@ def evaluate(rows, cfg=None):
 
 def test_canonical_and_adjacent_and_inconsistent_classes():
     _, positions, _, _ = evaluate([row(pos=34), row(pos=35, rank=2), row(pos=60, rank=3)])
-    assert [x["Position_Class"] for x in positions] == ["canonical_position", "adjacent_to_canonical", "biologically_inconsistent"]
+    assert [x["Position_Class"] for x in positions] == ["canonical_position", "adjacent_to_canonical", "chemically_possible_but_unreported"]
 
 
 def test_no_landmark_means_unknown_not_fixed_sprinzl():
@@ -85,14 +85,14 @@ def test_sequence_supplies_missing_candidate_base():
 def test_ms2_localization_is_separate_from_biology():
     enriched, _, rows, _ = evaluate([row(pos=60)])
     assert rows[0]["MS2_Localization_Evidence"] == "Strong"
-    assert rows[0]["Position_Class"] == "biologically_inconsistent"
+    assert rows[0]["Position_Class"] == "chemically_possible_but_unreported"
     assert enriched[0]["Final_Confidence"] == "High"
 
 
 def test_structural_isobars_reported_at_same_candidate_position():
-    _, _, rows, _ = evaluate([row(mod="s2U")])
+    _, _, rows, _ = evaluate([row(mod="s2U"), row(mod="s4U", rank=2)])
     assert rows[0]["Structure_Ambiguity_Status"] == "position_resolved_structure_unresolved"
-    assert "s4U" in rows[0]["Alternative_Structural_Candidates"]
+    assert rows[0]["Alternative_Structural_Candidates"] == "s4U"
     assert rows[0]["Structure_Discriminating_Evidence"] is False
 
 
@@ -198,16 +198,18 @@ def test_nonisobaric_candidate_has_no_structural_alternative():
 
 def test_position_discrimination_changes_structure_status_not_alternatives():
     candidate = row(mod="s2U"); candidate["Position_Discriminating_Evidence"] = False
-    _, _, rows, _ = evaluate([candidate])
+    alternative = row(mod="s4U", rank=2); alternative["Position_Discriminating_Evidence"] = False
+    _, _, rows, _ = evaluate([candidate, alternative])
     assert rows[0]["Structure_Ambiguity_Status"] == "position_and_structure_unresolved"
-    assert "s4U" in rows[0]["Alternative_Structural_Candidates"]
+    assert rows[0]["Alternative_Structural_Candidates"] == "s4U"
 
 
 def test_diagnostics_count_position_classes():
     _, _, _, diagnostics = evaluate([row(), row(pos=35, rank=2), row(pos=60, rank=3)])
     assert diagnostics[0]["Canonical_Position"] == 1
     assert diagnostics[0]["Adjacent_To_Canonical"] == 1
-    assert diagnostics[0]["Biologically_Inconsistent"] == 1
+    assert diagnostics[0]["Biologically_Inconsistent"] == 0
+    assert diagnostics[0]["Chemically_Possible_But_Unreported"] == 1
 
 
 def test_diagnostics_count_parent_compatibility():
@@ -235,3 +237,92 @@ def test_apply_to_final_score_flag_still_reports_zero_mutated_rows():
     enriched, _, _, diagnostics = evaluate([row()], cfg)
     assert enriched[0]["Final_Score"] == 7.0
     assert diagnostics[0]["Rows_Changed"] == 0
+
+
+def test_remote_compatible_position_is_not_inconsistent():
+    enriched, _, _, _ = evaluate([row(pos=60, base="U")])
+    assert enriched[0]["Position_Class"] == "chemically_possible_but_unreported"
+    assert "distance from the canonical landmark alone is not treated as inconsistency" in enriched[0]["Position_Prior_Reason"]
+
+
+def test_incompatible_base_is_inconsistent_with_specific_reason():
+    enriched, _, _, _ = evaluate([row(pos=60, base="A")])
+    assert enriched[0]["Position_Class"] == "biologically_inconsistent"
+    assert "Parent base is incompatible" in enriched[0]["Position_Prior_Reason"]
+
+
+def test_explicit_pathway_contradiction_is_inconsistent():
+    cfg = config()
+    custom_rules = rules()
+    custom_rules["families"][0]["organism_exclusions"] = {"archaea": "curated pathway is absent in archaea"}
+    enriched, _, _, _ = evaluate_biological_position_priors(cfg, [row()], mods(), custom_rules)
+    assert enriched[0]["Position_Class"] == "biologically_inconsistent"
+    assert "curated pathway is absent" in enriched[0]["Position_Prior_Reason"]
+
+
+def test_isomer_group_is_deterministic_reciprocal_and_unique():
+    source = [row(mod="s2U", rank=1), row(mod="s4U", rank=2)]
+    first, _, _, _ = evaluate(source)
+    second, _, _, _ = evaluate(list(reversed(source)))
+    assert first[0]["Structural_Isomer_Group_ID"] == first[1]["Structural_Isomer_Group_ID"]
+    assert first[0]["Structural_Isomer_Group_ID"].startswith("SIG_")
+    assert {item["Structural_Isomer_Group_ID"] for item in first} == {item["Structural_Isomer_Group_ID"] for item in second}
+    assert first[0]["Alternative_Structural_Candidates"] == "s4U"
+    assert first[1]["Alternative_Structural_Candidates"] == "s2U"
+    assert all(item["Modification_ID"] not in item["Alternative_Structural_Candidates"].split(";") for item in first)
+    assert all(len(item["Alternative_Structural_Candidates"].split(";")) == len(set(item["Alternative_Structural_Candidates"].split(";"))) for item in first)
+
+
+def test_position_discrimination_does_not_resolve_structure():
+    enriched, _, _, _ = evaluate([row(mod="s2U"), row(mod="s4U", rank=2)])
+    assert all(item["Position_Discriminating_Evidence"] for item in enriched)
+    assert all(item["Structure_Discriminating_Evidence"] is False for item in enriched)
+    assert all(item["Structure_Ambiguity_Status"] == "position_resolved_structure_unresolved" for item in enriched)
+
+
+def test_unresolved_structure_is_added_to_top_warning():
+    import pandas as pd
+    enriched, _, _, _ = evaluate([row(mod="s2U"), row(mod="s4U", rank=2)])
+    top = _build_top_candidates(pd.DataFrame(enriched), pd.DataFrame(), {"max_top_candidates": 50})
+    assert top["Key_Warnings"].str.contains("modification structure unresolved").all()
+    assert top["Key_Warnings"].str.contains("does not distinguish structural isomers").all()
+
+
+def test_canonical_biology_without_modified_ion_is_not_high():
+    candidate = row(); candidate["Has_Modified_Ion_Evidence"] = False
+    enriched, _, _, _ = evaluate([candidate])
+    assert enriched[0]["Position_Class"] == "canonical_position"
+    assert enriched[0]["Biological_Plausibility_Level"] == "moderate"
+
+
+def test_canonical_with_modified_ion_and_localization_can_be_high():
+    enriched, _, _, _ = evaluate([row()])
+    assert enriched[0]["Biological_Plausibility_Level"] == "high"
+
+
+def test_unresolved_structure_caps_plausibility_at_moderate():
+    enriched, _, _, _ = evaluate([row(mod="s2U"), row(mod="s4U", rank=2)])
+    assert all(item["Biological_Plausibility_Level"] == "moderate" for item in enriched)
+
+
+def test_shadow_changes_do_not_change_final_score_confidence_rank_or_top_order():
+    import pandas as pd
+    source = [row(mod="s2U", score=9, rank=1), row(mod="s4U", score=8, rank=2)]
+    before = [(item["Rank"], item["Final_Score"], item["Final_Confidence"]) for item in source]
+    plain = _build_top_candidates(pd.DataFrame(source), pd.DataFrame(), {"max_top_candidates": 50})
+    enriched, _, _, _ = evaluate(source)
+    shadow = _build_top_candidates(pd.DataFrame(enriched), pd.DataFrame(), {"max_top_candidates": 50})
+    assert [(item["Rank"], item["Final_Score"], item["Final_Confidence"]) for item in enriched] == before
+    assert list(plain["Modification_ID"]) == list(shadow["Modification_ID"])
+    assert list(plain["Review_Rank"]) == list(shadow["Review_Rank"])
+
+
+def test_isomer_mass_values_within_tolerance_share_group_across_rounding_boundary():
+    close_mods = [
+        Modification("isoA", "isoA", 15.97749, "x", ["U"]),
+        Modification("isoB", "isoB", 15.97801, "x", ["U"]),
+    ]
+    source = [row(mod="isoA"), row(mod="isoB", rank=2)]
+    enriched, _, _, _ = evaluate_biological_position_priors(config(), source, close_mods, {"version": "test", "families": []})
+    assert enriched[0]["Structural_Isomer_Group_ID"] == enriched[1]["Structural_Isomer_Group_ID"]
+    assert enriched[0]["Structural_Isomer_Group_ID"].startswith("SIG_")

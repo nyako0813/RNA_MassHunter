@@ -6,6 +6,7 @@ Positions are input-sequence 1-based; no Sprinzl numbering is assumed.
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ BIOLOGICAL_PLAUSIBILITY_COLUMNS = [
     "Rank", "Modification_ID", "Modification_Name", "Parent_Fragment_ID", "Candidate_tRNA_Position",
     "Candidate_Base", "Modification_Family", "Position_Class", "Position_Prior_Score",
     "Parent_Base_Compatibility", "Parent_Base_Prior_Score", "Parent_Base_Reason",
-    "MS2_Localization_Evidence", "Structure_Ambiguity_Status", "Alternative_Structural_Candidates",
+    "MS2_Localization_Evidence", "Structural_Isomer_Group_ID", "Structure_Ambiguity_Status", "Alternative_Structural_Candidates",
     "Structure_Discriminating_Evidence", "Biological_Plausibility_Score", "Biological_Plausibility_Level",
     "Shadow_Final_Score", "Shadow_Final_Confidence", "Shadow_Only", "Notes",
 ]
@@ -28,7 +29,7 @@ SHADOW_RANKING_COLUMNS = [
     "Modification_Family", "Position_Class", "Position_Prior_Score", "Position_Prior_Level",
     "Position_Prior_Reason", "Landmark_Name", "Landmark_Position", "Position_Numbering_System",
     "Parent_Base_Compatibility", "Parent_Base_Prior_Score", "Parent_Base_Reason",
-    "MS2_Localization_Evidence", "Structure_Ambiguity_Status", "Alternative_Structural_Candidates",
+    "MS2_Localization_Evidence", "Structural_Isomer_Group_ID", "Structure_Ambiguity_Status", "Alternative_Structural_Candidates",
     "Structure_Discriminating_Evidence", "Biological_Plausibility_Score", "Biological_Plausibility_Level",
     "Shadow_Final_Score", "Shadow_Final_Confidence", "Shadow_Only",
 ]
@@ -101,13 +102,24 @@ def _landmarks(config: Any) -> dict[str, int]:
     return {key: int(value) for key, value in result.items()}
 
 
-def _position_prior(position: int | None, rule: dict[str, Any], landmarks: dict[str, int], scores: dict[str, float]) -> tuple[str, float, str, str, Any]:
-    if position is None or not rule:
-        return "unknown", scores["unknown"], "unknown", "Position or family rule is unavailable.", "", ""
+def _position_prior(
+    position: int | None, rule: dict[str, Any], landmarks: dict[str, int],
+    scores: dict[str, float], compatibility: str, contradiction_reason: str = "",
+) -> tuple[str, float, str, str, Any, Any]:
     landmark_name = str(rule.get("canonical_landmark") or "")
     landmark = landmarks.get(landmark_name)
+    if contradiction_reason:
+        return ("biologically_inconsistent", scores["inconsistent"], "inconsistent", f"Explicit biological contradiction: {contradiction_reason}", landmark_name, landmark or "")
+    if compatibility == "incompatible":
+        return ("biologically_inconsistent", scores["inconsistent"], "inconsistent", "Parent base is incompatible with the modification target base.", landmark_name, landmark or "")
+    if position is None or not rule:
+        return "unknown", scores["unknown"], "unknown", "Position or family rule is unavailable.", "", ""
     reported = {_position(item) for item in rule.get("reported_noncanonical_positions", [])}
     reported.discard(None)
+    excluded = {_position(item) for item in rule.get("excluded_positions", [])}
+    excluded.discard(None)
+    if position in excluded:
+        return ("biologically_inconsistent", scores["inconsistent"], "inconsistent", f"Curated exclusion explicitly lists input-sequence position {position}.", landmark_name, landmark or "")
     if landmark is None:
         if position in reported:
             return "reported_noncanonical_position", scores["moderate"], "moderate", "Position is explicitly reported by the configured rule.", landmark_name, ""
@@ -118,11 +130,9 @@ def _position_prior(position: int | None, rule: dict[str, Any], landmarks: dict[
         return "adjacent_to_canonical", scores["moderate"], "moderate", "Candidate is adjacent to the configured canonical landmark.", landmark_name, landmark
     if position in reported:
         return "reported_noncanonical_position", scores["moderate"], "moderate", "Position is explicitly reported as noncanonical.", landmark_name, landmark
-    max_distance = int(rule.get("chemically_possible_distance", 3) or 3)
-    if abs(position - landmark) <= max_distance:
-        return "chemically_possible_but_unreported", scores["neutral"], "neutral", "Position is near the landmark but is not explicitly reported.", landmark_name, landmark
-    return "biologically_inconsistent", scores["inconsistent"], "inconsistent", "Position is distant from the configured family landmark.", landmark_name, landmark
-
+    if compatibility == "compatible":
+        return ("chemically_possible_but_unreported", scores["neutral"], "neutral", "Parent base is compatible, but this position is not reported by the configured rule; distance from the canonical landmark alone is not treated as inconsistency.", landmark_name, landmark)
+    return ("unknown", scores["unknown"], "unknown", "Position is not reported and parent-base compatibility is unavailable or ambiguous.", landmark_name, landmark)
 
 def _parent_base(row: dict[str, Any], modification: dict[str, Any], sequence: str) -> tuple[str, float, str, str]:
     position = _position(row.get("Candidate_tRNA_Position"))
@@ -145,34 +155,59 @@ def _parent_base(row: dict[str, Any], modification: dict[str, Any], sequence: st
     return status, observed, reason, ";".join(allowed)
 
 
-def _structure_groups(rows: list[dict[str, Any]], modifications: dict[str, dict[str, Any]], tolerance: float) -> dict[int, tuple[str, str]]:
-    result: dict[int, tuple[str, str]] = {}
-    for index, row in enumerate(rows):
-        alternatives = []
-        current_id = str(row.get("Modification_ID") or "")
-        current = modifications.get(current_id, {})
-        mass = _float(current.get("mass_shift_from_unmodified"), float("nan"))
-        group = str(current.get("near_isobaric_group") or "")
-        candidate_base = str(row.get("Candidate_Base") or "").upper()
-        for other_id, other in modifications.items():
-            if other_id == current_id:
-                continue
-            other_targets = {str(base).upper() for base in other.get("target_bases", []) if base}
-            if candidate_base and other_targets and candidate_base not in other_targets:
-                continue
-            other_mass = _float(other.get("mass_shift_from_unmodified"), float("nan"))
-            same_group = bool(group and group == str(other.get("near_isobaric_group") or ""))
-            same_mass = mass == mass and other_mass == other_mass and abs(mass - other_mass) <= tolerance
-            if same_group or same_mass:
-                alternatives.append(other_id)
-        alternatives = sorted(set(alternatives))
-        if alternatives:
-            status = "position_resolved_structure_unresolved" if row.get("Position_Discriminating_Evidence") else "position_and_structure_unresolved"
-        else:
-            status = "no_structural_alternative_identified"
-        result[index] = (status, ";".join(alternatives))
-    return result
+def _evidence_source_signature(row: dict[str, Any]) -> str:
+    fields = ("Has_MS1_Fragment_Evidence", "Has_Known_Modification_Candidate", "Has_MS2_Precursor_Evidence", "Has_Modified_Ion_Evidence", "Has_Localization_Evidence")
+    return "".join("1" if _bool(row.get(field)) else "0" for field in fields)
 
+
+def _structure_groups(
+    rows: list[dict[str, Any]], modifications: dict[str, dict[str, Any]], tolerance: float, sequence: str,
+) -> dict[int, tuple[str, str, str]]:
+    tolerance = tolerance if tolerance > 0 else 0.001
+    base_groups: dict[tuple[Any, ...], list[tuple[float, int]]] = {}
+    candidate_keys: dict[int, tuple[Any, ...] | None] = {index: None for index in range(len(rows))}
+    for index, row in enumerate(rows):
+        mod_id = str(row.get("Modification_ID") or "")
+        modification = modifications.get(mod_id, {})
+        compatibility, observed_base, _, _ = _parent_base(row, modification, sequence)
+        position = _position(row.get("Candidate_tRNA_Position"))
+        parent_id = str(row.get("Parent_Fragment_ID") or "")
+        mass = _float(row.get("Mass_Shift"), _float(modification.get("mass_shift_from_unmodified"), float("nan")))
+        if not parent_id or position is None or compatibility != "compatible" or mass != mass:
+            continue
+        base_key = (parent_id, position, observed_base, _evidence_source_signature(row))
+        base_groups.setdefault(base_key, []).append((mass, index))
+
+    grouped: dict[tuple[Any, ...], list[int]] = {}
+    for base_key, entries in base_groups.items():
+        clusters: list[tuple[float, list[int]]] = []
+        for mass, index in sorted(entries, key=lambda item: (item[0], str(rows[item[1]].get("Modification_ID") or ""))):
+            if clusters and abs(mass - clusters[-1][0]) <= tolerance:
+                clusters[-1][1].append(index)
+            else:
+                clusters.append((mass, [index]))
+        for anchor_mass, members in clusters:
+            key = (*base_key, f"{anchor_mass:.9f}")
+            grouped[key] = members
+            for index in members:
+                candidate_keys[index] = key
+
+    result: dict[int, tuple[str, str, str]] = {}
+    for index, row in enumerate(rows):
+        key = candidate_keys[index]
+        members = grouped.get(key, []) if key is not None else []
+        current_id = str(row.get("Modification_ID") or "")
+        member_ids = sorted({str(rows[item].get("Modification_ID") or "") for item in members if rows[item].get("Modification_ID")})
+        alternatives = [item for item in member_ids if item != current_id]
+        if alternatives:
+            serialized = "|".join(map(str, key))
+            group_id = "SIG_" + hashlib.sha1(serialized.encode("utf-8")).hexdigest()[:12].upper()
+            status = "position_resolved_structure_unresolved" if _bool(row.get("Position_Discriminating_Evidence")) else "position_and_structure_unresolved"
+        else:
+            group_id = ""
+            status = "no_structural_alternative_identified"
+        result[index] = (group_id, status, ";".join(alternatives))
+    return result
 
 def evaluate_biological_position_priors(config: Any, ranking_rows: list[dict[str, Any]], modifications: list[Any], rules: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     prior_cfg = ((getattr(config, "ms2_annotation", {}) or {}).get("biological_position_prior") or {})
@@ -185,7 +220,9 @@ def evaluate_biological_position_priors(config: Any, ranking_rows: list[dict[str
     mod_map = {str(_raw(item).get("id") or ""): _raw(item) for item in modifications}
     landmarks = _landmarks(config)
     sequence = str((getattr(config, "sequence", {}) or {}).get("sequence") or "").upper()
-    structure = _structure_groups(ranking_rows, mod_map, _float(prior_cfg.get("structural_mass_tolerance_da"), 0.001))
+    structure = _structure_groups(
+        ranking_rows, mod_map, _float(prior_cfg.get("structural_mass_tolerance_da"), 0.001), sequence
+    )
     position_rows, plausibility_rows, enriched = [], [], []
     for index, original in enumerate(ranking_rows):
         row = dict(original)
@@ -198,19 +235,40 @@ def evaluate_biological_position_priors(config: Any, ranking_rows: list[dict[str
             start, local = _position(row.get("Parent_Start")), _position(row.get("Candidate_Position_In_Parent"))
             pos = start + local - 1 if start and local else None
         row["Candidate_tRNA_Position"] = pos if pos is not None else row.get("Candidate_tRNA_Position", "")
-        position_class, position_score, level, reason, landmark_name, landmark_position = _position_prior(pos, family_rule, landmarks, score_cfg)
+        compatibility, observed_base, base_reason, _ = _parent_base(row, mod, sequence)
         organism_group = str((getattr(config, "organism", {}) or {}).get("group") or "").casefold()
         organism_warning = str((family_rule.get("organism_warnings") or {}).get(organism_group) or "")
+        exclusions = family_rule.get("organism_exclusions") or {}
+        contradiction_reason = str(exclusions.get(organism_group) or "") if isinstance(exclusions, dict) else (
+            f"organism group {organism_group} is explicitly excluded" if organism_group in {str(item).casefold() for item in exclusions} else ""
+        )
+        position_class, position_score, level, reason, landmark_name, landmark_position = _position_prior(
+            pos, family_rule, landmarks, score_cfg, compatibility, contradiction_reason
+        )
         if organism_warning:
             position_score += _float(score_cfg.get("warning"), -1.0)
             level = "warning"
             reason = f"{reason} Organism warning: {organism_warning}"
-        compatibility, observed_base, base_reason, _ = _parent_base(row, mod, sequence)
         base_score = _float(parent_scores.get(compatibility), 0.0)
-        structure_status, alternatives = structure[index]
+        structure_group_id, structure_status, alternatives = structure[index]
         ms2_localization = str(row.get("Localization_Level") or "None")
         plausibility_score = position_score + base_score
-        plausibility_level = "high" if plausibility_score >= 2 else "moderate" if plausibility_score >= 1 else "warning" if plausibility_score < 0 else "neutral"
+        high_gate = (
+            position_class in {"canonical_position", "reported_noncanonical_position"}
+            and compatibility == "compatible"
+            and _bool(row.get("Has_Modified_Ion_Evidence"))
+            and ms2_localization in {"Moderate", "Strong"}
+            and not organism_warning and not contradiction_reason
+            and "unresolved" not in structure_status
+        )
+        if high_gate:
+            plausibility_level = "high"
+        elif plausibility_score < 0:
+            plausibility_level = "warning"
+        elif plausibility_score >= 1:
+            plausibility_level = "moderate"
+        else:
+            plausibility_level = "neutral"
         shadow_score = _float(row.get("Final_Score")) + plausibility_score
         shadow_confidence = str(row.get("Final_Confidence") or "")
         shadow = {
@@ -220,6 +278,7 @@ def evaluate_biological_position_priors(config: Any, ranking_rows: list[dict[str
             "Landmark_Position": landmark_position, "Position_Numbering_System": "input_sequence_1_based",
             "Parent_Base_Compatibility": compatibility, "Parent_Base_Prior_Score": base_score,
             "Parent_Base_Reason": base_reason, "MS2_Localization_Evidence": ms2_localization,
+            "Structural_Isomer_Group_ID": structure_group_id,
             "Structure_Ambiguity_Status": structure_status,
             "Alternative_Structural_Candidates": alternatives,
             "Structure_Discriminating_Evidence": False,
