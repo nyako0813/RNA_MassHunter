@@ -8,6 +8,10 @@ from rna_masshunter.excel_report import write_excel_report
 from rna_masshunter.intact_reconstruction import (
     _apply_split_envelope_merge,
     apply_assignment_dry_run,
+    run_assignment_sensitivity,
+    build_assignment_candidate_audit_rows,
+    build_assignment_sensitivity_rows,
+    build_assignment_stability_rows,
     build_intact_competition_group_rows,
     build_intact_competition_score_rows,
     build_intact_engine_comparison_rows,
@@ -1634,3 +1638,148 @@ def test_mvp598b_large_component_keeps_distant_candidates_and_is_fast():
     assert rows[2]["Dry_Run_Selected"] is True
     assert stats["Dry_Run_Selected_Candidate_Count"] >= 150
     assert stats["Assignment_Dry_Run_Time_Seconds"] < 5.0
+
+
+
+def _sensitivity_config(audit=None, enabled=True):
+    competitive = _dry_config()["competitive_assignment"]
+    competitive["sensitivity_analysis"] = {"enabled": enabled, "scenarios": ["strict", "balanced", "sensitive", "permissive"]}
+    competitive["audit_masses"] = audit or {"enabled": False, "tolerance_da": 2.0, "masses": []}
+    return {"competitive_assignment": competitive}
+
+
+def _prepare_dry_graph(rows):
+    apply_assignment_dry_run(rows, _dry_config())
+    return rows
+
+
+def test_mvp598c_scenario_selection_monotonicity_and_defaults():
+    rows = _prepare_dry_graph([
+        _dry_row("A", {"p1", "a2"}, {6, 7}, 20, peak_charge_map={"p1": {6}, "a2": {7}}),
+        _dry_row("B", {"p1", "b2"}, {6, 8}, 10, peak_charge_map={"p1": {6}, "b2": {8}}),
+    ])
+    stats = run_assignment_sensitivity(rows, _sensitivity_config())
+    summary = {row["Scenario"]: row for row in stats["_sensitivity_summary_rows"]}
+    assert summary["strict"]["Selected_Total"] <= summary["balanced"]["Selected_Total"]
+    assert summary["permissive"]["Selected_Total"] >= summary["balanced"]["Selected_Total"]
+    assert stats["Sensitivity_Scenario_Count"] == 4
+
+
+def test_mvp598c_stability_statuses_and_noncompeting():
+    stable_selected = _prepare_dry_graph([_dry_row("S", {"s1", "s2"}, {6, 7}, 20)])
+    run_assignment_sensitivity(stable_selected, _sensitivity_config())
+    assert stable_selected[0]["Selection_Stability_Status"] == "noncompeting"
+    assert stable_selected[0]["Selection_Stability_Count"] == 4
+
+    excluded = _prepare_dry_graph([
+        _dry_row("A", {"p"}, {6}, 20, peak_charge_map={"p": {6}}),
+        _dry_row("E", {"p"}, set(), 10, peak_charge_map={}),
+    ])
+    run_assignment_sensitivity(excluded, _sensitivity_config())
+    assert excluded[1]["Selection_Stability_Status"] == "stable_excluded"
+
+    sensitive = _prepare_dry_graph([
+        _dry_row("A", {"p", "a"}, {6, 7}, 20, peak_charge_map={"p": {6}, "a": {7}}),
+        _dry_row("T", {"p", "t"}, {6, 8}, 10, peak_charge_map={"p": {6}, "t": {8}}),
+    ])
+    run_assignment_sensitivity(sensitive, _sensitivity_config())
+    assert sensitive[1]["Selection_Stability_Status"] == "threshold_sensitive"
+
+    ambiguous = _prepare_dry_graph([
+        _dry_row("A", {"p"}, {6, 7}, 10.75),
+        _dry_row("Q", {"p"}, {6, 7}, 10.0),
+    ])
+    run_assignment_sensitivity(ambiguous, _sensitivity_config())
+    assert ambiguous[1]["Selection_Stability_Status"] == "ambiguous_across_scenarios"
+
+
+def test_mvp598c_scenarios_preserve_original_qc_and_reuse_graph():
+    rows = _prepare_dry_graph([
+        _dry_row("A", {"p", "a"}, {6, 7}, 20),
+        _dry_row("B", {"p", "b"}, {6, 8}, 10),
+    ])
+    protected = [{key: row.get(key) for key in ["Competing_Envelope_Group_ID", "Envelope_Evidence_Score", "Direct_Competitor_Cluster_IDs", "Dry_Run_Assignment_Status", "Dry_Run_Selected", "Intact_Quality_Tier", "Comparison_Ready", "Comparison_Representative"]} for row in rows]
+    run_assignment_sensitivity(rows, _sensitivity_config())
+    after = [{key: row.get(key) for key in item} for row, item in zip(rows, protected)]
+    assert after == protected
+
+
+def test_mvp598c_audit_disabled_empty_tolerance_and_no_assignment_effect():
+    rows = _prepare_dry_graph([_dry_row("A", {"a1", "a2"}, {6, 7}, 20)])
+    baseline = (rows[0]["Dry_Run_Assignment_Status"], rows[0]["Dry_Run_Selected"])
+    disabled = run_assignment_sensitivity(rows, _sensitivity_config())
+    assert disabled["_audit_rows"] == []
+    empty = run_assignment_sensitivity(rows, _sensitivity_config({"enabled": True, "tolerance_da": 1.0, "masses": []}))
+    assert empty["_audit_rows"] == []
+    enabled = run_assignment_sensitivity(rows, _sensitivity_config({"enabled": True, "tolerance_da": 0.5, "masses": [{"label": "review", "mass_da": 15000.2}]}))
+    assert len(enabled["_audit_rows"]) == 1
+    assert enabled["_audit_rows"][0]["Audit_Mass_Label"] == "review"
+    assert (rows[0]["Dry_Run_Assignment_Status"], rows[0]["Dry_Run_Selected"]) == baseline
+
+
+def test_mvp598c_reference_target_tier_ready_and_spectrum_invariants():
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared", neutral_offset=0.1), _competition_peak("B", 7, "b7", neutral_offset=0.1)]
+    def result(config):
+        rows, _ = _qc([_competition_candidate("A", [6, 7]), _competition_candidate("B", [6, 7], mass=15000.1)], peaks, config=config)
+        spectrum = build_reconstructed_mass_spectrum_rows(rows, config["intact_reconstruction"])
+        return rows, spectrum
+    base_rows, base_spectrum = result(_generic_config())
+    annotated_rows, annotated_spectrum = result(_generic_config(reference_masses=[{"label": "ref", "mass_da": 15000}], target_review_mass_range={"enabled": True, "min_da": 14900, "max_da": 15100}))
+    fields = ["Selected_Strict", "Selected_Balanced", "Selected_Sensitive", "Selected_Permissive", "Selection_Stability_Status", "Intact_Quality_Tier", "Comparison_Ready"]
+    assert [[r[f] for f in fields] for r in annotated_rows] == [[r[f] for f in fields] for r in base_rows]
+    assert len(annotated_spectrum) == len(base_spectrum)
+
+
+def test_mvp598c_empty_disabled_and_legacy_engine_safe():
+    assert run_assignment_sensitivity([], _sensitivity_config())["Sensitivity_Scenario_Count"] == 4
+    row = _prepare_dry_graph([_dry_row("A", {"a"}, {6}, 1)])[0]
+    disabled = _sensitivity_config(); disabled["competitive_assignment"]["enabled"] = False
+    assert run_assignment_sensitivity([row], disabled)["Sensitivity_Scenario_Count"] == 0
+    config = {"enabled": True, "min_charge": 6, "max_charge": 7, "min_charge_states": 2, "mass_cluster_tolerance_da": 1.0, "intact_reconstruction": {"engine": "legacy_cluster", "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000}}}
+    candidates, peaks, _ = reconstruct_intact_masses(PeakTierResult(major=[_rt_peak(15000.0, z, rt=5.0) for z in [6, 7]]), config, {"polarity": "negative"}, None)
+    rows, diagnostics = build_intact_reconstruction_qc(candidates, peaks, config)
+    assert rows and "Selection_Stability_Status" in rows[0]
+    assert diagnostics[0]["Sensitivity_Scenario_Count"] == 4
+
+
+def test_mvp598c_excel_sheets_empty_audit_and_names(tmp_path):
+    candidate = _competition_candidate("EXCELC", [6, 7, 8])
+    peaks = [_competition_peak("EXCELC", z, f"p{z}") for z in [6, 7, 8]]
+    report = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        for name in ["Assignment_Sensitivity", "Assignment_Stability", "Assignment_Candidate_Audit"]:
+            assert name in workbook.sheetnames
+        assert workbook["Assignment_Candidate_Audit"].max_row == 3
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+    finally:
+        workbook.close()
+
+
+def test_mvp598c_performance_smoke():
+    rows = []
+    for index in range(500):
+        rows.append(_dry_row(f"C{index:04d}", {f"edge_{index - 1}", f"edge_{index}"}, {6, 7}, 1000-index))
+    _prepare_dry_graph(rows)
+    stats = run_assignment_sensitivity(rows, _sensitivity_config())
+    assert stats["Sensitivity_Scenario_Count"] == 4
+    assert stats["Sensitivity_Analysis_Time_Seconds"] < 5.0
+
+
+def test_mvp598c_competing_candidate_can_be_stable_selected():
+    rows = _prepare_dry_graph([
+        _dry_row("A", {"shared", "a2", "a3", "a4"}, {6, 7, 8, 9}, 20, peak_charge_map={"shared": {6}, "a2": {7}, "a3": {8}, "a4": {9}}),
+        _dry_row("B", {"shared", "b2", "b3", "b4"}, {6, 10, 11, 12}, 10, peak_charge_map={"shared": {6}, "b2": {10}, "b3": {11}, "b4": {12}}),
+    ])
+    run_assignment_sensitivity(rows, _sensitivity_config())
+    assert rows[1]["Selection_Stability_Status"] == "stable_selected"
+    assert rows[1]["Selection_Stability_Count"] == 4
+
+
+def test_mvp598c_sensitivity_does_not_call_grouping_or_evidence_scoring(monkeypatch):
+    import rna_masshunter.intact_reconstruction as intact_module
+    rows = _prepare_dry_graph([_dry_row("A", {"a1"}, {6}, 10)])
+    monkeypatch.setattr(intact_module, "apply_competitive_assignment", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("grouping/scoring recalculated")))
+    monkeypatch.setattr(intact_module, "_evidence_score", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("evidence score recalculated")))
+    stats = run_assignment_sensitivity(rows, _sensitivity_config())
+    assert stats["Sensitivity_Scenario_Count"] == 4

@@ -248,3 +248,5 @@ The report compares candidate presence, review priority, final confidence, final
 ## MVP-5.8 Candidate Comparison Report
 
 MVP-5.8 adds
+
+MVP-5.9.8c compares diagnostic dry-run competitive assignment across strict, balanced, sensitive, and permissive threshold scenarios. It reports candidates selected consistently across scenarios and supports optional audit masses for result review only. Audit masses do not affect grouping, evidence scoring, assignment, quality tiers, Comparison Ready, representatives, dominant selection, or reconstructed spectrum output. This sensitivity analysis is intended for threshold review before any production connection of assignment results.

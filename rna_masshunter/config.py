@@ -85,6 +85,11 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "min_independent_charge_states": 2,
                 "allow_shared_peaks_between_selected": False,
                 "minimum_score_margin_for_exclusive_selection": 1.0,
+                "sensitivity_analysis": {
+                    "enabled": True,
+                    "scenarios": ["strict", "balanced", "sensitive", "permissive"],
+                },
+                "audit_masses": {"enabled": False, "tolerance_da": 2.0, "masses": []},
                 "evidence_score_config_version": "MVP-5.9.8a-v1",
                 "score_weights": {
                     "charge_count": 12.0,

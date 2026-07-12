@@ -73,6 +73,11 @@ DEFAULT_INTACT_QC_CONFIG = {
         "min_independent_charge_states": 2,
         "allow_shared_peaks_between_selected": False,
         "minimum_score_margin_for_exclusive_selection": 1.0,
+        "sensitivity_analysis": {
+            "enabled": True,
+            "scenarios": ["strict", "balanced", "sensitive", "permissive"],
+        },
+        "audit_masses": {"enabled": False, "tolerance_da": 2.0, "masses": []},
         "evidence_score_config_version": "MVP-5.9.8a-v1",
         "score_weights": {
             "charge_count": 12.0,
@@ -461,6 +466,13 @@ DIAGNOSTIC_COLUMNS = [
     "Largest_Component_Excluded_Count",
     "Largest_Component_Ambiguous_Count",
     "Assignment_Dry_Run_Time_Seconds",
+    "Sensitivity_Analysis_Enabled", "Sensitivity_Scenario_Count", "Stable_Selected_Count",
+    "Stable_Excluded_Count", "Threshold_Sensitive_Count", "Ambiguous_Across_Scenarios_Count",
+    "Noncompeting_Stable_Count", "Strict_Selected_Count", "Balanced_Selected_Count",
+    "Sensitive_Selected_Count", "Permissive_Selected_Count",
+    "Strict_vs_Balanced_Agreement_Percent", "Balanced_vs_Sensitive_Agreement_Percent",
+    "Sensitive_vs_Permissive_Agreement_Percent", "Sensitivity_Analysis_Time_Seconds",
+    "Audit_Enabled", "Audit_Target_Count", "Audit_Matched_Candidate_Count",
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Total_Candidates_Before_Mass_Range_Filter",
@@ -782,6 +794,43 @@ ASSIGNMENT_DRY_RUN_COLUMNS = [
     "Notes",
 ]
 
+ASSIGNMENT_SENSITIVITY_COLUMNS = [
+    "Scenario", "Min_Independent_Peak_Fraction", "Min_Independent_Charge_States",
+    "Minimum_Score_Margin", "Allow_Shared_Peaks", "Selected_Total",
+    "Selected_Primary", "Selected_Independent", "Noncompeting", "Would_Exclude_Total",
+    "Ambiguous_Total", "Peak_Reuse_Exclusion_Count", "Independent_Peak_Shortage_Count",
+    "Independent_Charge_Shortage_Count", "Largest_Component_Selected",
+    "Largest_Component_Excluded", "Processing_Time_Seconds", "Notes",
+]
+
+ASSIGNMENT_STABILITY_COLUMNS = [
+    "Cluster_ID", "Reconstructed_Mass", "Competing_Envelope_Group_ID",
+    "Intact_Quality_Tier", "Comparison_Ready", "Envelope_Evidence_Score",
+    "Selected_Strict", "Selected_Balanced", "Selected_Sensitive", "Selected_Permissive",
+    "Status_Strict", "Status_Balanced", "Status_Sensitive", "Status_Permissive",
+    "Selection_Stability_Count", "Selection_Stability_Fraction",
+    "Selection_Stability_Status", "Dry_Run_Assignment_Status", "Direct_Competitor_Count",
+    "Independent_Supporting_Peak_Fraction", "Independent_Charge_State_Count", "Notes",
+]
+
+ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS = [
+    "Audit_Mass_Label", "Audit_Target_Mass", "Cluster_ID", "Reconstructed_Mass",
+    "Audit_Mass_Delta_Da", "Competing_Envelope_Group_ID", "Intact_Quality_Tier",
+    "Comparison_Ready", "Envelope_Evidence_Score", "Evidence_Score_Rank_In_Competition",
+    "Dry_Run_Assignment_Status", "Dry_Run_Selected", "Selected_Strict",
+    "Selected_Balanced", "Selected_Sensitive", "Selected_Permissive",
+    "Selection_Stability_Status", "Independent_Supporting_Peak_Fraction",
+    "Independent_Charge_State_Count", "Direct_Competitor_Count", "Excluded_By_Cluster_ID",
+    "Close_Score_Ambiguity", "Assignment_Confidence", "Limiting_Factors", "Notes",
+]
+
+SENSITIVITY_SCENARIO_DEFAULTS = {
+    "strict": {"min_independent_peak_fraction": 0.75, "min_independent_charge_states": 2, "minimum_score_margin_for_exclusive_selection": 2.0, "allow_shared_peaks_between_selected": False},
+    "balanced": {"min_independent_peak_fraction": 0.5, "min_independent_charge_states": 2, "minimum_score_margin_for_exclusive_selection": 1.0, "allow_shared_peaks_between_selected": False},
+    "sensitive": {"min_independent_peak_fraction": 0.5, "min_independent_charge_states": 1, "minimum_score_margin_for_exclusive_selection": 0.5, "allow_shared_peaks_between_selected": False},
+    "permissive": {"min_independent_peak_fraction": 0.25, "min_independent_charge_states": 1, "minimum_score_margin_for_exclusive_selection": 0.5, "allow_shared_peaks_between_selected": True},
+}
+
 ASSIGNMENT_DRY_RUN_SUMMARY_COLUMNS = [
     "Competing_Envelope_Group_ID",
     "Component_Size",
@@ -1034,6 +1083,15 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "minimum_score_margin_for_exclusive_selection": float(competitive.get("minimum_score_margin_for_exclusive_selection") if competitive.get("minimum_score_margin_for_exclusive_selection") is not None else default_competitive.get("minimum_score_margin_for_exclusive_selection", 1.0)),
         "evidence_score_config_version": str(competitive.get("evidence_score_config_version") or default_competitive["evidence_score_config_version"]),
         "score_weights": score_weights,
+        "sensitivity_analysis": {
+            "enabled": _as_bool((competitive.get("sensitivity_analysis") or {}).get("enabled"), True),
+            "scenarios": list((competitive.get("sensitivity_analysis") or {}).get("scenarios") or ["strict", "balanced", "sensitive", "permissive"]),
+        },
+        "audit_masses": {
+            "enabled": _as_bool((competitive.get("audit_masses") or {}).get("enabled"), False),
+            "tolerance_da": float((competitive.get("audit_masses") or {}).get("tolerance_da") if (competitive.get("audit_masses") or {}).get("tolerance_da") is not None else 2.0),
+            "masses": _as_reference_masses((competitive.get("audit_masses") or {}).get("masses") or []),
+        },
     }
     spectrum_output = merged.get("mass_spectrum_output") or {}
     if not isinstance(spectrum_output, dict):
@@ -1613,7 +1671,7 @@ def _initialize_assignment_fields(row: dict[str, Any]) -> None:
     row.setdefault("Independent_Observed_Peak_Count", 0)
 
 
-def apply_assignment_dry_run(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> dict[str, Any]:
+def apply_assignment_dry_run(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any], reuse_direct_graph: bool = False) -> dict[str, Any]:
     started = perf_counter()
     competitive = qc_config["competitive_assignment"]
     for row in qc_rows:
@@ -1633,14 +1691,18 @@ def apply_assignment_dry_run(qc_rows: list[dict[str, Any]], qc_config: dict[str,
     for group_id in sorted(groups):
         selection_order = 1
         members = groups[group_id]
-        direct: dict[str, set[str]] = {str(row.get("Cluster_ID") or ""): set() for row in members}
-        shared_peak_count_max: dict[str, int] = {str(row.get("Cluster_ID") or ""): 0 for row in members}
+        direct: dict[str, set[str]] = {
+            str(row.get("Cluster_ID") or ""): ({item.strip() for item in str(row.get("Direct_Competitor_Cluster_IDs") or "").split(";") if item.strip()} if reuse_direct_graph else set())
+            for row in members
+        }
+        shared_peak_count_max: dict[str, int] = {str(row.get("Cluster_ID") or ""): int(row.get("Direct_Shared_Peak_Count_Max") or 0) if reuse_direct_graph else 0 for row in members}
         shared_fraction_max: dict[str, float] = {str(row.get("Cluster_ID") or ""): 0.0 for row in members}
         shared_assignment_max: dict[str, int] = {str(row.get("Cluster_ID") or ""): 0 for row in members}
         by_peak: dict[str, list[dict[str, Any]]] = {}
-        for row in members:
-            for peak_id in row.get("_supporting_local_peak_id_set") or set():
-                by_peak.setdefault(str(peak_id), []).append(row)
+        if not reuse_direct_graph:
+            for row in members:
+                for peak_id in row.get("_supporting_local_peak_id_set") or set():
+                    by_peak.setdefault(str(peak_id), []).append(row)
         direct_pairs: set[tuple[str, str]] = set()
         for peak_members in by_peak.values():
             ordered = sorted(peak_members, key=lambda item: str(item.get("Cluster_ID") or ""))
@@ -1784,6 +1846,140 @@ def _assignment_stats(qc_rows: list[dict[str, Any]], elapsed: float) -> dict[str
         "Largest_Component_Ambiguous_Count": sum(1 for row in largest if row.get("Close_Score_Ambiguity") or row.get("Assignment_Confidence") == "ambiguous"),
         "Assignment_Dry_Run_Time_Seconds": elapsed,
     }
+
+
+def _scenario_copy_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reset_fields = {
+        "Dry_Run_Assignment_Status", "Dry_Run_Selected", "Dry_Run_Selection_Order",
+        "Independent_Supporting_Peak_Count", "Independent_Supporting_Peak_Fraction",
+        "Independent_Charge_State_Count", "Peaks_Already_Assigned_Count",
+        "Charges_Already_Assigned_Count", "Excluded_By_Cluster_ID",
+        "Dry_Run_Exclusion_Reason", "Score_Margin_To_Excluding_Candidate",
+        "Close_Score_Ambiguity", "Assignment_Confidence", "Independent_Observed_Peak_Count",
+    }
+    copies = []
+    for row in qc_rows:
+        copied = dict(row)
+        for field in reset_fields:
+            copied.pop(field, None)
+        copies.append(copied)
+    return copies
+
+
+def run_assignment_sensitivity(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> dict[str, Any]:
+    started = perf_counter()
+    competitive = qc_config["competitive_assignment"]
+    sensitivity = competitive.get("sensitivity_analysis") or {}
+    requested = [str(item).lower() for item in sensitivity.get("scenarios") or []]
+    scenarios = [name for name in requested if name in SENSITIVITY_SCENARIO_DEFAULTS]
+    enabled = bool(sensitivity.get("enabled", True) and competitive.get("enabled", True) and competitive.get("dry_run", True))
+    results: dict[str, list[dict[str, Any]]] = {}
+    summary_rows = []
+    if enabled:
+        for name in scenarios:
+            rows = _scenario_copy_rows(qc_rows)
+            scenario_competitive = {**competitive, **SENSITIVITY_SCENARIO_DEFAULTS[name], "sensitivity_analysis": {"enabled": False}}
+            scenario_config = {**qc_config, "competitive_assignment": scenario_competitive}
+            stats = apply_assignment_dry_run(rows, scenario_config, reuse_direct_graph=True)
+            results[name] = rows
+            settings = SENSITIVITY_SCENARIO_DEFAULTS[name]
+            summary_rows.append({
+                "Scenario": name,
+                "Min_Independent_Peak_Fraction": settings["min_independent_peak_fraction"],
+                "Min_Independent_Charge_States": settings["min_independent_charge_states"],
+                "Minimum_Score_Margin": settings["minimum_score_margin_for_exclusive_selection"],
+                "Allow_Shared_Peaks": settings["allow_shared_peaks_between_selected"],
+                "Selected_Total": stats["Dry_Run_Selected_Candidate_Count"],
+                "Selected_Primary": stats["Dry_Run_Primary_Selected_Count"],
+                "Selected_Independent": stats["Dry_Run_Independent_Selected_Count"],
+                "Noncompeting": stats["Dry_Run_Noncompeting_Count"],
+                "Would_Exclude_Total": stats["Dry_Run_Would_Exclude_Count"],
+                "Ambiguous_Total": stats["Dry_Run_Ambiguous_Count"],
+                "Peak_Reuse_Exclusion_Count": stats["Would_Exclude_Peak_Reuse_Count"],
+                "Independent_Peak_Shortage_Count": stats["Would_Exclude_Independent_Peak_Shortage_Count"],
+                "Independent_Charge_Shortage_Count": stats["Would_Exclude_Independent_Charge_Shortage_Count"],
+                "Largest_Component_Selected": stats["Largest_Component_Selected_Count"],
+                "Largest_Component_Excluded": stats["Largest_Component_Excluded_Count"],
+                "Processing_Time_Seconds": stats["Assignment_Dry_Run_Time_Seconds"],
+                "Notes": "threshold_only_reuses_groups_scores_and_direct_graph",
+            })
+    by_scenario = {name: {str(row.get("Cluster_ID") or ""): row for row in rows} for name, rows in results.items()}
+    for row in qc_rows:
+        cluster_id = str(row.get("Cluster_ID") or "")
+        selected_values = []
+        ambiguous_values = []
+        statuses = []
+        for name in SENSITIVITY_SCENARIO_DEFAULTS:
+            scenario_row = by_scenario.get(name, {}).get(cluster_id)
+            selected = bool(scenario_row and scenario_row.get("Dry_Run_Selected"))
+            status = str(scenario_row.get("Dry_Run_Assignment_Status") or "not_evaluated") if scenario_row else "not_evaluated"
+            row[f"Selected_{name.title()}"] = selected
+            row[f"Status_{name.title()}"] = status
+            if name in results:
+                selected_values.append(selected)
+                statuses.append(status)
+                ambiguous_values.append(bool(scenario_row.get("Close_Score_Ambiguity") or scenario_row.get("Assignment_Confidence") == "ambiguous"))
+        count = sum(selected_values)
+        row["Selection_Stability_Count"] = count
+        row["Selection_Stability_Fraction"] = count / len(selected_values) if selected_values else 0.0
+        if statuses and all(status == "noncompeting" for status in statuses):
+            stability = "noncompeting"
+        elif any(ambiguous_values):
+            stability = "ambiguous_across_scenarios"
+        elif selected_values and all(selected_values):
+            stability = "stable_selected"
+        elif selected_values and not any(selected_values):
+            stability = "stable_excluded"
+        else:
+            stability = "threshold_sensitive" if selected_values else "not_evaluated"
+        row["Selection_Stability_Status"] = stability
+    def agreement(left, right):
+        if left not in by_scenario or right not in by_scenario or not qc_rows:
+            return None
+        matches = sum(bool(by_scenario[left][str(row.get("Cluster_ID") or "")].get("Dry_Run_Selected")) == bool(by_scenario[right][str(row.get("Cluster_ID") or "")].get("Dry_Run_Selected")) for row in qc_rows)
+        return matches / len(qc_rows) * 100.0
+    stability_counts = {name: sum(1 for row in qc_rows if row.get("Selection_Stability_Status") == name) for name in ["stable_selected", "stable_excluded", "threshold_sensitive", "ambiguous_across_scenarios", "noncompeting"]}
+    stats = {
+        "Sensitivity_Analysis_Enabled": enabled, "Sensitivity_Scenario_Count": len(results),
+        "Stable_Selected_Count": stability_counts["stable_selected"], "Stable_Excluded_Count": stability_counts["stable_excluded"],
+        "Threshold_Sensitive_Count": stability_counts["threshold_sensitive"], "Ambiguous_Across_Scenarios_Count": stability_counts["ambiguous_across_scenarios"],
+        "Noncompeting_Stable_Count": stability_counts["noncompeting"],
+        "Strict_vs_Balanced_Agreement_Percent": agreement("strict", "balanced"),
+        "Balanced_vs_Sensitive_Agreement_Percent": agreement("balanced", "sensitive"),
+        "Sensitive_vs_Permissive_Agreement_Percent": agreement("sensitive", "permissive"),
+        "Sensitivity_Analysis_Time_Seconds": perf_counter() - started,
+        "_sensitivity_summary_rows": summary_rows,
+    }
+    for name in SENSITIVITY_SCENARIO_DEFAULTS:
+        stats[f"{name.title()}_Selected_Count"] = sum(1 for row in results.get(name, []) if row.get("Dry_Run_Selected"))
+    audit = competitive.get("audit_masses") or {}
+    targets = audit.get("masses") or []
+    audit_enabled = bool(audit.get("enabled") and targets)
+    tolerance = float(audit.get("tolerance_da") or 2.0)
+    audit_rows = []
+    if audit_enabled:
+        for target in targets:
+            target_mass = float(target["mass_da"])
+            for row in qc_rows:
+                delta = _safe_float(row.get("Reconstructed_Mass")) - target_mass
+                if abs(delta) <= tolerance:
+                    projected = _candidate_projection(row, ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS)
+                    projected.update({"Audit_Mass_Label": target["label"], "Audit_Target_Mass": target_mass, "Audit_Mass_Delta_Da": delta, "Notes": "audit_only_no_assignment_effect"})
+                    audit_rows.append(projected)
+    stats.update({"Audit_Enabled": audit_enabled, "Audit_Target_Count": len(targets) if audit_enabled else 0, "Audit_Matched_Candidate_Count": len(audit_rows), "_audit_rows": audit_rows})
+    return stats
+
+
+def build_assignment_sensitivity_rows(reconstruction_config: dict[str, Any]) -> list[dict[str, Any]]:
+    return list((reconstruction_config.get("_intact_competition_stats") or {}).get("_sensitivity_summary_rows") or [])
+
+
+def build_assignment_stability_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_candidate_projection(row, ASSIGNMENT_STABILITY_COLUMNS) for row in qc_rows]
+
+
+def build_assignment_candidate_audit_rows(reconstruction_config: dict[str, Any]) -> list[dict[str, Any]]:
+    return list((reconstruction_config.get("_intact_competition_stats") or {}).get("_audit_rows") or [])
 
 
 def build_assignment_dry_run_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2773,6 +2969,8 @@ def build_intact_reconstruction_qc(
     competition_stats = apply_competitive_assignment(qc_rows, qc_config)
     assignment_stats = apply_assignment_dry_run(qc_rows, qc_config)
     competition_stats.update(assignment_stats)
+    sensitivity_stats = run_assignment_sensitivity(qc_rows, qc_config)
+    competition_stats.update(sensitivity_stats)
     reconstruction_config["_intact_competition_stats"] = competition_stats
 
     candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
@@ -3035,6 +3233,24 @@ def build_intact_reconstruction_diagnostics(
         "Largest_Component_Excluded_Count": competition_stats.get("Largest_Component_Excluded_Count", 0),
         "Largest_Component_Ambiguous_Count": competition_stats.get("Largest_Component_Ambiguous_Count", 0),
         "Assignment_Dry_Run_Time_Seconds": competition_stats.get("Assignment_Dry_Run_Time_Seconds", 0.0),
+        "Sensitivity_Analysis_Enabled": competition_stats.get("Sensitivity_Analysis_Enabled", False),
+        "Sensitivity_Scenario_Count": competition_stats.get("Sensitivity_Scenario_Count", 0),
+        "Stable_Selected_Count": competition_stats.get("Stable_Selected_Count", 0),
+        "Stable_Excluded_Count": competition_stats.get("Stable_Excluded_Count", 0),
+        "Threshold_Sensitive_Count": competition_stats.get("Threshold_Sensitive_Count", 0),
+        "Ambiguous_Across_Scenarios_Count": competition_stats.get("Ambiguous_Across_Scenarios_Count", 0),
+        "Noncompeting_Stable_Count": competition_stats.get("Noncompeting_Stable_Count", 0),
+        "Strict_Selected_Count": competition_stats.get("Strict_Selected_Count", 0),
+        "Balanced_Selected_Count": competition_stats.get("Balanced_Selected_Count", 0),
+        "Sensitive_Selected_Count": competition_stats.get("Sensitive_Selected_Count", 0),
+        "Permissive_Selected_Count": competition_stats.get("Permissive_Selected_Count", 0),
+        "Strict_vs_Balanced_Agreement_Percent": competition_stats.get("Strict_vs_Balanced_Agreement_Percent"),
+        "Balanced_vs_Sensitive_Agreement_Percent": competition_stats.get("Balanced_vs_Sensitive_Agreement_Percent"),
+        "Sensitive_vs_Permissive_Agreement_Percent": competition_stats.get("Sensitive_vs_Permissive_Agreement_Percent"),
+        "Sensitivity_Analysis_Time_Seconds": competition_stats.get("Sensitivity_Analysis_Time_Seconds", 0.0),
+        "Audit_Enabled": competition_stats.get("Audit_Enabled", False),
+        "Audit_Target_Count": competition_stats.get("Audit_Target_Count", 0),
+        "Audit_Matched_Candidate_Count": competition_stats.get("Audit_Matched_Candidate_Count", 0),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -3114,6 +3330,13 @@ def build_rt_engine_qc_summary_rows(diagnostic_rows: list[dict[str, Any]]) -> li
         "Largest_Component_Excluded_Count",
         "Largest_Component_Ambiguous_Count",
         "Assignment_Dry_Run_Time_Seconds",
+        "Sensitivity_Analysis_Enabled", "Sensitivity_Scenario_Count", "Stable_Selected_Count",
+        "Stable_Excluded_Count", "Threshold_Sensitive_Count", "Ambiguous_Across_Scenarios_Count",
+        "Noncompeting_Stable_Count", "Strict_Selected_Count", "Balanced_Selected_Count",
+        "Sensitive_Selected_Count", "Permissive_Selected_Count",
+        "Strict_vs_Balanced_Agreement_Percent", "Balanced_vs_Sensitive_Agreement_Percent",
+        "Sensitive_vs_Permissive_Agreement_Percent", "Sensitivity_Analysis_Time_Seconds",
+        "Audit_Enabled", "Audit_Target_Count", "Audit_Matched_Candidate_Count",
         "Processing_Time_Seconds",
     ]
     return [{"Metric": metric, "Value": diagnostic.get(metric), "Notes": ""} for metric in metrics]
