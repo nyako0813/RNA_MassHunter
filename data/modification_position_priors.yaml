@@ -1,0 +1,38 @@
+version: MVP-5.10-shadow-v1
+position_numbering_system: input_sequence_1_based
+notes: Canonical landmarks must be supplied by configuration; no Sprinzl positions are assumed.
+families:
+  - id: wobble_U_family
+    modification_ids: [cnm5U, cnm5s2U, ncm5U, mnm5U, mnm5s2U, s2U]
+    canonical_landmark: wobble
+    chemically_possible_distance: 3
+  - id: t6A_family
+    modification_ids: [t6A, ms2t6A, m6t6A]
+    canonical_landmark: anticodon_adjacent_3prime
+    chemically_possible_distance: 3
+  - id: archaeosine_family
+    modification_ids: [Gplus, preQ0]
+    canonical_landmark: archaeosine_site
+    chemically_possible_distance: 2
+  - id: preQ1_family
+    modification_ids: [preQ1]
+    canonical_landmark: queuosine_site
+    chemically_possible_distance: 2
+    organism_warnings:
+      archaea: preQ1 is not generally expected as the mature archaeal wobble-base product; review pathway context.
+  - id: s4U_family
+    modification_ids: [s4U]
+    canonical_landmark: s4U_site
+    chemically_possible_distance: 2
+  - id: inosine_family
+    modification_ids: [I]
+    canonical_landmark: inosine_site
+    chemically_possible_distance: 3
+  - id: ac4C_family
+    modification_ids: [ac4C]
+    canonical_landmark: ac4C_site
+    chemically_possible_distance: 3
+  - id: ac6A_family
+    modification_ids: [ac6A]
+    canonical_landmark: ac6A_site
+    chemically_possible_distance: 3

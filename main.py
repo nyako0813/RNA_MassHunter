@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
 from rna_masshunter.biological_context import biological_context_priority_rows
+from rna_masshunter.biological_position_prior import evaluate_biological_position_priors, load_position_prior_rules
 from rna_masshunter.conversion import prepare_input_file
 from rna_masshunter.digestion import digest_sequence
 from rna_masshunter.excel_report import write_excel_report
@@ -266,8 +267,15 @@ def main() -> None:
             rule_set=rule_set,
             pathways=pathways,
         )
+        position_prior_rules = load_position_prior_rules(project_root / "data" / "modification_position_priors.yaml")
+        ranking_rows, position_prior_rows, plausibility_rows, position_diagnostics = evaluate_biological_position_priors(
+            config, ranking_rows, modifications, position_prior_rules
+        )
         optional_results["Modification_Evidence_Summary"] = ranking_summary
         optional_results["Modification_Evidence_Ranking"] = ranking_rows
+        optional_results["Modification_Position_Priors"] = position_prior_rows
+        optional_results["MS2_Biological_Plausibility"] = plausibility_rows
+        optional_results["Biological_Prior_Diagnostics"] = position_diagnostics
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [

@@ -57,6 +57,10 @@ from rna_masshunter.ms2_annotation import (
 )
 from rna_masshunter.evidence_ranking import AMBIGUITY_GROUP_COLUMNS, RANKING_COLUMNS, SUMMARY_COLUMNS
 from rna_masshunter.biological_context import CONTEXT_PRIORITY_COLUMNS
+from rna_masshunter.biological_position_prior import (
+    BIOLOGICAL_PLAUSIBILITY_COLUMNS, DIAGNOSTIC_COLUMNS as BIOLOGICAL_PRIOR_DIAGNOSTIC_COLUMNS,
+    POSITION_PRIOR_COLUMNS, SHADOW_RANKING_COLUMNS,
+)
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -456,6 +460,9 @@ SHEET_DESCRIPTIONS = {
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
     "Modification_Evidence_Ranking": "Integrated evidence scores for prioritizing modification candidates.",
     "Modification_Ambiguity_Groups": "Position ambiguity groups for shared parent-fragment modification candidates.",
+    "Modification_Position_Priors": "Diagnostic input-sequence position priors; no Sprinzl numbering is assumed.",
+    "MS2_Biological_Plausibility": "Shadow biological plausibility, parent-base compatibility, and structural ambiguity review.",
+    "Biological_Prior_Diagnostics": "Run counts for diagnostic biological position prior evaluation.",
     "Biological_Context_Priorities": "Biological context settings used for generic candidate prioritization.",
     "Context_Supported_Candidates": "Ranking candidates receiving a user-configured biological context boost.",
     "P1_Summary": "Summary of P1 observed peak annotation results.",
@@ -1170,10 +1177,13 @@ def write_excel_report(
         "MS2_Modified_Ion_Matches": MS2_MODIFIED_ION_MATCH_COLUMNS,
         "MS2_Modification_Localization_Evidence": MS2_LOCALIZATION_EVIDENCE_COLUMNS,
         "Modification_Evidence_Summary": SUMMARY_COLUMNS,
-        "Modification_Evidence_Ranking": RANKING_COLUMNS,
+        "Modification_Evidence_Ranking": RANKING_COLUMNS + SHADOW_RANKING_COLUMNS,
         "Modification_Ambiguity_Groups": AMBIGUITY_GROUP_COLUMNS,
+        "Modification_Position_Priors": POSITION_PRIOR_COLUMNS,
+        "MS2_Biological_Plausibility": BIOLOGICAL_PLAUSIBILITY_COLUMNS,
+        "Biological_Prior_Diagnostics": BIOLOGICAL_PRIOR_DIAGNOSTIC_COLUMNS,
         "Biological_Context_Priorities": CONTEXT_PRIORITY_COLUMNS,
-        "Context_Supported_Candidates": RANKING_COLUMNS,
+        "Context_Supported_Candidates": RANKING_COLUMNS + SHADOW_RANKING_COLUMNS,
         "MS2_Theoretical_Ions": MS2_THEORETICAL_ION_COLUMNS,
         "MS2_Ion_Matches": MS2_ION_MATCH_COLUMNS,
         "MS2_Unmatched_Peaks": MS2_UNMATCHED_COLUMNS,
