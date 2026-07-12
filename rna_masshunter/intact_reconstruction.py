@@ -68,6 +68,11 @@ DEFAULT_INTACT_QC_CONFIG = {
         "enabled": True,
         "rt_tolerance_min": 0.15,
         "close_score_margin": 5.0,
+        "dry_run": True,
+        "min_independent_peak_fraction": 0.5,
+        "min_independent_charge_states": 2,
+        "allow_shared_peaks_between_selected": False,
+        "minimum_score_margin_for_exclusive_selection": 1.0,
         "evidence_score_config_version": "MVP-5.9.8a-v1",
         "score_weights": {
             "charge_count": 12.0,
@@ -253,6 +258,29 @@ QC_COLUMNS = [
     "Evidence_Score_Components",
     "Evidence_Score_Penalties",
     "Evidence_Score_Config_Version",
+    "Direct_Competitor_Count",
+    "Direct_Competitor_Cluster_IDs",
+    "Direct_Shared_Peak_Count_Max",
+    "Direct_Shared_Peak_Fraction_Max",
+    "Competition_Component_Size",
+    "Dry_Run_Assignment_Status",
+    "Dry_Run_Selected",
+    "Dry_Run_Selection_Order",
+    "Supporting_Peak_Count_Before_Assignment",
+    "Independent_Supporting_Peak_Count",
+    "Independent_Supporting_Peak_Fraction",
+    "Supporting_Charge_Count_Before_Assignment",
+    "Independent_Charge_State_Count",
+    "Peaks_Already_Assigned_Count",
+    "Charges_Already_Assigned_Count",
+    "Excluded_By_Cluster_ID",
+    "Dry_Run_Exclusion_Reason",
+    "Score_Margin_To_Excluding_Candidate",
+    "Close_Score_Ambiguity",
+    "Assignment_Confidence",
+    "Shared_Observed_Peak_Count",
+    "Shared_Peak_Charge_Assignment_Count",
+    "Independent_Observed_Peak_Count",
     "Pass_Min_Charge_Count",
     "Pass_Min_Consecutive_Charge_Count",
     "Pass_Charge_Continuity",
@@ -418,6 +446,21 @@ DIAGNOSTIC_COLUMNS = [
     "Competition_Groups_With_Close_Scores",
     "High_Peak_Sharing_Candidate_Count",
     "Competitive_Scoring_Time_Seconds",
+    "Dry_Run_Selected_Candidate_Count",
+    "Dry_Run_Primary_Selected_Count",
+    "Dry_Run_Independent_Selected_Count",
+    "Dry_Run_Would_Exclude_Count",
+    "Dry_Run_Ambiguous_Count",
+    "Dry_Run_Noncompeting_Count",
+    "Would_Exclude_Peak_Reuse_Count",
+    "Would_Exclude_Independent_Peak_Shortage_Count",
+    "Would_Exclude_Independent_Charge_Shortage_Count",
+    "Median_Independent_Peak_Fraction",
+    "Median_Direct_Competitor_Count",
+    "Largest_Component_Selected_Count",
+    "Largest_Component_Excluded_Count",
+    "Largest_Component_Ambiguous_Count",
+    "Assignment_Dry_Run_Time_Seconds",
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Total_Candidates_Before_Mass_Range_Filter",
@@ -614,6 +657,13 @@ RT_ENVELOPE_DIAGNOSTIC_COLUMNS = [
     "Envelope_Evidence_Score",
     "Evidence_Score_Rank_In_Competition",
     "Maximum_Shared_Peak_Fraction",
+    "Direct_Competitor_Count",
+    "Dry_Run_Assignment_Status",
+    "Dry_Run_Selected",
+    "Independent_Supporting_Peak_Count",
+    "Independent_Supporting_Peak_Fraction",
+    "Independent_Charge_State_Count",
+    "Assignment_Confidence",
     "Notes",
 ]
 
@@ -695,7 +745,57 @@ COMPETITION_SCORE_COLUMNS = [
     "RT_Range_Min",
     "Maximum_Shared_Peak_Fraction",
     "Max_Peak_Usage_Count",
+    "Direct_Competitor_Count",
+    "Dry_Run_Assignment_Status",
+    "Dry_Run_Selected",
+    "Independent_Supporting_Peak_Count",
+    "Independent_Supporting_Peak_Fraction",
+    "Independent_Charge_State_Count",
+    "Assignment_Confidence",
     "Limiting_Factors",
+]
+
+ASSIGNMENT_DRY_RUN_COLUMNS = [
+    "Cluster_ID",
+    "Reconstructed_Mass",
+    "Competing_Envelope_Group_ID",
+    "Competition_Component_Size",
+    "Direct_Competitor_Count",
+    "Envelope_Evidence_Score",
+    "Evidence_Score_Rank_In_Competition",
+    "Dry_Run_Assignment_Status",
+    "Dry_Run_Selected",
+    "Dry_Run_Selection_Order",
+    "Supporting_Peak_Count_Before_Assignment",
+    "Independent_Supporting_Peak_Count",
+    "Independent_Supporting_Peak_Fraction",
+    "Supporting_Charge_Count_Before_Assignment",
+    "Independent_Charge_State_Count",
+    "Peaks_Already_Assigned_Count",
+    "Excluded_By_Cluster_ID",
+    "Score_Margin_To_Excluding_Candidate",
+    "Close_Score_Ambiguity",
+    "Assignment_Confidence",
+    "Intact_Quality_Tier",
+    "Comparison_Ready",
+    "Dry_Run_Exclusion_Reason",
+    "Notes",
+]
+
+ASSIGNMENT_DRY_RUN_SUMMARY_COLUMNS = [
+    "Competing_Envelope_Group_ID",
+    "Component_Size",
+    "Unique_Local_Peak_Count",
+    "Direct_Competition_Edge_Count",
+    "Selected_Primary_Count",
+    "Selected_Independent_Count",
+    "Noncompeting_Count",
+    "Would_Exclude_Count",
+    "Ambiguous_Count",
+    "Candidates_Remaining_After_Dry_Run",
+    "Primary_Selected_Cluster_IDs",
+    "Main_Exclusion_Reasons",
+    "Notes",
 ]
 
 SEVERE_LIMITING_FACTORS = {
@@ -927,6 +1027,11 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "enabled": _as_bool(competitive.get("enabled"), True),
         "rt_tolerance_min": float(competitive.get("rt_tolerance_min") if competitive.get("rt_tolerance_min") is not None else default_competitive["rt_tolerance_min"]),
         "close_score_margin": float(competitive.get("close_score_margin") if competitive.get("close_score_margin") is not None else default_competitive["close_score_margin"]),
+        "dry_run": _as_bool(competitive.get("dry_run"), True),
+        "min_independent_peak_fraction": float(competitive.get("min_independent_peak_fraction") if competitive.get("min_independent_peak_fraction") is not None else default_competitive.get("min_independent_peak_fraction", 0.5)),
+        "min_independent_charge_states": int(competitive.get("min_independent_charge_states") or default_competitive.get("min_independent_charge_states", 2)),
+        "allow_shared_peaks_between_selected": _as_bool(competitive.get("allow_shared_peaks_between_selected"), False),
+        "minimum_score_margin_for_exclusive_selection": float(competitive.get("minimum_score_margin_for_exclusive_selection") if competitive.get("minimum_score_margin_for_exclusive_selection") is not None else default_competitive.get("minimum_score_margin_for_exclusive_selection", 1.0)),
         "evidence_score_config_version": str(competitive.get("evidence_score_config_version") or default_competitive["evidence_score_config_version"]),
         "score_weights": score_weights,
     }
@@ -1456,6 +1561,261 @@ def _competition_stats(qc_rows: list[dict[str, Any]], competitive: dict[str, Any
     }
 
 
+
+
+def _peak_charge_keys(row: dict[str, Any]) -> set[str]:
+    """Return observed peak/assumed-charge pairs without inventing combinations."""
+    peak_charge_map = row.get("_supporting_peak_charge_map") or {}
+    return {
+        f"{peak}|z={charge}"
+        for peak, charges in peak_charge_map.items()
+        for charge in charges
+    }
+
+
+def _charges_for_peaks(row: dict[str, Any], peak_ids: set[str]) -> set[int]:
+    peak_charge_map = row.get("_supporting_peak_charge_map") or {}
+    if peak_charge_map:
+        return {
+            int(charge)
+            for peak_id in peak_ids
+            for charge in peak_charge_map.get(str(peak_id), set())
+        }
+    # Legacy/synthetic rows may not retain peak-level assumed charges. In that
+    # case avoid a fabricated Cartesian product and do not make the charge gate
+    # stricter than the observed-peak gate.
+    return set(row.get("_supporting_charge_set") or set()) if peak_ids else set()
+
+
+def _initialize_assignment_fields(row: dict[str, Any]) -> None:
+    row.setdefault("Direct_Competitor_Count", 0)
+    row.setdefault("Direct_Competitor_Cluster_IDs", "")
+    row.setdefault("Direct_Shared_Peak_Count_Max", 0)
+    row.setdefault("Direct_Shared_Peak_Fraction_Max", 0.0)
+    row.setdefault("Competition_Component_Size", row.get("Competing_Envelope_Group_Size", 1))
+    row.setdefault("Dry_Run_Assignment_Status", "not_evaluated")
+    row.setdefault("Dry_Run_Selected", False)
+    row.setdefault("Dry_Run_Selection_Order", None)
+    row.setdefault("Supporting_Peak_Count_Before_Assignment", len(row.get("_supporting_local_peak_id_set") or set()))
+    row.setdefault("Independent_Supporting_Peak_Count", 0)
+    row.setdefault("Independent_Supporting_Peak_Fraction", 0.0)
+    row.setdefault("Supporting_Charge_Count_Before_Assignment", len(row.get("_supporting_charge_set") or set()))
+    row.setdefault("Independent_Charge_State_Count", 0)
+    row.setdefault("Peaks_Already_Assigned_Count", 0)
+    row.setdefault("Charges_Already_Assigned_Count", 0)
+    row.setdefault("Excluded_By_Cluster_ID", "")
+    row.setdefault("Dry_Run_Exclusion_Reason", "")
+    row.setdefault("Score_Margin_To_Excluding_Candidate", None)
+    row.setdefault("Close_Score_Ambiguity", False)
+    row.setdefault("Assignment_Confidence", "low")
+    row.setdefault("Shared_Observed_Peak_Count", 0)
+    row.setdefault("Shared_Peak_Charge_Assignment_Count", 0)
+    row.setdefault("Independent_Observed_Peak_Count", 0)
+
+
+def apply_assignment_dry_run(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> dict[str, Any]:
+    started = perf_counter()
+    competitive = qc_config["competitive_assignment"]
+    for row in qc_rows:
+        _initialize_assignment_fields(row)
+    if not qc_rows:
+        return _assignment_stats(qc_rows, elapsed=perf_counter() - started)
+    if not competitive.get("enabled", True) or not competitive.get("dry_run", True):
+        for row in qc_rows:
+            row["Dry_Run_Assignment_Status"] = "not_evaluated"
+            row["Assignment_Confidence"] = "low"
+        return _assignment_stats(qc_rows, elapsed=perf_counter() - started)
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        groups.setdefault(str(row.get("Competing_Envelope_Group_ID") or row.get("Cluster_ID") or ""), []).append(row)
+
+    for group_id in sorted(groups):
+        selection_order = 1
+        members = groups[group_id]
+        direct: dict[str, set[str]] = {str(row.get("Cluster_ID") or ""): set() for row in members}
+        shared_peak_count_max: dict[str, int] = {str(row.get("Cluster_ID") or ""): 0 for row in members}
+        shared_fraction_max: dict[str, float] = {str(row.get("Cluster_ID") or ""): 0.0 for row in members}
+        shared_assignment_max: dict[str, int] = {str(row.get("Cluster_ID") or ""): 0 for row in members}
+        by_peak: dict[str, list[dict[str, Any]]] = {}
+        for row in members:
+            for peak_id in row.get("_supporting_local_peak_id_set") or set():
+                by_peak.setdefault(str(peak_id), []).append(row)
+        direct_pairs: set[tuple[str, str]] = set()
+        for peak_members in by_peak.values():
+            ordered = sorted(peak_members, key=lambda item: str(item.get("Cluster_ID") or ""))
+            for left_index, left in enumerate(ordered):
+                left_id = str(left.get("Cluster_ID") or "")
+                left_peaks = set(left.get("_supporting_local_peak_id_set") or set())
+                left_assignments = _peak_charge_keys(left)
+                for right in ordered[left_index + 1:]:
+                    right_id = str(right.get("Cluster_ID") or "")
+                    right_peaks = set(right.get("_supporting_local_peak_id_set") or set())
+                    shared_count = len(left_peaks & right_peaks)
+                    if shared_count <= 0:
+                        continue
+                    direct[left_id].add(right_id)
+                    direct[right_id].add(left_id)
+                    direct_pairs.add(tuple(sorted((left_id, right_id))))
+                    fraction = _shared_peak_fraction(left_peaks, right_peaks)
+                    shared_peak_count_max[left_id] = max(shared_peak_count_max[left_id], shared_count)
+                    shared_peak_count_max[right_id] = max(shared_peak_count_max[right_id], shared_count)
+                    shared_fraction_max[left_id] = max(shared_fraction_max[left_id], fraction)
+                    shared_fraction_max[right_id] = max(shared_fraction_max[right_id], fraction)
+                    shared_assignments = len(left_assignments & _peak_charge_keys(right))
+                    shared_assignment_max[left_id] = max(shared_assignment_max[left_id], shared_assignments)
+                    shared_assignment_max[right_id] = max(shared_assignment_max[right_id], shared_assignments)
+        for row in members:
+            row_id = str(row.get("Cluster_ID") or "")
+            row["Direct_Competitor_Count"] = len(direct[row_id])
+            row["Direct_Competitor_Cluster_IDs"] = "; ".join(sorted(direct[row_id]))
+            row["Direct_Shared_Peak_Count_Max"] = shared_peak_count_max[row_id]
+            row["Direct_Shared_Peak_Fraction_Max"] = shared_fraction_max[row_id]
+            row["Competition_Component_Size"] = len(members)
+            row["Shared_Observed_Peak_Count"] = shared_peak_count_max[row_id]
+            row["Shared_Peak_Charge_Assignment_Count"] = shared_assignment_max[row_id]
+            row["Supporting_Peak_Count_Before_Assignment"] = len(row.get("_supporting_local_peak_id_set") or set())
+            row["Supporting_Charge_Count_Before_Assignment"] = len(row.get("_supporting_charge_set") or set())
+        if len(members) == 1:
+            row = members[0]
+            row["Dry_Run_Assignment_Status"] = "noncompeting"
+            row["Dry_Run_Selected"] = True
+            row["Dry_Run_Selection_Order"] = selection_order
+            row["Independent_Supporting_Peak_Count"] = len(row.get("_supporting_local_peak_id_set") or set())
+            row["Independent_Observed_Peak_Count"] = row["Independent_Supporting_Peak_Count"]
+            row["Independent_Supporting_Peak_Fraction"] = 1.0 if row["Independent_Supporting_Peak_Count"] else 0.0
+            row["Independent_Charge_State_Count"] = len(row.get("_supporting_charge_set") or set())
+            row["Assignment_Confidence"] = "high"
+            selection_order += 1
+            continue
+        assigned_peaks: set[str] = set()
+        assigned_charges: set[int] = set()
+        selected_rows: list[dict[str, Any]] = []
+        for row in sorted(members, key=_competition_rank_key):
+            row_id = str(row.get("Cluster_ID") or "")
+            peaks = set(row.get("_supporting_local_peak_id_set") or set())
+            charges = set(row.get("_supporting_charge_set") or set())
+            direct_selected = [selected for selected in selected_rows if str(selected.get("Cluster_ID") or "") in direct[row_id]]
+            assigned_direct_peaks = set().union(*(set(selected.get("_supporting_local_peak_id_set") or set()) for selected in direct_selected)) if direct_selected else set()
+            assigned_direct_charges = set().union(*(set(selected.get("_supporting_charge_set") or set()) for selected in direct_selected)) if direct_selected else set()
+            allow_shared = competitive.get("allow_shared_peaks_between_selected", False)
+            reusable_peaks = assigned_direct_peaks if not allow_shared else set()
+            independent_peaks = peaks - reusable_peaks
+            independent_charges = _charges_for_peaks(row, independent_peaks)
+            if allow_shared:
+                independent_charges = charges
+            before_count = len(peaks)
+            independent_fraction = len(independent_peaks) / before_count if before_count else 0.0
+            row["Peaks_Already_Assigned_Count"] = len(peaks & assigned_direct_peaks)
+            row["Charges_Already_Assigned_Count"] = len(charges & assigned_direct_charges)
+            row["Independent_Supporting_Peak_Count"] = len(independent_peaks)
+            row["Independent_Observed_Peak_Count"] = len(independent_peaks)
+            row["Independent_Supporting_Peak_Fraction"] = independent_fraction
+            row["Independent_Charge_State_Count"] = len(independent_charges)
+            excluder = max(direct_selected, key=lambda item: _safe_float(item.get("Envelope_Evidence_Score")), default=None)
+            score_margin = (_safe_float(excluder.get("Envelope_Evidence_Score")) - _safe_float(row.get("Envelope_Evidence_Score"))) if excluder else None
+            row["Excluded_By_Cluster_ID"] = excluder.get("Cluster_ID") if excluder else ""
+            row["Score_Margin_To_Excluding_Candidate"] = score_margin
+            close_score = score_margin is not None and score_margin < competitive["minimum_score_margin_for_exclusive_selection"]
+            row["Close_Score_Ambiguity"] = close_score
+            if not direct_selected:
+                row["Dry_Run_Assignment_Status"] = "selected_primary"
+                row["Dry_Run_Selected"] = True
+                row["Dry_Run_Selection_Order"] = selection_order
+                row["Assignment_Confidence"] = "high"
+                selected_rows.append(row)
+                assigned_peaks.update(peaks)
+                assigned_charges.update(charges)
+                selection_order += 1
+                continue
+            peak_ok = independent_fraction >= competitive["min_independent_peak_fraction"]
+            charge_ok = len(independent_charges) >= competitive["min_independent_charge_states"]
+            if peak_ok and charge_ok:
+                row["Dry_Run_Assignment_Status"] = "selected_independent"
+                row["Dry_Run_Selected"] = True
+                row["Dry_Run_Selection_Order"] = selection_order
+                row["Assignment_Confidence"] = "ambiguous" if close_score else "moderate"
+                selected_rows.append(row)
+                assigned_peaks.update(independent_peaks)
+                assigned_charges.update(independent_charges)
+                selection_order += 1
+            elif close_score:
+                row["Dry_Run_Assignment_Status"] = "would_exclude_peak_reuse" if not peak_ok else "would_exclude_independent_charge_shortage"
+                row["Dry_Run_Selected"] = False
+                row["Dry_Run_Exclusion_Reason"] = "ambiguous_close_score"
+                row["Assignment_Confidence"] = "ambiguous"
+            elif not peak_ok:
+                row["Dry_Run_Assignment_Status"] = "would_exclude_independent_peak_shortage" if len(independent_peaks) else "would_exclude_peak_reuse"
+                row["Dry_Run_Selected"] = False
+                row["Dry_Run_Exclusion_Reason"] = "insufficient_independent_peak_support"
+                row["Assignment_Confidence"] = "high" if score_margin is not None and score_margin >= competitive["minimum_score_margin_for_exclusive_selection"] else "low"
+            else:
+                row["Dry_Run_Assignment_Status"] = "would_exclude_independent_charge_shortage"
+                row["Dry_Run_Selected"] = False
+                row["Dry_Run_Exclusion_Reason"] = "insufficient_independent_charge_support"
+                row["Assignment_Confidence"] = "high" if score_margin is not None and score_margin >= competitive["minimum_score_margin_for_exclusive_selection"] else "low"
+    return _assignment_stats(qc_rows, elapsed=perf_counter() - started)
+
+
+def _assignment_stats(qc_rows: list[dict[str, Any]], elapsed: float) -> dict[str, Any]:
+    selected = [row for row in qc_rows if row.get("Dry_Run_Selected")]
+    would_exclude = [row for row in qc_rows if str(row.get("Dry_Run_Assignment_Status") or "").startswith("would_exclude")]
+    ambiguous = [row for row in qc_rows if row.get("Close_Score_Ambiguity") or row.get("Assignment_Confidence") == "ambiguous"]
+    fractions = [_safe_float(row.get("Independent_Supporting_Peak_Fraction")) for row in qc_rows if row.get("Independent_Supporting_Peak_Fraction") is not None]
+    direct_counts = [_safe_float(row.get("Direct_Competitor_Count")) for row in qc_rows if row.get("Direct_Competitor_Count") is not None]
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        groups.setdefault(str(row.get("Competing_Envelope_Group_ID") or ""), []).append(row)
+    largest = max(groups.values(), key=len, default=[])
+    return {
+        "Dry_Run_Selected_Candidate_Count": len(selected),
+        "Dry_Run_Primary_Selected_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "selected_primary"),
+        "Dry_Run_Independent_Selected_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "selected_independent"),
+        "Dry_Run_Would_Exclude_Count": len(would_exclude),
+        "Dry_Run_Ambiguous_Count": len(ambiguous),
+        "Dry_Run_Noncompeting_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "noncompeting"),
+        "Would_Exclude_Peak_Reuse_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "would_exclude_peak_reuse"),
+        "Would_Exclude_Independent_Peak_Shortage_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "would_exclude_independent_peak_shortage"),
+        "Would_Exclude_Independent_Charge_Shortage_Count": sum(1 for row in qc_rows if row.get("Dry_Run_Assignment_Status") == "would_exclude_independent_charge_shortage"),
+        "Median_Independent_Peak_Fraction": median(fractions) if fractions else None,
+        "Median_Direct_Competitor_Count": median(direct_counts) if direct_counts else None,
+        "Largest_Component_Selected_Count": sum(1 for row in largest if row.get("Dry_Run_Selected")),
+        "Largest_Component_Excluded_Count": sum(1 for row in largest if str(row.get("Dry_Run_Assignment_Status") or "").startswith("would_exclude")),
+        "Largest_Component_Ambiguous_Count": sum(1 for row in largest if row.get("Close_Score_Ambiguity") or row.get("Assignment_Confidence") == "ambiguous"),
+        "Assignment_Dry_Run_Time_Seconds": elapsed,
+    }
+
+
+def build_assignment_dry_run_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_candidate_projection(row, ASSIGNMENT_DRY_RUN_COLUMNS) for row in sorted(qc_rows, key=lambda item: (str(item.get("Competing_Envelope_Group_ID") or ""), _safe_float(item.get("Dry_Run_Selection_Order"), 1_000_000), str(item.get("Cluster_ID") or "")))]
+
+
+def build_assignment_dry_run_summary_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        groups.setdefault(str(row.get("Competing_Envelope_Group_ID") or ""), []).append(row)
+    rows = []
+    for group_id in sorted(groups):
+        members = groups[group_id]
+        local_peaks = set().union(*(set(row.get("_supporting_local_peak_id_set") or set()) for row in members)) if members else set()
+        reasons = _reason_summary([row.get("Dry_Run_Exclusion_Reason") for row in members])
+        rows.append({
+            "Competing_Envelope_Group_ID": group_id,
+            "Component_Size": len(members),
+            "Unique_Local_Peak_Count": len(local_peaks),
+            "Direct_Competition_Edge_Count": int(sum(_safe_float(row.get("Direct_Competitor_Count")) for row in members) / 2),
+            "Selected_Primary_Count": sum(1 for row in members if row.get("Dry_Run_Assignment_Status") == "selected_primary"),
+            "Selected_Independent_Count": sum(1 for row in members if row.get("Dry_Run_Assignment_Status") == "selected_independent"),
+            "Noncompeting_Count": sum(1 for row in members if row.get("Dry_Run_Assignment_Status") == "noncompeting"),
+            "Would_Exclude_Count": sum(1 for row in members if str(row.get("Dry_Run_Assignment_Status") or "").startswith("would_exclude")),
+            "Ambiguous_Count": sum(1 for row in members if row.get("Close_Score_Ambiguity") or row.get("Assignment_Confidence") == "ambiguous"),
+            "Candidates_Remaining_After_Dry_Run": sum(1 for row in members if row.get("Dry_Run_Selected")),
+            "Primary_Selected_Cluster_IDs": "; ".join(str(row.get("Cluster_ID") or "") for row in members if row.get("Dry_Run_Assignment_Status") == "selected_primary"),
+            "Main_Exclusion_Reasons": reasons,
+            "Notes": "diagnostic_only_no_candidate_exclusion",
+        })
+    return rows
+
 def build_intact_competition_group_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in qc_rows:
@@ -1515,6 +1875,13 @@ def build_intact_competition_score_rows(qc_rows: list[dict[str, Any]]) -> list[d
             "RT_Range_Min": row.get("RT_Range_Min"),
             "Maximum_Shared_Peak_Fraction": row.get("Maximum_Shared_Peak_Fraction"),
             "Max_Peak_Usage_Count": row.get("Max_Peak_Usage_Count"),
+            "Direct_Competitor_Count": row.get("Direct_Competitor_Count"),
+            "Dry_Run_Assignment_Status": row.get("Dry_Run_Assignment_Status"),
+            "Dry_Run_Selected": row.get("Dry_Run_Selected"),
+            "Independent_Supporting_Peak_Count": row.get("Independent_Supporting_Peak_Count"),
+            "Independent_Supporting_Peak_Fraction": row.get("Independent_Supporting_Peak_Fraction"),
+            "Independent_Charge_State_Count": row.get("Independent_Charge_State_Count"),
+            "Assignment_Confidence": row.get("Assignment_Confidence"),
             "Limiting_Factors": row.get("Limiting_Factors"),
         })
     return rows
@@ -1947,6 +2314,19 @@ def build_intact_reconstruction_qc(
                 supporting_rt_values.append(_safe_float(row.get("RT")))
         charges = sorted({int(charge) for charge in candidate.charge_states})
         supporting_charge_states = sorted({int(row.get("Charge")) for row in cluster_peaks if row.get("Charge") is not None} or set(charges))
+        supporting_peak_charge_map: dict[str, set[int]] = {}
+        use_local_peak_ids = any(row.get("Local_Peak_ID") not in {None, ""} for row in cluster_peaks)
+        for peak_row in cluster_peaks:
+            charge = peak_row.get("Charge")
+            if charge is None:
+                continue
+            if use_local_peak_ids:
+                peak_id = peak_row.get("Local_Peak_ID")
+                if peak_id in {None, ""}:
+                    continue
+            else:
+                peak_id = _supporting_peak_id(peak_row)
+            supporting_peak_charge_map.setdefault(str(peak_id), set()).add(int(charge))
         exact_peak_set_key = ";".join(supporting_peak_ids) if supporting_peak_ids else f"cluster:{cluster_id}"
         neutral_masses = [float(row.get("Neutral_Mass")) for row in cluster_peaks if row.get("Neutral_Mass") is not None]
         if not neutral_masses and candidate.observed_mass is not None:
@@ -2230,6 +2610,8 @@ def build_intact_reconstruction_qc(
             "_supporting_peak_id_set": set(supporting_peak_ids),
             "_supporting_local_peak_id_set": set(supporting_local_peak_ids),
             "_supporting_charge_set": set(supporting_charge_states),
+            "_supporting_peak_charge_map": supporting_peak_charge_map,
+            "_peak_charge_assignment_source": "observed" if supporting_peak_charge_map else "estimated",
             "Reconstruction_Status": status,
             "Reconstruction_Confidence": confidence,
             "Reconstruction_Engine": _candidate_extra(candidate, "reconstruction_engine", "legacy_cluster"),
@@ -2299,6 +2681,29 @@ def build_intact_reconstruction_qc(
             "Evidence_Score_Components": "",
             "Evidence_Score_Penalties": "",
             "Evidence_Score_Config_Version": "",
+            "Direct_Competitor_Count": 0,
+            "Direct_Competitor_Cluster_IDs": "",
+            "Direct_Shared_Peak_Count_Max": 0,
+            "Direct_Shared_Peak_Fraction_Max": 0.0,
+            "Competition_Component_Size": 1,
+            "Dry_Run_Assignment_Status": "not_evaluated",
+            "Dry_Run_Selected": False,
+            "Dry_Run_Selection_Order": None,
+            "Supporting_Peak_Count_Before_Assignment": len(supporting_local_peak_ids),
+            "Independent_Supporting_Peak_Count": 0,
+            "Independent_Supporting_Peak_Fraction": 0.0,
+            "Supporting_Charge_Count_Before_Assignment": len(charges),
+            "Independent_Charge_State_Count": 0,
+            "Peaks_Already_Assigned_Count": 0,
+            "Charges_Already_Assigned_Count": 0,
+            "Excluded_By_Cluster_ID": "",
+            "Dry_Run_Exclusion_Reason": "",
+            "Score_Margin_To_Excluding_Candidate": None,
+            "Close_Score_Ambiguity": False,
+            "Assignment_Confidence": "low",
+            "Shared_Observed_Peak_Count": 0,
+            "Shared_Peak_Charge_Assignment_Count": 0,
+            "Independent_Observed_Peak_Count": 0,
             **quality,
             "Comparison_Ready_Strict": comparison_ready_strict,
             "Comparison_Ready_Review": comparison_ready_review,
@@ -2366,6 +2771,8 @@ def build_intact_reconstruction_qc(
 
     apply_intact_envelope_grouping(qc_rows, qc_config)
     competition_stats = apply_competitive_assignment(qc_rows, qc_config)
+    assignment_stats = apply_assignment_dry_run(qc_rows, qc_config)
+    competition_stats.update(assignment_stats)
     reconstruction_config["_intact_competition_stats"] = competition_stats
 
     candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
@@ -2412,6 +2819,29 @@ def build_intact_reconstruction_qc(
         candidate.evidence_score_components = row.get("Evidence_Score_Components", candidate.evidence_score_components)
         candidate.evidence_score_penalties = row.get("Evidence_Score_Penalties", candidate.evidence_score_penalties)
         candidate.evidence_score_config_version = row.get("Evidence_Score_Config_Version", candidate.evidence_score_config_version)
+        candidate.direct_competitor_count = row.get("Direct_Competitor_Count", candidate.direct_competitor_count)
+        candidate.direct_competitor_cluster_ids = row.get("Direct_Competitor_Cluster_IDs", candidate.direct_competitor_cluster_ids)
+        candidate.direct_shared_peak_count_max = row.get("Direct_Shared_Peak_Count_Max", candidate.direct_shared_peak_count_max)
+        candidate.direct_shared_peak_fraction_max = row.get("Direct_Shared_Peak_Fraction_Max", candidate.direct_shared_peak_fraction_max)
+        candidate.competition_component_size = row.get("Competition_Component_Size", candidate.competition_component_size)
+        candidate.dry_run_assignment_status = row.get("Dry_Run_Assignment_Status", candidate.dry_run_assignment_status)
+        candidate.dry_run_selected = row.get("Dry_Run_Selected", candidate.dry_run_selected)
+        candidate.dry_run_selection_order = row.get("Dry_Run_Selection_Order", candidate.dry_run_selection_order)
+        candidate.supporting_peak_count_before_assignment = row.get("Supporting_Peak_Count_Before_Assignment", candidate.supporting_peak_count_before_assignment)
+        candidate.independent_supporting_peak_count = row.get("Independent_Supporting_Peak_Count", candidate.independent_supporting_peak_count)
+        candidate.independent_supporting_peak_fraction = row.get("Independent_Supporting_Peak_Fraction", candidate.independent_supporting_peak_fraction)
+        candidate.supporting_charge_count_before_assignment = row.get("Supporting_Charge_Count_Before_Assignment", candidate.supporting_charge_count_before_assignment)
+        candidate.independent_charge_state_count = row.get("Independent_Charge_State_Count", candidate.independent_charge_state_count)
+        candidate.peaks_already_assigned_count = row.get("Peaks_Already_Assigned_Count", candidate.peaks_already_assigned_count)
+        candidate.charges_already_assigned_count = row.get("Charges_Already_Assigned_Count", candidate.charges_already_assigned_count)
+        candidate.excluded_by_cluster_id = row.get("Excluded_By_Cluster_ID", candidate.excluded_by_cluster_id)
+        candidate.dry_run_exclusion_reason = row.get("Dry_Run_Exclusion_Reason", candidate.dry_run_exclusion_reason)
+        candidate.score_margin_to_excluding_candidate = row.get("Score_Margin_To_Excluding_Candidate", candidate.score_margin_to_excluding_candidate)
+        candidate.close_score_ambiguity = row.get("Close_Score_Ambiguity", candidate.close_score_ambiguity)
+        candidate.assignment_confidence = row.get("Assignment_Confidence", candidate.assignment_confidence)
+        candidate.shared_observed_peak_count = row.get("Shared_Observed_Peak_Count", candidate.shared_observed_peak_count)
+        candidate.shared_peak_charge_assignment_count = row.get("Shared_Peak_Charge_Assignment_Count", candidate.shared_peak_charge_assignment_count)
+        candidate.independent_observed_peak_count = row.get("Independent_Observed_Peak_Count", candidate.independent_observed_peak_count)
 
 
     diagnostic_rows = build_intact_reconstruction_diagnostics(qc_rows, reconstruction_config, reconstruction_enabled)
@@ -2590,6 +3020,21 @@ def build_intact_reconstruction_diagnostics(
         "Competition_Groups_With_Close_Scores": competition_stats.get("Competition_Groups_With_Close_Scores", 0),
         "High_Peak_Sharing_Candidate_Count": competition_stats.get("High_Peak_Sharing_Candidate_Count", 0),
         "Competitive_Scoring_Time_Seconds": competition_stats.get("Competitive_Scoring_Time_Seconds", 0.0),
+        "Dry_Run_Selected_Candidate_Count": competition_stats.get("Dry_Run_Selected_Candidate_Count", 0),
+        "Dry_Run_Primary_Selected_Count": competition_stats.get("Dry_Run_Primary_Selected_Count", 0),
+        "Dry_Run_Independent_Selected_Count": competition_stats.get("Dry_Run_Independent_Selected_Count", 0),
+        "Dry_Run_Would_Exclude_Count": competition_stats.get("Dry_Run_Would_Exclude_Count", 0),
+        "Dry_Run_Ambiguous_Count": competition_stats.get("Dry_Run_Ambiguous_Count", 0),
+        "Dry_Run_Noncompeting_Count": competition_stats.get("Dry_Run_Noncompeting_Count", 0),
+        "Would_Exclude_Peak_Reuse_Count": competition_stats.get("Would_Exclude_Peak_Reuse_Count", 0),
+        "Would_Exclude_Independent_Peak_Shortage_Count": competition_stats.get("Would_Exclude_Independent_Peak_Shortage_Count", 0),
+        "Would_Exclude_Independent_Charge_Shortage_Count": competition_stats.get("Would_Exclude_Independent_Charge_Shortage_Count", 0),
+        "Median_Independent_Peak_Fraction": competition_stats.get("Median_Independent_Peak_Fraction"),
+        "Median_Direct_Competitor_Count": competition_stats.get("Median_Direct_Competitor_Count"),
+        "Largest_Component_Selected_Count": competition_stats.get("Largest_Component_Selected_Count", 0),
+        "Largest_Component_Excluded_Count": competition_stats.get("Largest_Component_Excluded_Count", 0),
+        "Largest_Component_Ambiguous_Count": competition_stats.get("Largest_Component_Ambiguous_Count", 0),
+        "Assignment_Dry_Run_Time_Seconds": competition_stats.get("Assignment_Dry_Run_Time_Seconds", 0.0),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -2654,6 +3099,21 @@ def build_rt_engine_qc_summary_rows(diagnostic_rows: list[dict[str, Any]]) -> li
         "Competition_Groups_With_Close_Scores",
         "High_Peak_Sharing_Candidate_Count",
         "Competitive_Scoring_Time_Seconds",
+        "Dry_Run_Selected_Candidate_Count",
+        "Dry_Run_Primary_Selected_Count",
+        "Dry_Run_Independent_Selected_Count",
+        "Dry_Run_Would_Exclude_Count",
+        "Dry_Run_Ambiguous_Count",
+        "Dry_Run_Noncompeting_Count",
+        "Would_Exclude_Peak_Reuse_Count",
+        "Would_Exclude_Independent_Peak_Shortage_Count",
+        "Would_Exclude_Independent_Charge_Shortage_Count",
+        "Median_Independent_Peak_Fraction",
+        "Median_Direct_Competitor_Count",
+        "Largest_Component_Selected_Count",
+        "Largest_Component_Excluded_Count",
+        "Largest_Component_Ambiguous_Count",
+        "Assignment_Dry_Run_Time_Seconds",
         "Processing_Time_Seconds",
     ]
     return [{"Metric": metric, "Value": diagnostic.get(metric), "Notes": ""} for metric in metrics]
@@ -3632,6 +4092,13 @@ def _sync_competition_fields_to_rt_diagnostics(metadata: dict[str, Any], candida
         row["Envelope_Evidence_Score"] = candidate.envelope_evidence_score
         row["Evidence_Score_Rank_In_Competition"] = candidate.evidence_score_rank_in_competition
         row["Maximum_Shared_Peak_Fraction"] = candidate.maximum_shared_peak_fraction
+        row["Direct_Competitor_Count"] = candidate.direct_competitor_count
+        row["Dry_Run_Assignment_Status"] = candidate.dry_run_assignment_status
+        row["Dry_Run_Selected"] = candidate.dry_run_selected
+        row["Independent_Supporting_Peak_Count"] = candidate.independent_supporting_peak_count
+        row["Independent_Supporting_Peak_Fraction"] = candidate.independent_supporting_peak_fraction
+        row["Independent_Charge_State_Count"] = candidate.independent_charge_state_count
+        row["Assignment_Confidence"] = candidate.assignment_confidence
 
 
 def reconstruct_intact_masses(

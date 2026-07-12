@@ -7,6 +7,7 @@ from rna_masshunter.config import validate_config
 from rna_masshunter.excel_report import write_excel_report
 from rna_masshunter.intact_reconstruction import (
     _apply_split_envelope_merge,
+    apply_assignment_dry_run,
     build_intact_competition_group_rows,
     build_intact_competition_score_rows,
     build_intact_engine_comparison_rows,
@@ -1442,6 +1443,8 @@ def test_mvp598a_competition_excel_sheets_are_present(tmp_path):
     try:
         assert "Intact_Competition_Groups" in workbook.sheetnames
         assert "Intact_Competition_Scores" in workbook.sheetnames
+        assert "Intact_Assignment_Dry_Run" in workbook.sheetnames
+        assert "Competition_Dry_Run_Summary" in workbook.sheetnames
         assert all(len(name) <= 31 for name in workbook.sheetnames)
         qc_headers = [cell.value for cell in next(workbook["Intact_Reconstruction_QC"].iter_rows(min_row=3, max_row=3))]
         spectrum_headers = [cell.value for cell in next(workbook["Reconstructed_Mass_Spectrum"].iter_rows(min_row=3, max_row=3))]
@@ -1475,3 +1478,159 @@ def test_mvp598a_competition_performance_smoke():
     assert len(rows) == 500
     assert diag["Competing_Envelope_Group_Count"] <= 500
     assert diag["Competitive_Scoring_Time_Seconds"] < 5.0
+
+
+def _dry_row(cluster_id, peaks, charges, score, group="CG00001", peak_charge_map=None):
+    return {
+        "Cluster_ID": cluster_id,
+        "Competing_Envelope_Group_ID": group,
+        "Competing_Envelope_Group_Size": 1,
+        "Envelope_Evidence_Score": score,
+        "Quality_Tier_Rank": 1,
+        "Num_Supporting_Charge_States": len(charges),
+        "Envelope_Internal_Error_ppm": 0.0,
+        "Reconstructed_Mass": 15000.0,
+        "_supporting_local_peak_id_set": set(peaks),
+        "_supporting_charge_set": set(charges),
+        "_supporting_peak_charge_map": peak_charge_map or {},
+        "Intact_Quality_Tier": "Tier_1_high_quality",
+        "Comparison_Ready": True,
+        "Comparison_Representative": True,
+    }
+
+
+def _dry_config(**overrides):
+    return {"competitive_assignment": {
+        "enabled": True,
+        "dry_run": True,
+        "min_independent_peak_fraction": 0.5,
+        "min_independent_charge_states": 2,
+        "allow_shared_peaks_between_selected": False,
+        "minimum_score_margin_for_exclusive_selection": 1.0,
+        **overrides,
+    }}
+
+
+def test_mvp598b_noncompeting_and_group_local_selection_order():
+    rows = [
+        _dry_row("A", {"a1", "a2"}, {6, 7}, 10, group="G1"),
+        _dry_row("B", {"b1", "b2"}, {6, 7}, 9, group="G2"),
+    ]
+    apply_assignment_dry_run(rows, _dry_config())
+    assert [row["Dry_Run_Assignment_Status"] for row in rows] == ["noncompeting", "noncompeting"]
+    assert [row["Dry_Run_Selection_Order"] for row in rows] == [1, 1]
+
+
+def test_mvp598b_direct_competitors_only_and_transitive_nonsharing_survives():
+    rows = [
+        _dry_row("A", {"ab", "a2"}, {6, 7}, 30),
+        _dry_row("B", {"ab", "bc"}, {6, 7}, 20),
+        _dry_row("C", {"bc", "c2"}, {6, 7}, 10),
+    ]
+    apply_assignment_dry_run(rows, _dry_config(min_independent_peak_fraction=0.6))
+    by_id = {row["Cluster_ID"]: row for row in rows}
+    assert by_id["A"]["Dry_Run_Assignment_Status"] == "selected_primary"
+    assert by_id["A"]["Direct_Competitor_Cluster_IDs"] == "B"
+    assert by_id["C"]["Direct_Competitor_Cluster_IDs"] == "B"
+    assert by_id["C"]["Dry_Run_Assignment_Status"] == "selected_primary"
+    assert by_id["C"]["Dry_Run_Selected"] is True
+
+
+def test_mvp598b_primary_independent_peak_shortage_and_charge_shortage():
+    independent = [
+        _dry_row("A", {"shared", "a2", "a3"}, {6, 7, 8}, 30,
+                 peak_charge_map={"shared": {6}, "a2": {7}, "a3": {8}}),
+        _dry_row("B", {"shared", "b2", "b3"}, {6, 9, 10}, 20,
+                 peak_charge_map={"shared": {6}, "b2": {9}, "b3": {10}}),
+    ]
+    apply_assignment_dry_run(independent, _dry_config())
+    assert independent[0]["Dry_Run_Assignment_Status"] == "selected_primary"
+    assert independent[1]["Dry_Run_Assignment_Status"] == "selected_independent"
+
+    peak_short = [_dry_row("A", {"p1", "p2"}, {6, 7}, 30), _dry_row("B", {"p1", "p2"}, {8, 9}, 20)]
+    apply_assignment_dry_run(peak_short, _dry_config())
+    assert peak_short[1]["Dry_Run_Assignment_Status"] == "would_exclude_peak_reuse"
+
+    charge_short = [
+        _dry_row("A", {"p1", "a2"}, {6, 7}, 30, peak_charge_map={"p1": {6}, "a2": {7}}),
+        _dry_row("B", {"p1", "b2"}, {6}, 20, peak_charge_map={"p1": {6}, "b2": {6}}),
+    ]
+    apply_assignment_dry_run(charge_short, _dry_config())
+    assert charge_short[1]["Dry_Run_Assignment_Status"] == "would_exclude_independent_charge_shortage"
+
+
+def test_mvp598b_close_score_ambiguity_and_confident_margin():
+    close = [_dry_row("A", {"p"}, {6, 7}, 10.5), _dry_row("B", {"p"}, {6, 7}, 10.0)]
+    apply_assignment_dry_run(close, _dry_config())
+    assert close[1]["Close_Score_Ambiguity"] is True
+    assert close[1]["Assignment_Confidence"] == "ambiguous"
+    assert close[1]["Dry_Run_Exclusion_Reason"] == "ambiguous_close_score"
+    clear = [_dry_row("A", {"p"}, {6, 7}, 20), _dry_row("B", {"p"}, {6, 7}, 10)]
+    apply_assignment_dry_run(clear, _dry_config())
+    assert clear[1]["Close_Score_Ambiguity"] is False
+    assert clear[1]["Assignment_Confidence"] == "high"
+
+
+def test_mvp598b_observed_peak_and_actual_peak_charge_are_distinct():
+    rows = [
+        _dry_row("A", {"same"}, {6}, 20, peak_charge_map={"same": {6}}),
+        _dry_row("B", {"same"}, {7}, 10, peak_charge_map={"same": {7}}),
+    ]
+    apply_assignment_dry_run(rows, _dry_config(min_independent_charge_states=1))
+    assert rows[0]["Shared_Observed_Peak_Count"] == 1
+    assert rows[0]["Shared_Peak_Charge_Assignment_Count"] == 0
+    assert rows[1]["Independent_Observed_Peak_Count"] == 0
+
+
+def test_mvp598b_allow_shared_peaks_allows_selected_secondary():
+    rows = [_dry_row("A", {"p"}, {6, 7}, 20), _dry_row("B", {"p"}, {6, 7}, 10)]
+    apply_assignment_dry_run(rows, _dry_config(allow_shared_peaks_between_selected=True))
+    assert rows[1]["Dry_Run_Assignment_Status"] == "selected_independent"
+    assert rows[1]["Independent_Supporting_Peak_Fraction"] == 1.0
+
+
+def test_mvp598b_empty_disabled_and_legacy_shape_are_safe():
+    stats = apply_assignment_dry_run([], _dry_config())
+    assert stats["Dry_Run_Selected_Candidate_Count"] == 0
+    row = _dry_row("LEGACY", {"p1", "p2"}, {6, 7}, 1)
+    apply_assignment_dry_run([row], _dry_config(enabled=False))
+    assert row["Dry_Run_Assignment_Status"] == "not_evaluated"
+    assert row["Dry_Run_Selected"] is False
+
+
+def test_mvp598b_dry_run_does_not_change_qc_representative_or_spectrum():
+    candidates = [_competition_candidate("A", [6, 7, 8]), _competition_candidate("B", [6, 7], mass=15000.1)]
+    peaks = [
+        _competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("A", 8, "a8"),
+        _competition_peak("B", 6, "shared", neutral_offset=0.1), _competition_peak("B", 7, "b7", neutral_offset=0.1),
+    ]
+    rows, _ = _qc(candidates, peaks, config=_generic_config())
+    before = [(r["Intact_Quality_Tier"], r["Comparison_Ready"], r["Comparison_Representative"]) for r in rows]
+    spectrum_before = build_reconstructed_mass_spectrum_rows(rows, _generic_config()["intact_reconstruction"])
+    apply_assignment_dry_run(rows, _dry_config())
+    after = [(r["Intact_Quality_Tier"], r["Comparison_Ready"], r["Comparison_Representative"]) for r in rows]
+    spectrum_after = build_reconstructed_mass_spectrum_rows(rows, _generic_config()["intact_reconstruction"])
+    assert after == before
+    assert spectrum_after == spectrum_before
+
+
+def test_mvp598b_reference_and_target_annotations_do_not_change_assignment():
+    peaks = [_competition_peak("A", 6, "shared"), _competition_peak("A", 7, "a7"), _competition_peak("B", 6, "shared", neutral_offset=0.1), _competition_peak("B", 7, "b7", neutral_offset=0.1)]
+    def result(config):
+        rows, _ = _qc([_competition_candidate("A", [6, 7]), _competition_candidate("B", [6, 7], mass=15000.1)], peaks, config=config)
+        return [(r["Cluster_ID"], r["Dry_Run_Assignment_Status"], r["Dry_Run_Selected"], r["Assignment_Confidence"]) for r in rows]
+    base = result(_generic_config())
+    annotated = result(_generic_config(reference_masses=[{"label": "ref", "mass_da": 15000.0}], target_review_mass_range={"enabled": True, "min_da": 14900, "max_da": 15100}))
+    assert annotated == base
+
+
+def test_mvp598b_large_component_keeps_distant_candidates_and_is_fast():
+    rows = []
+    for index in range(300):
+        peaks = {f"edge_{index - 1}", f"edge_{index}"}
+        rows.append(_dry_row(f"C{index:04d}", peaks, {6, 7}, 1000 - index))
+    stats = apply_assignment_dry_run(rows, _dry_config())
+    assert rows[0]["Dry_Run_Selected"] is True
+    assert rows[2]["Dry_Run_Selected"] is True
+    assert stats["Dry_Run_Selected_Candidate_Count"] >= 150
+    assert stats["Assignment_Dry_Run_Time_Seconds"] < 5.0

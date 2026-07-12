@@ -80,6 +80,11 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "enabled": True,
                 "rt_tolerance_min": 0.15,
                 "close_score_margin": 5.0,
+                "dry_run": True,
+                "min_independent_peak_fraction": 0.5,
+                "min_independent_charge_states": 2,
+                "allow_shared_peaks_between_selected": False,
+                "minimum_score_margin_for_exclusive_selection": 1.0,
                 "evidence_score_config_version": "MVP-5.9.8a-v1",
                 "score_weights": {
                     "charge_count": 12.0,
