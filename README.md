@@ -255,3 +255,7 @@ MVP-5.9.8d adds assignment strict/review eligibility and can optionally apply it
 ### MS/MS biological position prior (shadow)
 
 `ms2_annotation.biological_position_prior` evaluates candidate positions using input-sequence 1-based numbering, parent-base compatibility, and structural/isobaric alternatives. Canonical landmarks must be configured explicitly (the configured `sequence.wobble_position` is also accepted as the `wobble` landmark); no Sprinzl numbering is assumed. The results are diagnostic-only by default (`apply_to_final_score: false`) and do not change `Final_Score`, `Final_Confidence`, rank, candidate inclusion, or review priority. Review `Modification_Position_Priors` and `MS2_Biological_Plausibility` in the Excel report.
+
+### MS/MS identity physical peak sharing (shadow)
+
+A candidate match ID includes theoretical-ion metadata and is not the same as a physical observed peak. Identity shadow evaluation audits physical peak sharing across candidates. Peaks shared by structural isomers are group-level evidence and are not counted repeatedly as individual structure evidence. Group-level localization status is a ceiling for candidate-level position resolution. These fields remain shadow-only and do not change the formal score, confidence, rank, review priority, matching, or localization results.

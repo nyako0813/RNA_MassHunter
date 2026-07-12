@@ -272,12 +272,13 @@ def main() -> None:
         ranking_rows, position_prior_rows, plausibility_rows, position_diagnostics = evaluate_biological_position_priors(
             config, ranking_rows, modifications, position_prior_rules
         )
-        ranking_rows, identity_rows = build_ms2_modification_identity(
+        ranking_rows, identity_rows, identity_assignment_rows = build_ms2_modification_identity(
             ranking_rows,
             optional_results.get("MS2_Modified_Ion_Matches", []),
             optional_results.get("MS2_Modification_Localization_Evidence", []),
             optional_results.get("Modification_Ambiguity_Groups", []),
             enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+            return_assignments=True,
         )
         optional_results["Modification_Evidence_Summary"] = ranking_summary
         optional_results["Modification_Evidence_Ranking"] = ranking_rows
@@ -285,6 +286,7 @@ def main() -> None:
         optional_results["MS2_Biological_Plausibility"] = plausibility_rows
         optional_results["Biological_Prior_Diagnostics"] = position_diagnostics
         optional_results["MS2_Modification_Identity"] = identity_rows
+        optional_results["MS2_Identity_Peak_Assignments"] = identity_assignment_rows
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [

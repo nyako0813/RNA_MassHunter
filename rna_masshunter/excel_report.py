@@ -61,7 +61,7 @@ from rna_masshunter.biological_position_prior import (
     BIOLOGICAL_PLAUSIBILITY_COLUMNS, DIAGNOSTIC_COLUMNS as BIOLOGICAL_PRIOR_DIAGNOSTIC_COLUMNS,
     POSITION_PRIOR_COLUMNS, SHADOW_RANKING_COLUMNS,
 )
-from rna_masshunter.ms2_identity_evidence import IDENTITY_COLUMNS, IDENTITY_SHADOW_COLUMNS
+from rna_masshunter.ms2_identity_evidence import (IDENTITY_COLUMNS, IDENTITY_SHADOW_COLUMNS, PEAK_ASSIGNMENT_COLUMNS)
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -464,6 +464,7 @@ SHEET_DESCRIPTIONS = {
     "Modification_Position_Priors": "Diagnostic input-sequence position priors; no Sprinzl numbering is assumed.",
     "MS2_Biological_Plausibility": "Shadow biological plausibility, parent-base compatibility, and structural ambiguity review.",
     "MS2_Modification_Identity": "Shadow summary separating modified fragment ions, position localization, and structure/isomer resolution.",
+    "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "Biological_Prior_Diagnostics": "Run counts for diagnostic biological position prior evaluation.",
     "Biological_Context_Priorities": "Biological context settings used for generic candidate prioritization.",
     "Context_Supported_Candidates": "Ranking candidates receiving a user-configured biological context boost.",
@@ -1184,6 +1185,7 @@ def write_excel_report(
         "Modification_Position_Priors": POSITION_PRIOR_COLUMNS,
         "MS2_Biological_Plausibility": BIOLOGICAL_PLAUSIBILITY_COLUMNS,
         "MS2_Modification_Identity": IDENTITY_COLUMNS,
+        "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "Biological_Prior_Diagnostics": BIOLOGICAL_PRIOR_DIAGNOSTIC_COLUMNS,
         "Biological_Context_Priorities": CONTEXT_PRIORITY_COLUMNS,
         "Context_Supported_Candidates": RANKING_COLUMNS + SHADOW_RANKING_COLUMNS + IDENTITY_SHADOW_COLUMNS,
