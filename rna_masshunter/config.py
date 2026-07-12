@@ -85,6 +85,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "min_independent_charge_states": 2,
                 "allow_shared_peaks_between_selected": False,
                 "minimum_score_margin_for_exclusive_selection": 1.0,
+                "apply_to_comparison_ready": False,
                 "sensitivity_analysis": {
                     "enabled": True,
                     "scenarios": ["strict", "balanced", "sensitive", "permissive"],
@@ -158,6 +159,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
                 "normalize_to_percent": True,
                 "bin_width_da": None,
                 "minimum_quality_tier": "Tier_3_weak",
+                "assignment_filter": "none",
             },
         },
     },
@@ -382,6 +384,9 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
     intensity_method = str(spectrum_config.get("intensity_method") or "total_supporting_intensity")
     if intensity_method not in {"total_supporting_intensity", "mean_supporting_intensity", "max_supporting_intensity"}:
         raise ValueError("intact_reconstruction.mass_spectrum_output.intensity_method must be one of: total_supporting_intensity, mean_supporting_intensity, max_supporting_intensity")
+    assignment_filter = str(spectrum_config.get("assignment_filter") or "none").lower()
+    if assignment_filter not in {"none", "strict", "review", "balanced_selected", "all"}:
+        raise ValueError("intact_reconstruction.mass_spectrum_output.assignment_filter must be one of: none, strict, review, balanced_selected, all")
     minimum_quality_tier = str(spectrum_config.get("minimum_quality_tier") or "Tier_3_weak")
     if minimum_quality_tier not in {"Tier_1_high_quality", "Tier_2_supported", "Tier_3_weak", "all"}:
         raise ValueError("intact_reconstruction.mass_spectrum_output.minimum_quality_tier must be one of: Tier_1_high_quality, Tier_2_supported, Tier_3_weak, all")

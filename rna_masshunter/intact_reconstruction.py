@@ -73,6 +73,7 @@ DEFAULT_INTACT_QC_CONFIG = {
         "min_independent_charge_states": 2,
         "allow_shared_peaks_between_selected": False,
         "minimum_score_margin_for_exclusive_selection": 1.0,
+        "apply_to_comparison_ready": False,
         "sensitivity_analysis": {
             "enabled": True,
             "scenarios": ["strict", "balanced", "sensitive", "permissive"],
@@ -146,6 +147,7 @@ DEFAULT_INTACT_QC_CONFIG = {
         "normalize_to_percent": True,
         "bin_width_da": None,
         "minimum_quality_tier": "Tier_3_weak",
+        "assignment_filter": "none",
     },
 }
 
@@ -190,6 +192,11 @@ QC_COLUMNS = [
     "Comparison_Representative",
     "Comparison_Representative_Reason",
     "Comparison_Representative_Rank",
+    "Preassignment_Comparison_Representative",
+    "Postassignment_Comparison_Representative",
+    "Comparison_Representative_Changed",
+    "Postassignment_Representative_Reason",
+    "Postassignment_Comparison_Rank",
     "Excluded_From_Comparison_Reason",
     "Target_Review_Group_Representative",
     "Target_Review_Rank",
@@ -306,6 +313,20 @@ QC_COLUMNS = [
     "Comparison_Ready_Strict",
     "Comparison_Ready_Review",
     "Comparison_Ready",
+    "Preassignment_Comparison_Ready_Strict",
+    "Preassignment_Comparison_Ready_Review",
+    "Preassignment_Comparison_Ready",
+    "Postassignment_Comparison_Ready_Strict",
+    "Postassignment_Comparison_Ready_Review",
+    "Postassignment_Comparison_Ready",
+    "Comparison_Ready_Changed_By_Assignment",
+    "Comparison_Assignment_Reason",
+    "Assignment_Strict_Eligible",
+    "Assignment_Review_Eligible",
+    "Assignment_Ambiguous",
+    "Assignment_Rejected",
+    "Assignment_Eligibility_Reason",
+    "Assignment_Selection_Basis",
     "Comparison_Readiness_Reason",
     "Total_Supporting_Intensity",
     "Mean_Supporting_Intensity",
@@ -473,6 +494,14 @@ DIAGNOSTIC_COLUMNS = [
     "Strict_vs_Balanced_Agreement_Percent", "Balanced_vs_Sensitive_Agreement_Percent",
     "Sensitive_vs_Permissive_Agreement_Percent", "Sensitivity_Analysis_Time_Seconds",
     "Audit_Enabled", "Audit_Target_Count", "Audit_Matched_Candidate_Count",
+    "Preassignment_Comparison_Ready_Strict_Count", "Preassignment_Comparison_Ready_Review_Count",
+    "Postassignment_Comparison_Ready_Strict_Count", "Postassignment_Comparison_Ready_Review_Count",
+    "Assignment_Strict_Eligible_Count", "Assignment_Review_Eligible_Count",
+    "Assignment_Ambiguous_Count", "Assignment_Rejected_Count",
+    "Comparison_Ready_Removed_By_Assignment_Count", "Comparison_Representative_Changed_Count",
+    "Preassignment_Spectrum_Point_Count", "Postassignment_Spectrum_Point_Count",
+    "Strict_Assignment_Spectrum_Point_Count", "Review_Assignment_Spectrum_Point_Count",
+    "Ambiguous_Candidate_Count",
     "Neutral_Mass_Search_Min_Da",
     "Neutral_Mass_Search_Max_Da",
     "Total_Candidates_Before_Mass_Range_Filter",
@@ -602,6 +631,13 @@ RECONSTRUCTED_MASS_SPECTRUM_COLUMNS = [
     "Intact_Strict_Eligible",
     "Intact_Review_Eligible",
     "Comparison_Ready",
+    "Assignment_Strict_Eligible",
+    "Assignment_Review_Eligible",
+    "Assignment_Ambiguous",
+    "Selection_Stability_Status",
+    "Selected_Balanced",
+    "Postassignment_Comparison_Ready",
+    "Postassignment_Comparison_Representative",
     "Num_Supporting_Charge_States",
     "Supporting_Charge_States",
     "RT_Mean",
@@ -812,6 +848,19 @@ ASSIGNMENT_STABILITY_COLUMNS = [
     "Selection_Stability_Status", "Dry_Run_Assignment_Status", "Direct_Competitor_Count",
     "Independent_Supporting_Peak_Fraction", "Independent_Charge_State_Count", "Notes",
 ]
+
+ASSIGNMENT_AMBIGUOUS_COLUMNS = [
+    "Cluster_ID", "Reconstructed_Mass", "Intact_Quality_Tier",
+    "Preassignment_Comparison_Ready", "Postassignment_Comparison_Ready",
+    "Selection_Stability_Status", "Selected_Strict", "Selected_Balanced",
+    "Selected_Sensitive", "Selected_Permissive", "Assignment_Strict_Eligible",
+    "Assignment_Review_Eligible", "Assignment_Ambiguous", "Envelope_Evidence_Score",
+    "Independent_Supporting_Peak_Fraction", "Independent_Charge_State_Count",
+    "Assignment_Confidence", "Close_Score_Ambiguity", "Assignment_Eligibility_Reason",
+    "Limiting_Factors", "Notes",
+]
+
+PREASSIGNMENT_COMPARISON_COLUMNS = COMPARISON_CANDIDATE_COLUMNS
 
 ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS = [
     "Audit_Mass_Label", "Audit_Target_Mass", "Cluster_ID", "Reconstructed_Mass",
@@ -1081,6 +1130,7 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "min_independent_charge_states": int(competitive.get("min_independent_charge_states") or default_competitive.get("min_independent_charge_states", 2)),
         "allow_shared_peaks_between_selected": _as_bool(competitive.get("allow_shared_peaks_between_selected"), False),
         "minimum_score_margin_for_exclusive_selection": float(competitive.get("minimum_score_margin_for_exclusive_selection") if competitive.get("minimum_score_margin_for_exclusive_selection") is not None else default_competitive.get("minimum_score_margin_for_exclusive_selection", 1.0)),
+        "apply_to_comparison_ready": _as_bool(competitive.get("apply_to_comparison_ready"), False),
         "evidence_score_config_version": str(competitive.get("evidence_score_config_version") or default_competitive["evidence_score_config_version"]),
         "score_weights": score_weights,
         "sensitivity_analysis": {
@@ -1108,6 +1158,7 @@ def _qc_config(reconstruction_config: dict[str, Any]) -> dict[str, Any]:
         "normalize_to_percent": _as_bool(spectrum_output.get("normalize_to_percent"), True),
         "bin_width_da": _optional_float(spectrum_output.get("bin_width_da")),
         "minimum_quality_tier": str(spectrum_output.get("minimum_quality_tier") or "Tier_3_weak"),
+        "assignment_filter": str(spectrum_output.get("assignment_filter") or "none").lower(),
     }
     return merged
 
@@ -1982,6 +2033,133 @@ def build_assignment_candidate_audit_rows(reconstruction_config: dict[str, Any])
     return list((reconstruction_config.get("_intact_competition_stats") or {}).get("_audit_rows") or [])
 
 
+def _has_severe_limiting_factor(row: dict[str, Any]) -> bool:
+    value = row.get("Severe_Limiting_Factors")
+    if isinstance(value, (list, tuple, set)):
+        return bool(value)
+    return bool(str(value or "").strip())
+
+
+def _postassignment_representative_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    stability_rank = {"stable_selected": 4, "noncompeting": 3, "ambiguous_across_scenarios": 2, "threshold_sensitive": 1}.get(str(row.get("Selection_Stability_Status") or ""), 0)
+    return (
+        bool(row.get("Postassignment_Comparison_Ready_Strict")),
+        bool(row.get("Postassignment_Comparison_Ready_Review")),
+        bool(row.get("Assignment_Strict_Eligible")),
+        bool(row.get("Assignment_Review_Eligible")),
+        stability_rank,
+        -_safe_float(row.get("Quality_Tier_Rank"), 4.0),
+        _safe_float(row.get("Envelope_Evidence_Score")),
+        _safe_float(row.get("Intact_Envelope_QC_Score")),
+        _safe_float(row.get("Total_Supporting_Intensity")),
+        str(row.get("Cluster_ID") or ""),
+    )
+
+
+def apply_assignment_eligibility(qc_rows: list[dict[str, Any]], qc_config: dict[str, Any]) -> dict[str, Any]:
+    competitive = qc_config["competitive_assignment"]
+    apply_ready = bool(competitive.get("apply_to_comparison_ready", False) and competitive.get("enabled", True))
+    min_fraction = float(competitive.get("min_independent_peak_fraction", 0.5))
+    min_charges = int(competitive.get("min_independent_charge_states", 2))
+    for row in qc_rows:
+        pre_strict = bool(row.get("Comparison_Ready_Strict"))
+        pre_review = bool(row.get("Comparison_Ready_Review"))
+        pre_ready = bool(row.get("Comparison_Ready"))
+        pre_representative = bool(row.get("Comparison_Representative"))
+        row["Preassignment_Comparison_Ready_Strict"] = pre_strict
+        row["Preassignment_Comparison_Ready_Review"] = pre_review
+        row["Preassignment_Comparison_Ready"] = pre_ready
+        row["Preassignment_Comparison_Representative"] = pre_representative
+        stability = str(row.get("Selection_Stability_Status") or "")
+        tier_ok = str(row.get("Intact_Quality_Tier") or "") in {"Tier_1_high_quality", "Tier_2_supported"}
+        in_range = bool(row.get("In_Neutral_Mass_Search_Range"))
+        severe = _has_severe_limiting_factor(row)
+        balanced_selected = bool(row.get("Selected_Balanced"))
+        balanced_status = str(row.get("Status_Balanced") or "")
+        ambiguous = bool(stability == "ambiguous_across_scenarios" or row.get("Close_Score_Ambiguity") or row.get("Assignment_Confidence") == "ambiguous")
+        review_support = (_safe_float(row.get("Independent_Supporting_Peak_Fraction")) >= min_fraction and int(row.get("Independent_Charge_State_Count") or 0) >= min_charges)
+        strict_eligible = stability in {"stable_selected", "noncompeting"} and tier_ok and in_range and not severe
+        review_eligible = in_range and not severe and (balanced_selected or stability == "noncompeting" or (ambiguous and tier_ok and review_support))
+        support_shortage = "peak" in balanced_status or "charge" in balanced_status or "reuse" in balanced_status
+        rejected = bool(severe or (balanced_status.startswith("would_exclude") and not ambiguous and support_shortage))
+        basis = "noncompeting" if stability == "noncompeting" else "stable_selected" if stability == "stable_selected" else "balanced_selected" if balanced_selected else "ambiguous_review_support" if ambiguous and review_support else "balanced_would_exclude" if balanced_status.startswith("would_exclude") else "not_selected"
+        reasons = []
+        if not in_range: reasons.append("outside_neutral_mass_search_range")
+        if severe: reasons.append("severe_limiting_factor")
+        if not tier_ok: reasons.append("not_tier1_or_tier2_for_strict")
+        if support_shortage: reasons.append("insufficient_independent_support")
+        if ambiguous: reasons.append("ambiguous_assignment")
+        row.update({
+            "Assignment_Strict_Eligible": strict_eligible, "Assignment_Review_Eligible": review_eligible,
+            "Assignment_Ambiguous": ambiguous, "Assignment_Rejected": rejected,
+            "Assignment_Eligibility_Reason": "; ".join(reasons) or "eligible",
+            "Assignment_Selection_Basis": basis,
+        })
+        gated_strict = pre_strict and strict_eligible
+        gated_review = pre_review and review_eligible
+        post_strict = gated_strict if apply_ready else pre_strict
+        post_review = gated_review if apply_ready else pre_review
+        post_ready = post_strict or post_review
+        row["Postassignment_Comparison_Ready_Strict"] = post_strict
+        row["Postassignment_Comparison_Ready_Review"] = post_review
+        row["Postassignment_Comparison_Ready"] = post_ready
+        row["Comparison_Ready_Changed_By_Assignment"] = post_ready != pre_ready
+        row["Comparison_Assignment_Reason"] = "assignment_not_applied" if not apply_ready else "assignment_eligible" if post_ready else "removed_by_assignment"
+        if apply_ready:
+            row["Comparison_Ready_Strict"] = post_strict
+            row["Comparison_Ready_Review"] = post_review
+            row["Comparison_Ready"] = post_ready
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in qc_rows:
+        groups.setdefault(str(row.get("Intact_Envelope_Group_ID") or row.get("Cluster_ID") or ""), []).append(row)
+    for members in groups.values():
+        selected = max((row for row in members if row.get("Postassignment_Comparison_Ready")), key=_postassignment_representative_key, default=None) if apply_ready else next((row for row in members if row.get("Preassignment_Comparison_Representative")), None)
+        for row in members:
+            post_rep = row is selected
+            row["Postassignment_Comparison_Representative"] = post_rep
+            row["Comparison_Representative_Changed"] = post_rep != bool(row.get("Preassignment_Comparison_Representative"))
+            row["Postassignment_Representative_Reason"] = "postassignment_group_representative" if post_rep and apply_ready else "assignment_not_applied" if post_rep else "not_postassignment_representative"
+            row["Postassignment_Comparison_Rank"] = None
+            if apply_ready:
+                row["Comparison_Representative"] = post_rep
+                row["Comparison_Representative_Reason"] = row["Postassignment_Representative_Reason"] if post_rep else ""
+                row["Comparison_Representative_Rank"] = None
+    representatives = sorted([row for row in qc_rows if row.get("Postassignment_Comparison_Representative")], key=_postassignment_representative_key, reverse=True)
+    for rank, row in enumerate(representatives, start=1):
+        row["Postassignment_Comparison_Rank"] = rank
+        if apply_ready:
+            row["Comparison_Representative_Rank"] = rank
+    return {
+        "Preassignment_Comparison_Ready_Strict_Count": sum(1 for row in qc_rows if row.get("Preassignment_Comparison_Ready_Strict")),
+        "Preassignment_Comparison_Ready_Review_Count": sum(1 for row in qc_rows if row.get("Preassignment_Comparison_Ready_Review")),
+        "Postassignment_Comparison_Ready_Strict_Count": sum(1 for row in qc_rows if row.get("Postassignment_Comparison_Ready_Strict")),
+        "Postassignment_Comparison_Ready_Review_Count": sum(1 for row in qc_rows if row.get("Postassignment_Comparison_Ready_Review")),
+        "Assignment_Strict_Eligible_Count": sum(1 for row in qc_rows if row.get("Assignment_Strict_Eligible")),
+        "Assignment_Review_Eligible_Count": sum(1 for row in qc_rows if row.get("Assignment_Review_Eligible")),
+        "Assignment_Ambiguous_Count": sum(1 for row in qc_rows if row.get("Assignment_Ambiguous")),
+        "Assignment_Rejected_Count": sum(1 for row in qc_rows if row.get("Assignment_Rejected")),
+        "Comparison_Ready_Removed_By_Assignment_Count": sum(1 for row in qc_rows if row.get("Preassignment_Comparison_Ready") and not row.get("Postassignment_Comparison_Ready")),
+        "Comparison_Representative_Changed_Count": sum(1 for row in qc_rows if row.get("Comparison_Representative_Changed")),
+        "Ambiguous_Candidate_Count": sum(1 for row in qc_rows if row.get("Assignment_Ambiguous") or row.get("Selection_Stability_Status") == "threshold_sensitive" or (row.get("Selected_Balanced") and not row.get("Selected_Strict"))),
+    }
+
+
+def build_assignment_ambiguous_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected = [row for row in qc_rows if row.get("Assignment_Ambiguous") or row.get("Selection_Stability_Status") == "threshold_sensitive" or (row.get("Selected_Balanced") and not row.get("Selected_Strict"))]
+    return [{**_candidate_projection(row, ASSIGNMENT_AMBIGUOUS_COLUMNS), "Notes": "retained_for_assignment_review"} for row in selected]
+
+
+def build_preassignment_comparison_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = sorted([row for row in qc_rows if row.get("Preassignment_Comparison_Representative")], key=_representative_sort_key, reverse=True)
+    projected = []
+    for rank, row in enumerate(rows, start=1):
+        item = _candidate_projection(row, PREASSIGNMENT_COMPARISON_COLUMNS)
+        item["Comparison_Representative_Rank"] = rank
+        item["Comparison_Ready"] = row.get("Preassignment_Comparison_Ready")
+        projected.append(item)
+    return projected
+
+
 def build_assignment_dry_run_rows(qc_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_candidate_projection(row, ASSIGNMENT_DRY_RUN_COLUMNS) for row in sorted(qc_rows, key=lambda item: (str(item.get("Competing_Envelope_Group_ID") or ""), _safe_float(item.get("Dry_Run_Selection_Order"), 1_000_000), str(item.get("Cluster_ID") or "")))]
 
@@ -2407,6 +2585,13 @@ def build_reconstructed_mass_spectrum_rows(
     for row in qc_rows:
         if not row.get("In_Neutral_Mass_Search_Range"):
             continue
+        assignment_filter = str(output_config.get("assignment_filter") or "none").lower()
+        if assignment_filter == "strict" and not row.get("Assignment_Strict_Eligible"):
+            continue
+        if assignment_filter == "review" and not row.get("Assignment_Review_Eligible"):
+            continue
+        if assignment_filter == "balanced_selected" and not row.get("Selected_Balanced"):
+            continue
         if output_config.get("representatives_only", True) and not row.get("Group_Representative"):
             continue
         if output_config.get("comparison_ready_only", False) and not row.get("Comparison_Ready"):
@@ -2444,6 +2629,13 @@ def build_reconstructed_mass_spectrum_rows(
             "Intact_Strict_Eligible": row.get("Intact_Strict_Eligible"),
             "Intact_Review_Eligible": row.get("Intact_Review_Eligible"),
             "Comparison_Ready": row.get("Comparison_Ready"),
+            "Assignment_Strict_Eligible": row.get("Assignment_Strict_Eligible"),
+            "Assignment_Review_Eligible": row.get("Assignment_Review_Eligible"),
+            "Assignment_Ambiguous": row.get("Assignment_Ambiguous"),
+            "Selection_Stability_Status": row.get("Selection_Stability_Status"),
+            "Selected_Balanced": row.get("Selected_Balanced"),
+            "Postassignment_Comparison_Ready": row.get("Postassignment_Comparison_Ready"),
+            "Postassignment_Comparison_Representative": row.get("Postassignment_Comparison_Representative"),
             "Num_Supporting_Charge_States": row.get("Num_Supporting_Charge_States"),
             "Supporting_Charge_States": row.get("Supporting_Charge_States"),
             "RT_Mean": row.get("RT_Mean"),
@@ -2971,6 +3163,26 @@ def build_intact_reconstruction_qc(
     competition_stats.update(assignment_stats)
     sensitivity_stats = run_assignment_sensitivity(qc_rows, qc_config)
     competition_stats.update(sensitivity_stats)
+    eligibility_stats = apply_assignment_eligibility(qc_rows, qc_config)
+    competition_stats.update(eligibility_stats)
+    pre_rows = []
+    for row in qc_rows:
+        copied = dict(row)
+        copied["Comparison_Ready_Strict"] = row.get("Preassignment_Comparison_Ready_Strict")
+        copied["Comparison_Ready_Review"] = row.get("Preassignment_Comparison_Ready_Review")
+        copied["Comparison_Ready"] = row.get("Preassignment_Comparison_Ready")
+        copied["Comparison_Representative"] = row.get("Preassignment_Comparison_Representative")
+        pre_rows.append(copied)
+    base_spectrum = dict(qc_config["mass_spectrum_output"])
+    def spectrum_count(rows, assignment_filter):
+        count_config = {**reconstruction_config, "intact_reconstruction": {**(reconstruction_config.get("intact_reconstruction") or {}), "mass_spectrum_output": {**base_spectrum, "assignment_filter": assignment_filter}}}
+        return len(build_reconstructed_mass_spectrum_rows(rows, count_config))
+    competition_stats.update({
+        "Preassignment_Spectrum_Point_Count": spectrum_count(pre_rows, "none"),
+        "Postassignment_Spectrum_Point_Count": spectrum_count(qc_rows, base_spectrum.get("assignment_filter", "none")),
+        "Strict_Assignment_Spectrum_Point_Count": spectrum_count(qc_rows, "strict"),
+        "Review_Assignment_Spectrum_Point_Count": spectrum_count(qc_rows, "review"),
+    })
     reconstruction_config["_intact_competition_stats"] = competition_stats
 
     candidates_by_cluster = {candidate.cluster_id or "": candidate for candidate in candidates}
@@ -3251,6 +3463,21 @@ def build_intact_reconstruction_diagnostics(
         "Audit_Enabled": competition_stats.get("Audit_Enabled", False),
         "Audit_Target_Count": competition_stats.get("Audit_Target_Count", 0),
         "Audit_Matched_Candidate_Count": competition_stats.get("Audit_Matched_Candidate_Count", 0),
+        "Preassignment_Comparison_Ready_Strict_Count": competition_stats.get("Preassignment_Comparison_Ready_Strict_Count", 0),
+        "Preassignment_Comparison_Ready_Review_Count": competition_stats.get("Preassignment_Comparison_Ready_Review_Count", 0),
+        "Postassignment_Comparison_Ready_Strict_Count": competition_stats.get("Postassignment_Comparison_Ready_Strict_Count", 0),
+        "Postassignment_Comparison_Ready_Review_Count": competition_stats.get("Postassignment_Comparison_Ready_Review_Count", 0),
+        "Assignment_Strict_Eligible_Count": competition_stats.get("Assignment_Strict_Eligible_Count", 0),
+        "Assignment_Review_Eligible_Count": competition_stats.get("Assignment_Review_Eligible_Count", 0),
+        "Assignment_Ambiguous_Count": competition_stats.get("Assignment_Ambiguous_Count", 0),
+        "Assignment_Rejected_Count": competition_stats.get("Assignment_Rejected_Count", 0),
+        "Comparison_Ready_Removed_By_Assignment_Count": competition_stats.get("Comparison_Ready_Removed_By_Assignment_Count", 0),
+        "Comparison_Representative_Changed_Count": competition_stats.get("Comparison_Representative_Changed_Count", 0),
+        "Preassignment_Spectrum_Point_Count": competition_stats.get("Preassignment_Spectrum_Point_Count", 0),
+        "Postassignment_Spectrum_Point_Count": competition_stats.get("Postassignment_Spectrum_Point_Count", 0),
+        "Strict_Assignment_Spectrum_Point_Count": competition_stats.get("Strict_Assignment_Spectrum_Point_Count", 0),
+        "Review_Assignment_Spectrum_Point_Count": competition_stats.get("Review_Assignment_Spectrum_Point_Count", 0),
+        "Ambiguous_Candidate_Count": competition_stats.get("Ambiguous_Candidate_Count", 0),
         "Neutral_Mass_Search_Min_Da": qc_config["neutral_mass_range"]["min_da"],
         "Neutral_Mass_Search_Max_Da": qc_config["neutral_mass_range"]["max_da"],
         "Total_Candidates_Before_Mass_Range_Filter": len(qc_rows),
@@ -3337,6 +3564,14 @@ def build_rt_engine_qc_summary_rows(diagnostic_rows: list[dict[str, Any]]) -> li
         "Strict_vs_Balanced_Agreement_Percent", "Balanced_vs_Sensitive_Agreement_Percent",
         "Sensitive_vs_Permissive_Agreement_Percent", "Sensitivity_Analysis_Time_Seconds",
         "Audit_Enabled", "Audit_Target_Count", "Audit_Matched_Candidate_Count",
+        "Preassignment_Comparison_Ready_Strict_Count", "Preassignment_Comparison_Ready_Review_Count",
+        "Postassignment_Comparison_Ready_Strict_Count", "Postassignment_Comparison_Ready_Review_Count",
+        "Assignment_Strict_Eligible_Count", "Assignment_Review_Eligible_Count",
+        "Assignment_Ambiguous_Count", "Assignment_Rejected_Count",
+        "Comparison_Ready_Removed_By_Assignment_Count", "Comparison_Representative_Changed_Count",
+        "Preassignment_Spectrum_Point_Count", "Postassignment_Spectrum_Point_Count",
+        "Strict_Assignment_Spectrum_Point_Count", "Review_Assignment_Spectrum_Point_Count",
+        "Ambiguous_Candidate_Count",
         "Processing_Time_Seconds",
     ]
     return [{"Metric": metric, "Value": diagnostic.get(metric), "Notes": ""} for metric in metrics]

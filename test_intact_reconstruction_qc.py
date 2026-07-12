@@ -8,6 +8,9 @@ from rna_masshunter.excel_report import write_excel_report
 from rna_masshunter.intact_reconstruction import (
     _apply_split_envelope_merge,
     apply_assignment_dry_run,
+    apply_assignment_eligibility,
+    build_assignment_ambiguous_rows,
+    build_preassignment_comparison_rows,
     run_assignment_sensitivity,
     build_assignment_candidate_audit_rows,
     build_assignment_sensitivity_rows,
@@ -1783,3 +1786,143 @@ def test_mvp598c_sensitivity_does_not_call_grouping_or_evidence_scoring(monkeypa
     monkeypatch.setattr(intact_module, "_evidence_score", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("evidence score recalculated")))
     stats = run_assignment_sensitivity(rows, _sensitivity_config())
     assert stats["Sensitivity_Scenario_Count"] == 4
+
+
+
+def _eligibility_config(apply=False):
+    config = _sensitivity_config()
+    config["competitive_assignment"]["apply_to_comparison_ready"] = apply
+    return config
+
+
+def _eligibility_row(cluster_id="A", stability="stable_selected", tier="Tier_2_supported", balanced=True, ambiguous=False, severe="", group="IG1", representative=True):
+    row = _dry_row(cluster_id, {f"{cluster_id}_p1", f"{cluster_id}_p2"}, {6, 7}, 10, group="CG1")
+    row.update({
+        "Intact_Envelope_Group_ID": group, "In_Neutral_Mass_Search_Range": True,
+        "Intact_Quality_Tier": tier, "Quality_Tier_Rank": {"Tier_1_high_quality": 1, "Tier_2_supported": 2, "Tier_3_weak": 3}.get(tier, 4),
+        "Comparison_Ready_Strict": tier == "Tier_1_high_quality", "Comparison_Ready_Review": tier in {"Tier_1_high_quality", "Tier_2_supported"}, "Comparison_Ready": tier in {"Tier_1_high_quality", "Tier_2_supported"},
+        "Comparison_Representative": representative, "Comparison_Representative_Rank": 1 if representative else None,
+        "Selection_Stability_Status": stability, "Selected_Strict": stability in {"stable_selected", "noncompeting"},
+        "Selected_Balanced": balanced, "Selected_Sensitive": balanced, "Selected_Permissive": True,
+        "Status_Balanced": "selected_primary" if balanced else "would_exclude_independent_peak_shortage",
+        "Independent_Supporting_Peak_Fraction": 1.0 if balanced or ambiguous else 0.0,
+        "Independent_Charge_State_Count": 2 if balanced or ambiguous else 0,
+        "Close_Score_Ambiguity": ambiguous, "Assignment_Confidence": "ambiguous" if ambiguous else "high",
+        "Severe_Limiting_Factors": severe, "Intact_Envelope_QC_Score": 50.0,
+        "Total_Supporting_Intensity": 1000.0, "Reconstructed_Envelope_Intensity": 1000.0,
+        "Intensity_Method": "total_supporting_intensity", "Group_Representative": True,
+    })
+    return row
+
+
+def test_mvp598d_strict_and_review_eligibility_rules():
+    stable = _eligibility_row(tier="Tier_1_high_quality")
+    noncompeting = _eligibility_row("N", stability="noncompeting")
+    balanced = _eligibility_row("B", stability="threshold_sensitive", balanced=True)
+    ambiguous = _eligibility_row("M", stability="ambiguous_across_scenarios", balanced=False, ambiguous=True)
+    tier3 = _eligibility_row("T3", tier="Tier_3_weak")
+    apply_assignment_eligibility([stable, noncompeting, balanced, ambiguous, tier3], _eligibility_config())
+    assert stable["Assignment_Strict_Eligible"] is True
+    assert noncompeting["Assignment_Strict_Eligible"] is True
+    assert balanced["Assignment_Review_Eligible"] is True
+    assert ambiguous["Assignment_Ambiguous"] is True and ambiguous["Assignment_Review_Eligible"] is True
+    assert tier3["Assignment_Strict_Eligible"] is False
+
+
+def test_mvp598d_rejected_and_preassignment_preserved():
+    row = _eligibility_row(stability="stable_excluded", balanced=False)
+    apply_assignment_eligibility([row], _eligibility_config())
+    assert row["Assignment_Rejected"] is True
+    assert row["Preassignment_Comparison_Ready_Review"] is True
+    assert row["Preassignment_Comparison_Ready"] is True
+
+
+def test_mvp598d_apply_false_preserves_formal_ready_and_representative():
+    row = _eligibility_row(stability="stable_excluded", balanced=False)
+    apply_assignment_eligibility([row], _eligibility_config(apply=False))
+    assert row["Comparison_Ready"] is True
+    assert row["Postassignment_Comparison_Ready"] is True
+    assert row["Comparison_Representative"] is True
+    assert row["Comparison_Ready_Changed_By_Assignment"] is False
+
+
+def test_mvp598d_apply_true_updates_ready_and_reselects_representative():
+    old = _eligibility_row("OLD", stability="stable_excluded", balanced=False, representative=True)
+    new = _eligibility_row("NEW", stability="stable_selected", balanced=True, representative=False)
+    new["Envelope_Evidence_Score"] = 20
+    apply_assignment_eligibility([old, new], _eligibility_config(apply=True))
+    assert old["Comparison_Ready"] is False
+    assert old["Postassignment_Comparison_Ready"] is False
+    assert old["Comparison_Representative"] is False
+    assert new["Comparison_Representative"] is True
+    assert new["Postassignment_Comparison_Representative"] is True
+    assert old["Comparison_Representative_Changed"] is True
+    assert new["Comparison_Representative_Changed"] is True
+
+
+def test_mvp598d_reference_audit_target_do_not_change_eligibility():
+    fields = ["Assignment_Strict_Eligible", "Assignment_Review_Eligible", "Assignment_Ambiguous", "Assignment_Rejected"]
+    base = _eligibility_row()
+    annotated = dict(base)
+    annotated.update({"Best_Reference_Label": "reference", "Reference_Mass_Matched": True, "Audit_Matched": True, "Audit_Target_Mass": 15000, "In_Target_Review_Mass_Range": True})
+    apply_assignment_eligibility([base], _eligibility_config())
+    apply_assignment_eligibility([annotated], _eligibility_config())
+    assert [base[f] for f in fields] == [annotated[f] for f in fields]
+
+
+@pytest.mark.parametrize("assignment_filter,expected", [("none", 2), ("all", 2), ("strict", 1), ("review", 2), ("balanced_selected", 1)])
+def test_mvp598d_spectrum_assignment_filters(assignment_filter, expected):
+    strict = _eligibility_row("S", tier="Tier_1_high_quality", balanced=True)
+    review = _eligibility_row("R", stability="ambiguous_across_scenarios", balanced=False, ambiguous=True)
+    apply_assignment_eligibility([strict, review], _eligibility_config())
+    config = _generic_config(mass_spectrum_output={"representatives_only": False, "assignment_filter": assignment_filter})
+    assert len(build_reconstructed_mass_spectrum_rows([strict, review], config)) == expected
+
+
+def test_mvp598d_ambiguous_and_preassignment_builders():
+    ambiguous = _eligibility_row("A", stability="ambiguous_across_scenarios", ambiguous=True)
+    sensitive = _eligibility_row("S", stability="threshold_sensitive")
+    apply_assignment_eligibility([ambiguous, sensitive], _eligibility_config())
+    assert {row["Cluster_ID"] for row in build_assignment_ambiguous_rows([ambiguous, sensitive])} == {"A", "S"}
+    assert len(build_preassignment_comparison_rows([ambiguous, sensitive])) == 2
+
+
+def test_mvp598d_empty_disabled_and_legacy_safe():
+    assert apply_assignment_eligibility([], _eligibility_config())["Assignment_Strict_Eligible_Count"] == 0
+    disabled = _eligibility_config(apply=True); disabled["competitive_assignment"]["enabled"] = False
+    row = _eligibility_row()
+    apply_assignment_eligibility([row], disabled)
+    assert row["Comparison_Ready"] is True
+    config = {"enabled": True, "min_charge": 6, "max_charge": 7, "min_charge_states": 2, "mass_cluster_tolerance_da": 1.0, "intact_reconstruction": {"engine": "legacy_cluster", "neutral_mass_range": {"enabled": True, "min_da": 10000, "max_da": 20000}}}
+    candidates, peaks, _ = reconstruct_intact_masses(PeakTierResult(major=[_rt_peak(15000.0, z, rt=5.0) for z in [6, 7]]), config, {"polarity": "negative"}, None)
+    rows, diagnostics = build_intact_reconstruction_qc(candidates, peaks, config)
+    assert rows and "Assignment_Review_Eligible" in rows[0]
+    assert "Postassignment_Spectrum_Point_Count" in diagnostics[0]
+
+
+def test_mvp598d_excel_sheets_and_names(tmp_path):
+    candidate = _competition_candidate("EXCELD", [6, 7, 8])
+    peaks = [_competition_peak("EXCELD", z, f"p{z}") for z in [6, 7, 8]]
+    report = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
+    workbook = load_workbook(report, read_only=True, data_only=True)
+    try:
+        assert "Assignment_Ambiguous_Candidates" in workbook.sheetnames
+        assert "Preassignment_Comparison" in workbook.sheetnames
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
+    finally:
+        workbook.close()
+
+
+def test_mvp598d_eligibility_performance_smoke():
+    rows = [_eligibility_row(f"C{i}", stability="stable_selected" if i % 2 else "threshold_sensitive") for i in range(10000)]
+    stats = apply_assignment_eligibility(rows, _eligibility_config())
+    assert stats["Assignment_Review_Eligible_Count"] == 10000
+
+
+def test_mvp598d_preassignment_sheet_keeps_pre_ready_when_formal_value_changes():
+    row = _eligibility_row(stability="stable_excluded", balanced=False)
+    apply_assignment_eligibility([row], _eligibility_config(apply=True))
+    projected = build_preassignment_comparison_rows([row])
+    assert row["Comparison_Ready"] is False
+    assert projected[0]["Comparison_Ready"] is True
+    assert projected[0]["Comparison_Representative_Rank"] == 1

@@ -12,6 +12,8 @@ from rna_masshunter.intact_reconstruction import (
     ASSIGNMENT_SENSITIVITY_COLUMNS,
     ASSIGNMENT_STABILITY_COLUMNS,
     ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS,
+    ASSIGNMENT_AMBIGUOUS_COLUMNS,
+    PREASSIGNMENT_COMPARISON_COLUMNS,
     COMPARISON_CANDIDATE_COLUMNS as INTACT_COMPARISON_CANDIDATE_COLUMNS,
     COMPETITION_GROUP_COLUMNS as INTACT_COMPETITION_GROUP_COLUMNS,
     COMPETITION_SCORE_COLUMNS as INTACT_COMPETITION_SCORE_COLUMNS,
@@ -29,6 +31,8 @@ from rna_masshunter.intact_reconstruction import (
     build_assignment_sensitivity_rows,
     build_assignment_stability_rows,
     build_assignment_candidate_audit_rows,
+    build_assignment_ambiguous_rows,
+    build_preassignment_comparison_rows,
     build_intact_comparison_candidate_rows,
     build_intact_competition_group_rows,
     build_intact_competition_score_rows,
@@ -441,6 +445,8 @@ SHEET_DESCRIPTIONS = {
     "Assignment_Sensitivity": "Threshold-only competitive assignment sensitivity scenarios.",
     "Assignment_Stability": "Per-candidate selection stability across assignment scenarios.",
     "Assignment_Candidate_Audit": "Optional audit-mass candidate extraction; does not affect assignment or QC.",
+    "Assignment_Ambiguous_Candidates": "Ambiguous and threshold-sensitive candidates retained for assignment review.",
+    "Preassignment_Comparison": "Comparison representatives before optional assignment eligibility gating.",
     "Theoretical_fragments": "Theoretical RNase digestion fragments and terminal forms.",
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
@@ -809,6 +815,8 @@ def write_excel_report(
     assignment_sensitivity_rows = build_assignment_sensitivity_rows(config.reconstruction or {})
     assignment_stability_rows = build_assignment_stability_rows(intact_qc_rows)
     assignment_candidate_audit_rows = build_assignment_candidate_audit_rows(config.reconstruction or {})
+    assignment_ambiguous_rows = build_assignment_ambiguous_rows(intact_qc_rows)
+    preassignment_comparison_rows = build_preassignment_comparison_rows(intact_qc_rows)
     intact_comparison_rows = build_intact_comparison_candidate_rows(intact_qc_rows)
     intact_target_review_rows = build_target_review_candidate_rows(intact_qc_rows)
     reconstructed_spectrum_rows = build_reconstructed_mass_spectrum_rows(intact_qc_rows, config.reconstruction or {})
@@ -1095,6 +1103,8 @@ def write_excel_report(
         "Assignment_Sensitivity": pd.DataFrame(assignment_sensitivity_rows, columns=ASSIGNMENT_SENSITIVITY_COLUMNS),
         "Assignment_Stability": pd.DataFrame(assignment_stability_rows, columns=ASSIGNMENT_STABILITY_COLUMNS),
         "Assignment_Candidate_Audit": pd.DataFrame(assignment_candidate_audit_rows, columns=ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS),
+        "Assignment_Ambiguous_Candidates": pd.DataFrame(assignment_ambiguous_rows, columns=ASSIGNMENT_AMBIGUOUS_COLUMNS),
+        "Preassignment_Comparison": pd.DataFrame(preassignment_comparison_rows, columns=PREASSIGNMENT_COMPARISON_COLUMNS),
         "Intact_Comparison_Candidates": pd.DataFrame(intact_comparison_rows, columns=INTACT_COMPARISON_CANDIDATE_COLUMNS),
         "Target_Review_Candidates": pd.DataFrame(intact_target_review_rows, columns=INTACT_TARGET_REVIEW_CANDIDATE_COLUMNS),
         "Reconstructed_Mass_Spectrum": pd.DataFrame(reconstructed_spectrum_rows, columns=RECONSTRUCTED_MASS_SPECTRUM_COLUMNS),
@@ -1135,6 +1145,8 @@ def write_excel_report(
             "Assignment_Sensitivity",
             "Assignment_Stability",
             "Assignment_Candidate_Audit",
+            "Assignment_Ambiguous_Candidates",
+            "Preassignment_Comparison",
             "Intact_Comparison_Candidates",
             "Target_Review_Candidates",
             "Reconstructed_Mass_Spectrum",
@@ -1178,6 +1190,8 @@ def write_excel_report(
         "Assignment_Sensitivity": ASSIGNMENT_SENSITIVITY_COLUMNS,
         "Assignment_Stability": ASSIGNMENT_STABILITY_COLUMNS,
         "Assignment_Candidate_Audit": ASSIGNMENT_CANDIDATE_AUDIT_COLUMNS,
+        "Assignment_Ambiguous_Candidates": ASSIGNMENT_AMBIGUOUS_COLUMNS,
+        "Preassignment_Comparison": PREASSIGNMENT_COMPARISON_COLUMNS,
     }
     for sheet_name, value in optional_results.items():
         if sheet_name in {"Index", "Run_summary", "Warnings", "Workflow_Summary"}:
