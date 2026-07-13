@@ -293,6 +293,7 @@ def annotate_ms2(
         "MS2_Modification_Localization_Evidence": localization_rows,
         "MS2_Unmatched_Ion_Audit": unmatched_ion_audit,
         "MS2_Unmatched_Ion_Diagnostics": unmatched_ion_diagnostics,
+        "_MS2_Ambiguous_Audit_Context": {"spectra": spectra},
         "MS2_Theoretical_Ions": [theoretical_ion_row(ion, config) for ion in ions],
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,

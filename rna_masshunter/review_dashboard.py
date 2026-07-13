@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 
 from rna_masshunter.ms2_unmatched_audit import TOP_SHADOW_COLUMNS, primary_unmatched_reason
+from rna_masshunter.ms2_ambiguous_peak_audit import TOP_SHADOW_COLUMNS as AMBIGUOUS_PEAK_TOP_COLUMNS
 
 
 DASHBOARD_NOTE = (
@@ -80,6 +81,7 @@ TOP_CANDIDATE_COLUMNS = [
     "MS2_Identity_Evidence_Reason",
     "MS2_Identity_Warnings",
     *TOP_SHADOW_COLUMNS,
+    *AMBIGUOUS_PEAK_TOP_COLUMNS,
     "Notes",
 ]
 
@@ -259,6 +261,7 @@ def _recommended_next_check(priority: str, has_discriminating: bool, ambiguity_s
 def _build_top_candidates(
     ranking: pd.DataFrame, ambiguity: pd.DataFrame, config: dict[str, Any],
     unmatched_audit_summary: pd.DataFrame | None = None,
+    ambiguous_peak_summary: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if ranking.empty:
         return pd.DataFrame(columns=TOP_CANDIDATE_COLUMNS)
@@ -274,6 +277,15 @@ def _build_top_candidates(
             str(audit_row.get("Candidate_tRNA_Position") if pd.notna(audit_row.get("Candidate_tRNA_Position")) else ""),
         )
         audit_lookup[audit_key] = audit_row.to_dict()
+    ambiguity_frame = ambiguous_peak_summary if ambiguous_peak_summary is not None else pd.DataFrame()
+    ambiguity_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for _, ambiguity_row in ambiguity_frame.iterrows():
+        ambiguity_key = (
+            str(ambiguity_row.get("Modification_ID") or ""),
+            str(ambiguity_row.get("Parent_Fragment_ID") or ""),
+            str(ambiguity_row.get("Candidate_tRNA_Position") if pd.notna(ambiguity_row.get("Candidate_tRNA_Position")) else ""),
+        )
+        ambiguity_lookup[ambiguity_key] = ambiguity_row.to_dict()
     rows: list[dict[str, Any]] = []
     for _, row in ranking.iterrows():
         mod_id = _first_existing(row, ["Modification_ID", "Modification", "modification_id"])
@@ -284,6 +296,7 @@ def _build_top_candidates(
         candidate_trna_position = _first_existing(row, ["Candidate_Positions_In_tRNA", "Candidate_tRNA_Position", "Positions_In_tRNA", "tRNA_Position"] )
         audit_key = (str(mod_id or ""), str(parent_id or ""), str(candidate_trna_position if candidate_trna_position != "" else ""))
         audit_summary = audit_lookup.get(audit_key, {})
+        ambiguity_summary = ambiguity_lookup.get(audit_key, {})
         context_score = _float(_first_existing(row, ["Biological_Context_Score", "Context_Score", "Best_Biological_Context_Score"], 0))
         ambiguity_status = str(_first_existing(row, ["Position_Ambiguity_Status", "Ambiguity_Status", "Position_Status"], ""))
         resolution_basis = str(_first_existing(row, ["Position_Resolution_Basis", "Resolution_Basis"], ""))
@@ -412,6 +425,17 @@ def _build_top_candidates(
                 "Information_Unavailable_Count": audit_summary.get("Information_Unavailable_Count", 0),
                 "Best_Unmatched_Error_ppm": audit_summary.get("Best_Unmatched_Error_ppm", ""),
                 "Unmatched_Ion_Audit_Warnings": audit_summary.get("Audit_Warnings", ""),
+                "Ambiguous_Theoretical_Ion_Count": ambiguity_summary.get("Ambiguous_Theoretical_Ion_Count", 0),
+                "Ambiguous_Peak_Cluster_Count": ambiguity_summary.get("Ambiguous_Peak_Cluster_Count", 0),
+                "Maximum_Ambiguous_Cluster_Size": ambiguity_summary.get("Maximum_Cluster_Size", 0),
+                "Primary_Ambiguity_Pattern": ambiguity_summary.get("Primary_Ambiguity_Pattern", "insufficient_information"),
+                "Ambiguity_Severity": ambiguity_summary.get("Ambiguity_Severity", "unknown"),
+                "Candidate_Specific_Ambiguous_Peak_Count": ambiguity_summary.get("Candidate_Specific_Peak_Count", 0),
+                "Position_Group_Shared_Peak_Count": ambiguity_summary.get("Position_Group_Shared_Peak_Count", 0),
+                "Structural_Isomer_Shared_Peak_Count": ambiguity_summary.get("Structural_Isomer_Shared_Peak_Count", 0),
+                "Cross_Candidate_Shared_Peak_Count": ambiguity_summary.get("Cross_Candidate_Shared_Peak_Count", 0),
+                "Ambiguous_Peak_Recommended_Followup": ambiguity_summary.get("Recommended_Followup", "insufficient_information"),
+                "Ambiguous_Peak_Warnings": ambiguity_summary.get("Ambiguity_Warnings", ""),
                 "Notes": "Review_Priority is for triage order only; Final_Confidence is unchanged.",
             }
         )
@@ -586,7 +610,8 @@ def build_review_dashboard_results(optional_results: dict[str, Any] | None, conf
     ranking = _frame(source.get("Modification_Evidence_Ranking"))
     ambiguity = _frame(source.get("Modification_Ambiguity_Groups"))
     audit_summary = _frame(source.get("MS2_Unmatched_Ion_Summary"))
-    top = _build_top_candidates(ranking, ambiguity, review_config, audit_summary)
+    ambiguous_peak_summary = _frame(source.get("MS2_Ambiguity_Summary"))
+    top = _build_top_candidates(ranking, ambiguity, review_config, audit_summary, ambiguous_peak_summary)
     return {
         "Review_Dashboard": _dashboard(top, ambiguity, ranking),
         "Top_Modification_Candidates": top,

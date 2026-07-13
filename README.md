@@ -263,3 +263,7 @@ A candidate match ID includes theoretical-ion metadata and is not the same as a 
 ### MS/MS unmatched modified-ion audit (shadow)
 
 `MS2_Unmatched_Ion_Audit` and `MS2_Unmatched_Ion_Summary` classify why modified theoretical ions lack an existing observed match. An unmatched ion does not establish that a modification is absent: scan range, formal tolerance, configured intensity thresholds, post-threshold filtering, and fragmentation coverage are reported separately. The audit is not a hard filter, does not alter formal matching, and is disconnected from `Final_Score`, `Final_Confidence`, rank, candidate inclusion, localization, and review priority.
+
+### MS/MS ambiguous nearby-peak clusters (shadow)
+
+`MS2_Ambiguous_Peak_Clusters`, `MS2_Ambiguous_Peak_Detail`, and `MS2_Ambiguity_Summary` audit ambiguous nearby peaks as deterministic physical-peak clusters. Physical peak sharing across candidates is reported separately from competition among theoretical ions. An ambiguous peak neither confirms nor excludes a modification; this shadow audit is not a hard filter, does not alter formal matching, and is disconnected from `Final_Score`, confidence, rank, candidate inclusion, localization, and review priority.

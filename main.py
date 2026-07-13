@@ -14,6 +14,9 @@ from rna_masshunter.modification_search import known_modification_candidate_rows
 from rna_masshunter.modifications import load_modifications, validate_modifications
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.ms2_annotation import annotate_ms2
+from rna_masshunter.ms2_ambiguous_peak_audit import (
+    build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
+)
 from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
 from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_summary
 from rna_masshunter.position_mapper import build_position_map
@@ -291,6 +294,25 @@ def main() -> None:
         optional_results["MS2_Unmatched_Ion_Summary"] = build_unmatched_ion_summary(
             ranking_rows, optional_results.get("MS2_Unmatched_Ion_Audit", []),
         )
+        ambiguity_context = optional_results.pop("_MS2_Ambiguous_Audit_Context", {})
+        ambiguous_clusters, ambiguous_peak_details = build_ambiguous_peak_audit(
+            ambiguity_context.get("spectra", []),
+            optional_results.get("MS2_Unmatched_Ion_Audit", []),
+            optional_results.get("MS2_Modified_Theoretical_Ions", []),
+            ranking_rows, identity_assignment_rows,
+            enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+        )
+        ambiguity_summary = build_ambiguity_summary(ranking_rows, ambiguous_clusters, ambiguous_peak_details)
+        optional_results["MS2_Ambiguous_Peak_Clusters"] = ambiguous_clusters
+        optional_results["MS2_Ambiguous_Peak_Detail"] = ambiguous_peak_details
+        optional_results["MS2_Ambiguity_Summary"] = ambiguity_summary
+        ambiguity_diagnostics = build_ambiguity_diagnostics(
+            ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
+            enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+        )[0]
+        unmatched_diagnostics = optional_results.get("MS2_Unmatched_Ion_Diagnostics") or [{}]
+        unmatched_diagnostics[0].update(ambiguity_diagnostics)
+        optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [
