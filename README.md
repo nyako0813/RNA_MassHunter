@@ -273,3 +273,10 @@ In `MS2_Ambiguous_Peak_Clusters`, `Best_Peak_*` means the diagnostic raw peak cl
 ### MS/MS effective ambiguity stages (shadow)
 
 `MS2_Effective_Ambiguity`, `MS2_Effective_Ambig_Detail`, and `MS2_Effective_Ambig_Summary` separate raw-window multiplicity from ambiguity that remains among positive-intensity peaks, positive peaks inside formal tolerance, and assignments already present in formal match tables. The strongest applicable stage is reported as `formal_match > formal_tolerance > positive_intensity > raw_only > none`. This classification reuses existing results without rematching and is not applied to `Final_Score`, confidence, rank, matching, identity, localization, or review priority.
+
+
+### Fragment MS1 truncation audit (shadow)
+
+`MS1_Truncation_Audit`, `MS1_Truncation_Detail`, and `MS1_Truncation_Summary` capture every pre-truncation Fragment MS1 match and compare the formal `fragment_mapping.max_matches_per_fragment` selection with an unlimited shadow. The formal selection remains `abs(mass_error_ppm)` ascending, then intensity descending; stable ties retain charge-ascending and input-peak order. The audit also compares filter-first, unique-physical-peak, charge-balanced, and tier-first diagnostic selections.
+
+The unlimited shadow reuses the existing fragment filter, known-modification search, and evidence-ranking functions, then reports potential candidate-key, score, confidence, rank, Top-50, and cnm5U 36/37/38 changes. It appends diagnostic columns to `Top_Modification_Candidates` and `MS2_Unmatched_Ion_Diagnostics`. All `Applied_To_Final_Score` fields are `false`: the audit does not replace formal matches, change the configured 20-match cap, or propagate into formal candidates, scores, confidence, rank, localization, or review priority. Missing configuration keys use code defaults: audit enabled, unlimited expanded shadow enabled, and final-score application disabled.

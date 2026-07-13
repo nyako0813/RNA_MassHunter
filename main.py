@@ -1,4 +1,6 @@
 from pathlib import Path
+import time
+import tracemalloc
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
 from rna_masshunter.biological_context import biological_context_priority_rows
@@ -13,6 +15,11 @@ from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masse
 from rna_masshunter.modification_search import known_modification_candidate_rows, search_known_modifications, summarize_known_modification_candidates
 from rna_masshunter.modifications import load_modifications, validate_modifications
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
+from rna_masshunter.ms1_match_truncation_audit import (
+    append_diagnostic_shadow_columns,
+    append_top_shadow_columns,
+    build_ms1_truncation_audit,
+)
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.ms2_ambiguous_peak_audit import (
     build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
@@ -137,6 +144,8 @@ def main() -> None:
     fragment_ms1_matches = []
     known_modification_candidates = []
     known_modification_summary = []
+    ranking_rows = []
+    ms1_audit_context = {}
     sequence = (config.sequence.get("sequence", "") or "").upper().replace("T", "U")
     digestion_enabled = _as_bool(config.digestion.get("enabled"), True)
     fragment_mapping_enabled = _as_bool(config.fragment_mapping.get("enabled"), True)
@@ -179,6 +188,7 @@ def main() -> None:
             peaks,
             config,
             warnings=warnings,
+            audit_context=ms1_audit_context,
         )
         _record_workflow_step(workflow_rows, analysis_mode, "fragment_MS1_mapping", "executed", True, True, output_sheets="Fragment_MS1_matches; Fragment_MS1_filtered; Fragment_MS1_summary", notes=f"matches={len(fragment_ms1_matches)}")
     elif digestion_enabled and fragment_mapping_enabled:
@@ -187,6 +197,7 @@ def main() -> None:
             peaks,
             config,
             warnings=warnings,
+            audit_context=ms1_audit_context,
         )
         _record_workflow_step(workflow_rows, analysis_mode, "fragment_MS1_mapping", "executed", True, True, output_sheets="Fragment_MS1_matches; Fragment_MS1_filtered; Fragment_MS1_summary", notes=f"matches={len(fragment_ms1_matches)}")
     else:
@@ -363,6 +374,39 @@ def main() -> None:
         optional_results.pop("_MS2_Effective_Ambiguity_Candidate_Summary", None)
         _record_workflow_step(workflow_rows, analysis_mode, "review_dashboard", "executed", True, True, output_sheets="Review_*")
 
+    ms1_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Truncation_Audit"), True)
+    ms1_shadow_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Expanded_Shadow_Simulation"), True)
+    if not intact_only and ms1_audit_enabled and ms1_shadow_enabled and ms1_audit_context:
+        tracemalloc.start()
+        ms1_shadow_started = time.perf_counter()
+        ms1_audit = build_ms1_truncation_audit(
+            context=ms1_audit_context,
+            config=config,
+            modifications=modifications,
+            intact_results=intact_results,
+            baseline_matches=fragment_ms1_matches,
+            baseline_candidates=known_modification_candidates,
+            baseline_ranking=ranking_rows,
+            ms2_results=optional_results,
+            rule_set=rule_set,
+            pathways=pathways,
+        )
+        ms1_shadow_seconds = time.perf_counter() - ms1_shadow_started
+        _, ms1_shadow_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        ms1_audit["summary"]["Shadow_Additional_Time_Seconds"] = ms1_shadow_seconds
+        ms1_audit["summary"]["Shadow_Peak_Tracked_Memory_MiB"] = ms1_shadow_peak_bytes / (1024 * 1024)
+        ms1_audit["summary_rows"][0]["Shadow_Additional_Time_Seconds"] = ms1_shadow_seconds
+        ms1_audit["summary_rows"][0]["Shadow_Peak_Tracked_Memory_MiB"] = ms1_shadow_peak_bytes / (1024 * 1024)
+        optional_results["MS1_Truncation_Audit"] = ms1_audit["audit_rows"]
+        optional_results["MS1_Truncation_Detail"] = ms1_audit["detail_rows"]
+        optional_results["MS1_Truncation_Summary"] = ms1_audit["summary_rows"]
+        optional_results["Top_Modification_Candidates"] = append_top_shadow_columns(
+            optional_results.get("Top_Modification_Candidates"), ms1_audit
+        )
+        optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_diagnostic_shadow_columns(
+            optional_results.get("MS2_Unmatched_Ion_Diagnostics"), ms1_audit
+        )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
         config=config,

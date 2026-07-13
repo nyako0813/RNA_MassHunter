@@ -79,6 +79,12 @@ from rna_masshunter.ms2_zero_intensity_audit import (
     SUMMARY_COLUMNS as MS2_ZERO_INTENSITY_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS,
 )
+from rna_masshunter.ms1_match_truncation_audit import (
+    AUDIT_COLUMNS as MS1_TRUNCATION_AUDIT_COLUMNS,
+    DETAIL_COLUMNS as MS1_TRUNCATION_DETAIL_COLUMNS,
+    SUMMARY_COLUMNS as MS1_TRUNCATION_SUMMARY_COLUMNS,
+    DIAGNOSTIC_COLUMNS as MS1_TRUNCATION_DIAGNOSTIC_COLUMNS,
+)
 from rna_masshunter.ms2_effective_ambiguity import (
     CLUSTER_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_COLUMNS,
     DETAIL_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_DETAIL_COLUMNS,
@@ -479,6 +485,9 @@ SHEET_DESCRIPTIONS = {
     "Fragment_MS1_matches": "MS1 peak matches for unmodified theoretical fragments.",
     "Fragment_MS1_filtered": "Filtered MS1 fragment matches for practical review.",
     "Fragment_MS1_summary": "Best MS1 match per fragment with match counts.",
+    "MS1_Truncation_Audit": "Fragment-level shadow audit of matches retained and discarded by the formal MS1 cap.",
+    "MS1_Truncation_Detail": "Pre-truncation Fragment MS1 match detail; formal matching and scoring are unchanged.",
+    "MS1_Truncation_Summary": "Run-level unlimited-shadow comparison and truncation risk recommendation.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
@@ -1223,7 +1232,10 @@ def write_excel_report(
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
-        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS,
+        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS,
+        "MS1_Truncation_Audit": MS1_TRUNCATION_AUDIT_COLUMNS,
+        "MS1_Truncation_Detail": MS1_TRUNCATION_DETAIL_COLUMNS,
+        "MS1_Truncation_Summary": MS1_TRUNCATION_SUMMARY_COLUMNS,
         "MS2_Ambiguous_Peak_Clusters": MS2_AMBIGUOUS_CLUSTER_COLUMNS,
         "MS2_Ambiguous_Peak_Detail": MS2_AMBIGUOUS_DETAIL_COLUMNS,
         "MS2_Ambiguity_Summary": MS2_AMBIGUITY_SUMMARY_COLUMNS,

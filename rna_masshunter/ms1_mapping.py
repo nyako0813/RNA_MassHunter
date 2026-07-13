@@ -48,6 +48,18 @@ def _coerce_charge(value: Any, default: int) -> int:
         return default
 
 
+def retention_sort_key(item: FragmentMS1Match) -> tuple[float, float]:
+    """Return the unchanged formal truncation key: abs ppm asc, intensity desc."""
+    return (abs(item.mass_error_ppm), -item.intensity)
+
+
+def _physical_peak_id(peak: Peak, peak_index: int) -> str:
+    scan_id = str(getattr(peak, "scan_id", None) or "no_scan")
+    rt = getattr(peak, "rt", None)
+    rt_text = "" if rt is None else f"{float(rt):.8f}"
+    return f"PK_{peak_index:06d}_{scan_id}_{rt_text}_{float(peak.mz):.8f}"
+
+
 def _eligible_peaks(peaks: list[Peak], mapping_config: dict[str, Any]) -> list[Peak]:
     if not mapping_config.get("use_peak_tiers", True):
         return list(peaks)
@@ -71,6 +83,7 @@ def map_fragments_to_ms1_peaks(
     peaks: list[Peak],
     config: RunConfig,
     warnings: list[dict[str, Any]] | None = None,
+    audit_context: dict[str, Any] | None = None,
 ) -> list[FragmentMS1Match]:
     mapping_config = config.fragment_mapping or {}
     if not mapping_config.get("enabled", True):
@@ -86,6 +99,17 @@ def map_fragments_to_ms1_peaks(
         if warnings is not None:
             add_warning(warnings, "WARNING", "ms1_mapping", "fragment_mapping.enabled is true but MS1 peaks are empty.")
     if missing_inputs:
+        if audit_context is not None:
+            configured_max = _coerce_charge(mapping_config.get("max_matches_per_fragment"), 20)
+            if configured_max < 1:
+                configured_max = 20
+            audit_context["fragments"] = [
+                {"fragment": fragment, "ranked_matches": [], "configured_max_matches": configured_max}
+                for fragment in fragments
+            ]
+            audit_context["configured_max_matches"] = configured_max
+            audit_context["eligible_peak_count"] = 0
+            audit_context["sort_key"] = "(abs(mass_error_ppm) asc, intensity desc); stable ties use charge asc then eligible peak input order"
         return []
 
     polarity = str(mapping_config.get("polarity", "auto") or "auto").lower()
@@ -118,6 +142,14 @@ def map_fragments_to_ms1_peaks(
     if not eligible_peaks:
         if warnings is not None:
             add_warning(warnings, "WARNING", "ms1_mapping", "No MS1 peaks remained after fragment_mapping peak tier filtering.")
+        if audit_context is not None:
+            audit_context["fragments"] = [
+                {"fragment": fragment, "ranked_matches": [], "configured_max_matches": max_matches}
+                for fragment in fragments
+            ]
+            audit_context["configured_max_matches"] = max_matches
+            audit_context["eligible_peak_count"] = 0
+            audit_context["sort_key"] = "(abs(mass_error_ppm) asc, intensity desc); stable ties use charge asc then eligible peak input order"
         return []
 
     matches: list[FragmentMS1Match] = []
@@ -125,14 +157,13 @@ def map_fragments_to_ms1_peaks(
         fragment_matches: list[FragmentMS1Match] = []
         for charge in range(min_charge, max_charge + 1):
             theoretical_mz = theoretical_mz_from_mass(fragment.unmodified_mass, charge, polarity)
-            for peak in eligible_peaks:
+            for peak_index, peak in enumerate(eligible_peaks, start=1):
                 observed_mz = float(getattr(peak, "mz"))
                 error_ppm = ppm_error(observed_mz, theoretical_mz)
                 if abs(error_ppm) > tolerance_ppm:
                     continue
                 error_da = observed_mz - theoretical_mz
-                fragment_matches.append(
-                    FragmentMS1Match(
+                match = FragmentMS1Match(
                         match_id=f"{fragment.fragment_id}_z{charge}_{len(fragment_matches) + 1}",
                         fragment_id=fragment.fragment_id,
                         target_id=fragment.target_id,
@@ -156,10 +187,26 @@ def map_fragments_to_ms1_peaks(
                         peak_tier=getattr(peak, "tier", None),
                         confidence=_confidence(error_ppm, tolerance_ppm, getattr(peak, "tier", None)),
                     )
-                )
+                setattr(match, "_audit_peak_index", peak_index)
+                setattr(match, "_audit_physical_peak_id", _physical_peak_id(peak, peak_index))
+                setattr(match, "_audit_generation_order", len(fragment_matches) + 1)
+                fragment_matches.append(match)
+
+        ranked_for_audit = sorted(fragment_matches, key=retention_sort_key)
+        if audit_context is not None:
+            audit_context.setdefault("fragments", []).append(
+                {
+                    "fragment": fragment,
+                    "ranked_matches": list(ranked_for_audit),
+                    "configured_max_matches": max_matches,
+                }
+            )
+            audit_context["sort_key"] = "(abs(mass_error_ppm) asc, intensity desc); stable ties use charge asc then eligible peak input order"
+            audit_context["configured_max_matches"] = max_matches
+            audit_context["eligible_peak_count"] = len(eligible_peaks)
 
         if len(fragment_matches) > max_matches:
-            fragment_matches.sort(key=lambda item: (abs(item.mass_error_ppm), -item.intensity))
+            fragment_matches.sort(key=retention_sort_key)
             if warnings is not None:
                 add_warning(
                     warnings,
