@@ -15,6 +15,7 @@ from rna_masshunter.modifications import load_modifications, validate_modificati
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
+from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_summary
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
@@ -287,6 +288,9 @@ def main() -> None:
         optional_results["Biological_Prior_Diagnostics"] = position_diagnostics
         optional_results["MS2_Modification_Identity"] = identity_rows
         optional_results["MS2_Identity_Peak_Assignments"] = identity_assignment_rows
+        optional_results["MS2_Unmatched_Ion_Summary"] = build_unmatched_ion_summary(
+            ranking_rows, optional_results.get("MS2_Unmatched_Ion_Audit", []),
+        )
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [

@@ -259,3 +259,7 @@ MVP-5.9.8d adds assignment strict/review eligibility and can optionally apply it
 ### MS/MS identity physical peak sharing (shadow)
 
 A candidate match ID includes theoretical-ion metadata and is not the same as a physical observed peak. Identity shadow evaluation audits physical peak sharing across candidates. Peaks shared by structural isomers are group-level evidence and are not counted repeatedly as individual structure evidence. Group-level localization status is a ceiling for candidate-level position resolution. These fields remain shadow-only and do not change the formal score, confidence, rank, review priority, matching, or localization results.
+
+### MS/MS unmatched modified-ion audit (shadow)
+
+`MS2_Unmatched_Ion_Audit` and `MS2_Unmatched_Ion_Summary` classify why modified theoretical ions lack an existing observed match. An unmatched ion does not establish that a modification is absent: scan range, formal tolerance, configured intensity thresholds, post-threshold filtering, and fragmentation coverage are reported separately. The audit is not a hard filter, does not alter formal matching, and is disconnected from `Final_Score`, `Final_Confidence`, rank, candidate inclusion, localization, and review priority.

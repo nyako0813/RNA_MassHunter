@@ -13,6 +13,7 @@ from rna_masshunter.models import Fragment, MS2IonMatch, MS2SpectrumInfo, Theore
 from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 from rna_masshunter.mzml_diagnostics import _rt_minutes
 from rna_masshunter.mzml_reader import iter_spectra
+from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_audit
 from rna_masshunter.warnings_manager import add_warning
 
 MS2_SUMMARY_COLUMNS = [
@@ -245,6 +246,9 @@ def annotate_ms2(
     modified_ions = generate_modified_theoretical_ions(parent_rows, config, base_masses)
     modified_matches = match_modified_ions(spectra, modified_ions, config)
     localization_rows = build_localization_evidence(modified_ions, modified_matches)
+    unmatched_ion_audit, unmatched_ion_diagnostics = build_unmatched_ion_audit(
+        spectra, modified_ions, modified_matches, config, enabled=True,
+    )
 
     if not spectra:
         spectrum_rows = [{
@@ -287,6 +291,8 @@ def annotate_ms2(
         "MS2_Modified_Theoretical_Ions": modified_ions,
         "MS2_Modified_Ion_Matches": modified_matches,
         "MS2_Modification_Localization_Evidence": localization_rows,
+        "MS2_Unmatched_Ion_Audit": unmatched_ion_audit,
+        "MS2_Unmatched_Ion_Diagnostics": unmatched_ion_diagnostics,
         "MS2_Theoretical_Ions": [theoretical_ion_row(ion, config) for ion in ions],
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,
@@ -327,6 +333,12 @@ def extract_ms2_spectra(
             base_peak_mz = float(mz_array[raw_base_peak_index]) if raw_base_peak_index is not None else None
             base_peak_intensity = float(intensity_array[raw_base_peak_index]) if raw_base_peak_index is not None else None
             total_ion_current = float(np.sum(intensity_array)) if intensity_array.size else 0.0
+            raw_peaks = [(float(mz), float(intensity)) for mz, intensity in zip(mz_array, intensity_array, strict=False)]
+            scan_mz_min, scan_mz_max = _scan_window(spectrum)
+            effective_intensity_threshold = max(
+                min_intensity,
+                float(base_peak_intensity or 0.0) * min_relative_percent / 100.0,
+            )
 
             if intensity_array.size:
                 mask = intensity_array >= min_intensity
@@ -354,6 +366,9 @@ def extract_ms2_spectra(
                 base_peak_intensity=base_peak_intensity,
                 total_ion_current=total_ion_current,
                 peaks=[(float(mz), float(intensity)) for mz, intensity in zip(mz_array, intensity_array, strict=False)],
+                raw_peaks=raw_peaks, scan_mz_min=scan_mz_min, scan_mz_max=scan_mz_max,
+                effective_intensity_threshold=effective_intensity_threshold,
+                threshold_information_available=True,
             ))
     except Exception as exc:
         if warnings is not None:
@@ -911,6 +926,19 @@ def _unmatched_row(
         "Possible_Interpretation": interpretation,
         "Comment": comment,
     }
+
+
+def _scan_window(spectrum: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Read acquisition scan bounds only when explicit mzML metadata is present."""
+    scans = (spectrum.get("scanList") or {}).get("scan") or []
+    for scan in scans:
+        windows = ((scan or {}).get("scanWindowList") or {}).get("scanWindow") or []
+        for window in windows:
+            lower = _safe_float((window or {}).get("scan window lower limit"))
+            upper = _safe_float((window or {}).get("scan window upper limit"))
+            if lower is not None and upper is not None:
+                return lower, upper
+    return None, None
 
 
 def _precursor_info(spectrum: dict[str, Any]) -> dict[str, Any]:

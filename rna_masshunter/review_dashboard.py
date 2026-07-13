@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from rna_masshunter.ms2_unmatched_audit import TOP_SHADOW_COLUMNS, primary_unmatched_reason
+
 
 DASHBOARD_NOTE = (
     "Review dashboard prioritizes candidates for manual review; it does not confirm modification identity or position."
@@ -77,6 +79,7 @@ TOP_CANDIDATE_COLUMNS = [
     "Shadow_MS2_Identity_Priority",
     "MS2_Identity_Evidence_Reason",
     "MS2_Identity_Warnings",
+    *TOP_SHADOW_COLUMNS,
     "Notes",
 ]
 
@@ -253,12 +256,24 @@ def _recommended_next_check(priority: str, has_discriminating: bool, ambiguity_s
     return "Review curated source and biological context columns."
 
 
-def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
+def _build_top_candidates(
+    ranking: pd.DataFrame, ambiguity: pd.DataFrame, config: dict[str, Any],
+    unmatched_audit_summary: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     if ranking.empty:
         return pd.DataFrame(columns=TOP_CANDIDATE_COLUMNS)
 
     max_candidates = int(config.get("max_top_candidates", 50) or 50)
     thresholds = config.get("review_priority_thresholds") or {}
+    audit_frame = unmatched_audit_summary if unmatched_audit_summary is not None else pd.DataFrame()
+    audit_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for _, audit_row in audit_frame.iterrows():
+        audit_key = (
+            str(audit_row.get("Modification_ID") or ""),
+            str(audit_row.get("Parent_Fragment_ID") or ""),
+            str(audit_row.get("Candidate_tRNA_Position") if pd.notna(audit_row.get("Candidate_tRNA_Position")) else ""),
+        )
+        audit_lookup[audit_key] = audit_row.to_dict()
     rows: list[dict[str, Any]] = []
     for _, row in ranking.iterrows():
         mod_id = _first_existing(row, ["Modification_ID", "Modification", "modification_id"])
@@ -266,6 +281,9 @@ def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config
         group_id = _first_existing(row, ["Ambiguity_Group_ID", "Group_ID", "ambiguity_group_id"])
         final_score = _float(_first_existing(row, ["Final_Score", "Score", "Ranking_Score", "Best_Final_Score"], 0))
         final_confidence = _first_existing(row, ["Final_Confidence", "Confidence", "Best_Final_Confidence"])
+        candidate_trna_position = _first_existing(row, ["Candidate_Positions_In_tRNA", "Candidate_tRNA_Position", "Positions_In_tRNA", "tRNA_Position"] )
+        audit_key = (str(mod_id or ""), str(parent_id or ""), str(candidate_trna_position if candidate_trna_position != "" else ""))
+        audit_summary = audit_lookup.get(audit_key, {})
         context_score = _float(_first_existing(row, ["Biological_Context_Score", "Context_Score", "Best_Biological_Context_Score"], 0))
         ambiguity_status = str(_first_existing(row, ["Position_Ambiguity_Status", "Ambiguity_Status", "Position_Status"], ""))
         resolution_basis = str(_first_existing(row, ["Position_Resolution_Basis", "Resolution_Basis"], ""))
@@ -323,7 +341,7 @@ def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config
                 "Modification_Name": _first_existing(row, ["Modification_Name", "Name", "modification_name"]),
                 "Parent_Fragment_ID": parent_id,
                 "Parent_Sequence": _first_existing(row, ["Parent_Sequence", "Sequence", "parent_sequence"]),
-                "Candidate_Positions_In_tRNA": _first_existing(row, ["Candidate_Positions_In_tRNA", "Candidate_tRNA_Position", "Positions_In_tRNA", "tRNA_Position"]),
+                "Candidate_Positions_In_tRNA": candidate_trna_position,
                 "Candidate_Positions_In_Parent": _first_existing(row, ["Candidate_Positions_In_Parent", "Candidate_Position_In_Parent", "Positions_In_Parent", "Parent_Position"]),
                 "Best_Final_Score": final_score,
                 "Best_Final_Confidence": final_confidence,
@@ -383,6 +401,17 @@ def _build_top_candidates(ranking: pd.DataFrame, ambiguity: pd.DataFrame, config
                 "Shadow_MS2_Identity_Priority": row.get("Shadow_MS2_Identity_Priority", ""),
                 "MS2_Identity_Evidence_Reason": row.get("MS2_Identity_Evidence_Reason", ""),
                 "MS2_Identity_Warnings": row.get("MS2_Identity_Warnings", ""),
+                "Total_Modified_Theoretical_Ion_Count": audit_summary.get("Total_Modified_Theoretical_Ion_Count", 0),
+                "Matched_Modified_Theoretical_Ion_Count": audit_summary.get("Matched_Modified_Theoretical_Ion_Count", 0),
+                "Unmatched_Modified_Theoretical_Ion_Count": audit_summary.get("Unmatched_Modified_Theoretical_Ion_Count", 0),
+                "Primary_Unmatched_Reason": primary_unmatched_reason(audit_summary),
+                "Outside_Scan_Range_Count": audit_summary.get("Outside_Scan_Range_Count", 0),
+                "No_Peak_In_Window_Count": audit_summary.get("No_Peak_In_Window_Count", 0),
+                "Nearest_Peak_Outside_Tolerance_Count": audit_summary.get("Nearest_Peak_Outside_Tolerance_Count", 0),
+                "Below_Threshold_Count": audit_summary.get("Below_Threshold_Count", 0),
+                "Information_Unavailable_Count": audit_summary.get("Information_Unavailable_Count", 0),
+                "Best_Unmatched_Error_ppm": audit_summary.get("Best_Unmatched_Error_ppm", ""),
+                "Unmatched_Ion_Audit_Warnings": audit_summary.get("Audit_Warnings", ""),
                 "Notes": "Review_Priority is for triage order only; Final_Confidence is unchanged.",
             }
         )
@@ -556,7 +585,8 @@ def build_review_dashboard_results(optional_results: dict[str, Any] | None, conf
     source = optional_results or {}
     ranking = _frame(source.get("Modification_Evidence_Ranking"))
     ambiguity = _frame(source.get("Modification_Ambiguity_Groups"))
-    top = _build_top_candidates(ranking, ambiguity, review_config)
+    audit_summary = _frame(source.get("MS2_Unmatched_Ion_Summary"))
+    top = _build_top_candidates(ranking, ambiguity, review_config, audit_summary)
     return {
         "Review_Dashboard": _dashboard(top, ambiguity, ranking),
         "Top_Modification_Candidates": top,
