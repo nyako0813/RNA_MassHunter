@@ -73,6 +73,12 @@ from rna_masshunter.ms2_unmatched_audit import (
     SUMMARY_COLUMNS as MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS,
 )
+from rna_masshunter.ms2_zero_intensity_audit import (
+    SPECTRA_COLUMNS as MS2_ZERO_INTENSITY_SPECTRA_COLUMNS,
+    DETAIL_COLUMNS as MS2_ZERO_INTENSITY_DETAIL_COLUMNS,
+    SUMMARY_COLUMNS as MS2_ZERO_INTENSITY_SUMMARY_COLUMNS,
+    DIAGNOSTIC_COLUMNS as MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS,
+)
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -482,6 +488,9 @@ SHEET_DESCRIPTIONS = {
     "MS2_Ambiguous_Peak_Clusters": "Shadow theoretical-ion peak clusters for ambiguous nearby raw peaks.",
     "MS2_Ambiguous_Peak_Detail": "Per-physical-peak candidate sharing and theoretical-ion competition within ambiguous clusters.",
     "MS2_Ambiguity_Summary": "Candidate-level shadow summary of ambiguous nearby-peak cluster patterns.",
+    "MS2_Zero_Intensity_Spectra": "Per-spectrum shadow trace of decoded, parsed, and annotation-input MS2 intensity states.",
+    "MS2_Zero_Intensity_Detail": "Per-raw-peak shadow trace of zero intensity provenance and existing evidence use.",
+    "MS2_Zero_Intensity_Summary": "Run-level shadow diagnostic of zero-intensity origin, impact, and nonzero simulation.",
     "Biological_Prior_Diagnostics": "Run counts for diagnostic biological position prior evaluation.",
     "Biological_Context_Priorities": "Biological context settings used for generic candidate prioritization.",
     "Context_Supported_Candidates": "Ranking candidates receiving a user-configured biological context boost.",
@@ -1205,10 +1214,13 @@ def write_excel_report(
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
-        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS,
+        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS,
         "MS2_Ambiguous_Peak_Clusters": MS2_AMBIGUOUS_CLUSTER_COLUMNS,
         "MS2_Ambiguous_Peak_Detail": MS2_AMBIGUOUS_DETAIL_COLUMNS,
         "MS2_Ambiguity_Summary": MS2_AMBIGUITY_SUMMARY_COLUMNS,
+        "MS2_Zero_Intensity_Spectra": MS2_ZERO_INTENSITY_SPECTRA_COLUMNS,
+        "MS2_Zero_Intensity_Detail": MS2_ZERO_INTENSITY_DETAIL_COLUMNS,
+        "MS2_Zero_Intensity_Summary": MS2_ZERO_INTENSITY_SUMMARY_COLUMNS,
         "Biological_Prior_Diagnostics": BIOLOGICAL_PRIOR_DIAGNOSTIC_COLUMNS,
         "Biological_Context_Priorities": CONTEXT_PRIORITY_COLUMNS,
         "Context_Supported_Candidates": RANKING_COLUMNS + SHADOW_RANKING_COLUMNS + IDENTITY_SHADOW_COLUMNS,

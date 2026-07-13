@@ -6,6 +6,7 @@ import pandas as pd
 
 from rna_masshunter.ms2_unmatched_audit import TOP_SHADOW_COLUMNS, primary_unmatched_reason
 from rna_masshunter.ms2_ambiguous_peak_audit import TOP_SHADOW_COLUMNS as AMBIGUOUS_PEAK_TOP_COLUMNS
+from rna_masshunter.ms2_zero_intensity_audit import TOP_SHADOW_COLUMNS as ZERO_INTENSITY_TOP_COLUMNS
 
 
 DASHBOARD_NOTE = (
@@ -83,6 +84,7 @@ TOP_CANDIDATE_COLUMNS = [
     *TOP_SHADOW_COLUMNS,
     *AMBIGUOUS_PEAK_TOP_COLUMNS,
     "Notes",
+    *ZERO_INTENSITY_TOP_COLUMNS,
 ]
 
 DECISION_COLUMNS = [
@@ -211,6 +213,13 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _position_key(value: Any) -> str:
+    number = _float(value, float("nan"))
+    if pd.notna(number) and number > 0 and float(number).is_integer():
+        return str(int(number))
+    return str(value if value not in (None, "") and not pd.isna(value) else "")
+
+
 def _contains_any(value: Any, needles: list[str]) -> bool:
     text = str(value or "").lower()
     return any(needle.lower() in text for needle in needles)
@@ -262,6 +271,7 @@ def _build_top_candidates(
     ranking: pd.DataFrame, ambiguity: pd.DataFrame, config: dict[str, Any],
     unmatched_audit_summary: pd.DataFrame | None = None,
     ambiguous_peak_summary: pd.DataFrame | None = None,
+    zero_intensity_summary: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if ranking.empty:
         return pd.DataFrame(columns=TOP_CANDIDATE_COLUMNS)
@@ -286,6 +296,12 @@ def _build_top_candidates(
             str(ambiguity_row.get("Candidate_tRNA_Position") if pd.notna(ambiguity_row.get("Candidate_tRNA_Position")) else ""),
         )
         ambiguity_lookup[ambiguity_key] = ambiguity_row.to_dict()
+    zero_frame = zero_intensity_summary if zero_intensity_summary is not None else pd.DataFrame()
+    zero_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for _, zero_row in zero_frame.iterrows():
+        zero_position = _position_key(zero_row.get("Candidate_tRNA_Position"))
+        zero_key = (str(zero_row.get("Modification_ID") or ""), str(zero_row.get("Parent_Fragment_ID") or ""), zero_position)
+        zero_lookup[zero_key] = zero_row.to_dict()
     rows: list[dict[str, Any]] = []
     for _, row in ranking.iterrows():
         mod_id = _first_existing(row, ["Modification_ID", "Modification", "modification_id"])
@@ -297,6 +313,7 @@ def _build_top_candidates(
         audit_key = (str(mod_id or ""), str(parent_id or ""), str(candidate_trna_position if candidate_trna_position != "" else ""))
         audit_summary = audit_lookup.get(audit_key, {})
         ambiguity_summary = ambiguity_lookup.get(audit_key, {})
+        zero_summary = zero_lookup.get((str(mod_id or ""), str(parent_id or ""), _position_key(candidate_trna_position)), {})
         context_score = _float(_first_existing(row, ["Biological_Context_Score", "Context_Score", "Best_Biological_Context_Score"], 0))
         ambiguity_status = str(_first_existing(row, ["Position_Ambiguity_Status", "Ambiguity_Status", "Position_Status"], ""))
         resolution_basis = str(_first_existing(row, ["Position_Resolution_Basis", "Resolution_Basis"], ""))
@@ -437,6 +454,15 @@ def _build_top_candidates(
                 "Ambiguous_Peak_Recommended_Followup": ambiguity_summary.get("Recommended_Followup", "insufficient_information"),
                 "Ambiguous_Peak_Warnings": ambiguity_summary.get("Ambiguity_Warnings", ""),
                 "Notes": "Review_Priority is for triage order only; Final_Confidence is unchanged.",
+                "Zero_Intensity_Affected": zero_summary.get("Zero_Intensity_Affected", False),
+                "Zero_Intensity_Cluster_Count": zero_summary.get("Zero_Intensity_Cluster_Count", 0),
+                "All_Zero_Cluster_Count": zero_summary.get("All_Zero_Cluster_Count", 0),
+                "Zero_Intensity_Best_Match_Count": zero_summary.get("Zero_Intensity_Best_Match_Count", 0),
+                "Positive_Intensity_Support_Count": zero_summary.get("Positive_Intensity_Support_Count", 0),
+                "Zero_Intensity_Dependence": zero_summary.get("Zero_Intensity_Dependence", "none"),
+                "Zero_Intensity_Audit_Severity": zero_summary.get("Zero_Intensity_Audit_Severity", "none"),
+                "Zero_Intensity_Audit_Recommendation": zero_summary.get("Zero_Intensity_Audit_Recommendation", "no_action_needed"),
+                "Zero_Intensity_Audit_Applied_To_Final_Score": False,
             }
         )
 
@@ -611,7 +637,10 @@ def build_review_dashboard_results(optional_results: dict[str, Any] | None, conf
     ambiguity = _frame(source.get("Modification_Ambiguity_Groups"))
     audit_summary = _frame(source.get("MS2_Unmatched_Ion_Summary"))
     ambiguous_peak_summary = _frame(source.get("MS2_Ambiguity_Summary"))
-    top = _build_top_candidates(ranking, ambiguity, review_config, audit_summary, ambiguous_peak_summary)
+    zero_intensity_summary = _frame(source.get("_MS2_Zero_Intensity_Candidate_Summary"))
+    top = _build_top_candidates(
+        ranking, ambiguity, review_config, audit_summary, ambiguous_peak_summary, zero_intensity_summary,
+    )
     return {
         "Review_Dashboard": _dashboard(top, ambiguity, ranking),
         "Top_Modification_Candidates": top,

@@ -19,6 +19,9 @@ from rna_masshunter.ms2_ambiguous_peak_audit import (
 )
 from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
 from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_summary
+from rna_masshunter.ms2_zero_intensity_audit import (
+    build_zero_intensity_audit, update_top50_affected,
+)
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
@@ -312,6 +315,24 @@ def main() -> None:
         )[0]
         unmatched_diagnostics = optional_results.get("MS2_Unmatched_Ion_Diagnostics") or [{}]
         unmatched_diagnostics[0].update(ambiguity_diagnostics)
+        zero_context = optional_results.pop("_MS2_Zero_Intensity_Audit_Context", {})
+        zero_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Zero_Intensity_Audit"), True)
+        nonzero_simulation = _as_bool(config.ms2_annotation.get("Enable_Nonzero_Shadow_Simulation"), True)
+        report_row_limit = int(getattr(config, "reporting", {}).get("max_excel_rows_per_sheet", 100000) or 100000)
+        configured_zero_limit = int(config.ms2_annotation.get("max_zero_intensity_detail_rows", report_row_limit) or report_row_limit)
+        max_zero_detail_rows = min(configured_zero_limit, report_row_limit)
+        zero_spectra, zero_detail, zero_summary, zero_candidates, zero_diagnostics = build_zero_intensity_audit(
+            zero_context, ranking_rows, optional_results.get("MS2_Ion_Matches", []),
+            optional_results.get("MS2_Modified_Ion_Matches", []), identity_assignment_rows,
+            optional_results.get("MS2_Modification_Localization_Evidence", []),
+            ambiguous_clusters, ambiguous_peak_details, enabled=zero_enabled,
+            nonzero_simulation=nonzero_simulation, max_detail_rows=max_zero_detail_rows,
+        )
+        optional_results["MS2_Zero_Intensity_Spectra"] = zero_spectra
+        optional_results["MS2_Zero_Intensity_Detail"] = zero_detail
+        optional_results["MS2_Zero_Intensity_Summary"] = zero_summary
+        optional_results["_MS2_Zero_Intensity_Candidate_Summary"] = zero_candidates
+        unmatched_diagnostics[0].update(zero_diagnostics[0])
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
@@ -319,7 +340,10 @@ def main() -> None:
             row for row in ranking_rows if float(row.get("Biological_Context_Score") or 0.0) > 0
         ]
         _record_workflow_step(workflow_rows, analysis_mode, "biological_context", "executed" if _as_bool(config.biological_context.get("enabled"), True) else "disabled_by_config", _as_bool(config.biological_context.get("enabled"), True), True, output_sheets="Biological_Context_Priorities; Context_Supported_Candidates")
-        optional_results.update(build_review_dashboard_results(optional_results, config))
+        review_results = build_review_dashboard_results(optional_results, config)
+        optional_results.update(review_results)
+        update_top50_affected(zero_summary, review_results.get("Top_Modification_Candidates", []))
+        optional_results.pop("_MS2_Zero_Intensity_Candidate_Summary", None)
         _record_workflow_step(workflow_rows, analysis_mode, "review_dashboard", "executed", True, True, output_sheets="Review_*")
 
     report_path = write_excel_report(

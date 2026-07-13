@@ -14,6 +14,9 @@ from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 from rna_masshunter.mzml_diagnostics import _rt_minutes
 from rna_masshunter.mzml_reader import iter_spectra
 from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_audit
+from rna_masshunter.ms2_zero_intensity_audit import (
+    capture_source_spectrum, record_parsed_spectrum, record_parser_error,
+)
 from rna_masshunter.warnings_manager import add_warning
 
 MS2_SUMMARY_COLUMNS = [
@@ -239,7 +242,10 @@ def annotate_ms2(
     if not _as_bool(ms2_config.get("enabled"), True):
         return {}
 
-    spectra = extract_ms2_spectra(mzml_path, ms2_config, warnings) if mzml_path else []
+    zero_intensity_context: dict[str, Any] = {"source_spectra": []}
+    spectra = extract_ms2_spectra(
+        mzml_path, ms2_config, warnings, zero_intensity_context,
+    ) if mzml_path else []
     ions = generate_theoretical_ms2_ions(theoretical_fragments, config, base_masses, warnings)
     matches, unmatched, spectrum_rows, parent_rows = match_ms2_spectra(spectra, ions, theoretical_fragments, config, modifications or [])
     evidence_rows = build_fragment_evidence(matches, theoretical_fragments, config, parent_rows)
@@ -294,6 +300,9 @@ def annotate_ms2(
         "MS2_Unmatched_Ion_Audit": unmatched_ion_audit,
         "MS2_Unmatched_Ion_Diagnostics": unmatched_ion_diagnostics,
         "_MS2_Ambiguous_Audit_Context": {"spectra": spectra},
+        "_MS2_Zero_Intensity_Audit_Context": {
+            "spectra": spectra, "source_spectra": zero_intensity_context["source_spectra"],
+        },
         "MS2_Theoretical_Ions": [theoretical_ion_row(ion, config) for ion in ions],
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,
@@ -308,6 +317,7 @@ def extract_ms2_spectra(
     mzml_path: str,
     ms2_config: dict[str, Any],
     warnings: list[dict[str, Any]] | None = None,
+    zero_intensity_context: dict[str, Any] | None = None,
 ) -> list[MS2SpectrumInfo]:
     spectra: list[MS2SpectrumInfo] = []
     min_intensity = float(ms2_config.get("min_peak_intensity", 10) or 0)
@@ -323,13 +333,25 @@ def extract_ms2_spectra(
             if ms_level != 2:
                 continue
 
-            mz_array = np.asarray(spectrum.get("m/z array", []), dtype=float)
-            intensity_array = np.asarray(spectrum.get("intensity array", []), dtype=float)
+            source_record = capture_source_spectrum(spectrum, scan_index)
+            if zero_intensity_context is not None:
+                zero_intensity_context.setdefault("source_spectra", []).append(source_record)
+            try:
+                mz_array = np.asarray(spectrum.get("m/z array", []), dtype=float)
+                intensity_array = np.asarray(spectrum.get("intensity array", []), dtype=float)
+            except Exception as exc:
+                record_parser_error(source_record, exc)
+                raise
             if mz_array.size != intensity_array.size:
+                record_parsed_spectrum(source_record, mz_array, intensity_array)
+                source_record["parser_status"] = "array_length_mismatch"
                 if warnings is not None:
                     add_warning(warnings, "WARNING", "ms2_annotation", "MS2 spectrum m/z and intensity arrays had different lengths.", spectrum.get("id"))
                 continue
 
+            parsed_mz_array = mz_array.copy()
+            parsed_intensity_array = intensity_array.copy()
+            annotation_indices = np.arange(mz_array.size, dtype=int)
             raw_base_peak_index = int(np.argmax(intensity_array)) if intensity_array.size else None
             base_peak_mz = float(mz_array[raw_base_peak_index]) if raw_base_peak_index is not None else None
             base_peak_intensity = float(intensity_array[raw_base_peak_index]) if raw_base_peak_index is not None else None
@@ -347,15 +369,17 @@ def extract_ms2_spectra(
                     mask = mask & (intensity_array >= base_peak_intensity * min_relative_percent / 100.0)
                 mz_array = mz_array[mask]
                 intensity_array = intensity_array[mask]
+                annotation_indices = annotation_indices[mask]
 
             if max_peaks and mz_array.size > max_peaks:
                 order = np.argsort(intensity_array)[::-1][:max_peaks]
                 order = order[np.argsort(mz_array[order])]
                 mz_array = mz_array[order]
                 intensity_array = intensity_array[order]
+                annotation_indices = annotation_indices[order]
 
             precursor = _precursor_info(spectrum)
-            spectra.append(MS2SpectrumInfo(
+            spectrum_info = MS2SpectrumInfo(
                 spectrum_id=str(spectrum.get("id") or f"scan_{scan_index}"),
                 scan_index=scan_index,
                 rt=_safe_float(_rt_minutes(spectrum)),
@@ -370,7 +394,11 @@ def extract_ms2_spectra(
                 raw_peaks=raw_peaks, scan_mz_min=scan_mz_min, scan_mz_max=scan_mz_max,
                 effective_intensity_threshold=effective_intensity_threshold,
                 threshold_information_available=True,
-            ))
+            )
+            spectra.append(spectrum_info)
+            record_parsed_spectrum(
+                source_record, parsed_mz_array, parsed_intensity_array, annotation_indices, spectrum_info,
+            )
     except Exception as exc:
         if warnings is not None:
             add_warning(warnings, "WARNING", "ms2_annotation", "MS2 spectrum extraction failed; annotation skipped.", str(exc))

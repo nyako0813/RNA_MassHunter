@@ -267,3 +267,5 @@ A candidate match ID includes theoretical-ion metadata and is not the same as a 
 ### MS/MS ambiguous nearby-peak clusters (shadow)
 
 `MS2_Ambiguous_Peak_Clusters`, `MS2_Ambiguous_Peak_Detail`, and `MS2_Ambiguity_Summary` audit ambiguous nearby peaks as deterministic physical-peak clusters. Physical peak sharing across candidates is reported separately from competition among theoretical ions. An ambiguous peak neither confirms nor excludes a modification; this shadow audit is not a hard filter, does not alter formal matching, and is disconnected from `Final_Score`, confidence, rank, candidate inclusion, localization, and review priority.
+
+In `MS2_Ambiguous_Peak_Clusters`, `Best_Peak_*` means the diagnostic raw peak closest to the theoretical m/z within the audit window (absolute m/z error, then higher intensity, then lower m/z). It may be a zero-intensity raw peak and is not the formal annotation best match; formal matches are selected only from intensity-filtered annotation-input peaks.
