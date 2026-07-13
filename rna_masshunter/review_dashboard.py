@@ -7,6 +7,7 @@ import pandas as pd
 from rna_masshunter.ms2_unmatched_audit import TOP_SHADOW_COLUMNS, primary_unmatched_reason
 from rna_masshunter.ms2_ambiguous_peak_audit import TOP_SHADOW_COLUMNS as AMBIGUOUS_PEAK_TOP_COLUMNS
 from rna_masshunter.ms2_zero_intensity_audit import TOP_SHADOW_COLUMNS as ZERO_INTENSITY_TOP_COLUMNS
+from rna_masshunter.ms2_effective_ambiguity import TOP_SHADOW_COLUMNS as EFFECTIVE_AMBIGUITY_TOP_COLUMNS
 
 
 DASHBOARD_NOTE = (
@@ -85,6 +86,7 @@ TOP_CANDIDATE_COLUMNS = [
     *AMBIGUOUS_PEAK_TOP_COLUMNS,
     "Notes",
     *ZERO_INTENSITY_TOP_COLUMNS,
+    *EFFECTIVE_AMBIGUITY_TOP_COLUMNS,
 ]
 
 DECISION_COLUMNS = [
@@ -272,6 +274,7 @@ def _build_top_candidates(
     unmatched_audit_summary: pd.DataFrame | None = None,
     ambiguous_peak_summary: pd.DataFrame | None = None,
     zero_intensity_summary: pd.DataFrame | None = None,
+    effective_ambiguity_summary: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if ranking.empty:
         return pd.DataFrame(columns=TOP_CANDIDATE_COLUMNS)
@@ -302,6 +305,11 @@ def _build_top_candidates(
         zero_position = _position_key(zero_row.get("Candidate_tRNA_Position"))
         zero_key = (str(zero_row.get("Modification_ID") or ""), str(zero_row.get("Parent_Fragment_ID") or ""), zero_position)
         zero_lookup[zero_key] = zero_row.to_dict()
+    effective_frame = effective_ambiguity_summary if effective_ambiguity_summary is not None else pd.DataFrame()
+    effective_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for _, effective_row in effective_frame.iterrows():
+        effective_key = (str(effective_row.get("Modification_ID") or ""), str(effective_row.get("Parent_Fragment_ID") or ""), _position_key(effective_row.get("Candidate_tRNA_Position")))
+        effective_lookup[effective_key] = effective_row.to_dict()
     rows: list[dict[str, Any]] = []
     for _, row in ranking.iterrows():
         mod_id = _first_existing(row, ["Modification_ID", "Modification", "modification_id"])
@@ -314,6 +322,7 @@ def _build_top_candidates(
         audit_summary = audit_lookup.get(audit_key, {})
         ambiguity_summary = ambiguity_lookup.get(audit_key, {})
         zero_summary = zero_lookup.get((str(mod_id or ""), str(parent_id or ""), _position_key(candidate_trna_position)), {})
+        effective_summary = effective_lookup.get((str(mod_id or ""), str(parent_id or ""), _position_key(candidate_trna_position)), {})
         context_score = _float(_first_existing(row, ["Biological_Context_Score", "Context_Score", "Best_Biological_Context_Score"], 0))
         ambiguity_status = str(_first_existing(row, ["Position_Ambiguity_Status", "Ambiguity_Status", "Position_Status"], ""))
         resolution_basis = str(_first_existing(row, ["Position_Resolution_Basis", "Resolution_Basis"], ""))
@@ -463,6 +472,18 @@ def _build_top_candidates(
                 "Zero_Intensity_Audit_Severity": zero_summary.get("Zero_Intensity_Audit_Severity", "none"),
                 "Zero_Intensity_Audit_Recommendation": zero_summary.get("Zero_Intensity_Audit_Recommendation", "no_action_needed"),
                 "Zero_Intensity_Audit_Applied_To_Final_Score": False,
+                "Effective_Ambiguity_Affected": effective_summary.get("Effective_Ambiguity_Affected", False),
+                "Raw_Only_Ambiguity_Cluster_Count": effective_summary.get("Raw_Only_Ambiguity_Cluster_Count", 0),
+                "Positive_Ambiguity_Cluster_Count": effective_summary.get("Positive_Ambiguity_Cluster_Count", 0),
+                "Formal_Tolerance_Ambiguity_Cluster_Count": effective_summary.get("Formal_Tolerance_Ambiguity_Cluster_Count", 0),
+                "Formal_Match_Ambiguity_Cluster_Count": effective_summary.get("Formal_Match_Ambiguity_Cluster_Count", 0),
+                "Effective_Ambiguity_High_Count": effective_summary.get("Effective_Ambiguity_High_Count", 0),
+                "Effective_Ambiguity_Moderate_Count": effective_summary.get("Effective_Ambiguity_Moderate_Count", 0),
+                "Effective_Ambiguity_Low_Count": effective_summary.get("Effective_Ambiguity_Low_Count", 0),
+                "Effective_Ambiguity_Informational_Count": effective_summary.get("Effective_Ambiguity_Informational_Count", 0),
+                "Effective_Ambiguity_Severity": effective_summary.get("Effective_Ambiguity_Severity", "none"),
+                "Effective_Ambiguity_Recommendation": effective_summary.get("Effective_Ambiguity_Recommendation", "no_effective_ambiguity"),
+                "Effective_Ambiguity_Applied_To_Final_Score": False,
             }
         )
 
@@ -638,8 +659,10 @@ def build_review_dashboard_results(optional_results: dict[str, Any] | None, conf
     audit_summary = _frame(source.get("MS2_Unmatched_Ion_Summary"))
     ambiguous_peak_summary = _frame(source.get("MS2_Ambiguity_Summary"))
     zero_intensity_summary = _frame(source.get("_MS2_Zero_Intensity_Candidate_Summary"))
+    effective_ambiguity_summary = _frame(source.get("_MS2_Effective_Ambiguity_Candidate_Summary"))
     top = _build_top_candidates(
         ranking, ambiguity, review_config, audit_summary, ambiguous_peak_summary, zero_intensity_summary,
+        effective_ambiguity_summary,
     )
     return {
         "Review_Dashboard": _dashboard(top, ambiguity, ranking),

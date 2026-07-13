@@ -20,7 +20,10 @@ from rna_masshunter.ms2_ambiguous_peak_audit import (
 from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
 from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_summary
 from rna_masshunter.ms2_zero_intensity_audit import (
-    build_zero_intensity_audit, update_top50_affected,
+    build_zero_intensity_audit, update_top50_affected as update_zero_top50_affected,
+)
+from rna_masshunter.ms2_effective_ambiguity import (
+    build_effective_ambiguity, update_top50_affected as update_effective_top50_affected,
 )
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.review_dashboard import build_review_dashboard_results
@@ -332,7 +335,19 @@ def main() -> None:
         optional_results["MS2_Zero_Intensity_Detail"] = zero_detail
         optional_results["MS2_Zero_Intensity_Summary"] = zero_summary
         optional_results["_MS2_Zero_Intensity_Candidate_Summary"] = zero_candidates
+        effective_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Effective_Ambiguity_Audit"), True)
+        effective_clusters, effective_detail, effective_summary, effective_candidates, effective_diagnostics = build_effective_ambiguity(
+            ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
+            optional_results.get("MS2_Ion_Matches", []), optional_results.get("MS2_Modified_Ion_Matches", []),
+            identity_assignment_rows, optional_results.get("MS2_Modification_Localization_Evidence", []),
+            ranking_rows, zero_context, enabled=effective_enabled, max_detail_rows=report_row_limit,
+        )
+        optional_results["MS2_Effective_Ambiguity"] = effective_clusters
+        optional_results["MS2_Effective_Ambig_Detail"] = effective_detail
+        optional_results["MS2_Effective_Ambig_Summary"] = effective_summary
+        optional_results["_MS2_Effective_Ambiguity_Candidate_Summary"] = effective_candidates
         unmatched_diagnostics[0].update(zero_diagnostics[0])
+        unmatched_diagnostics[0].update(effective_diagnostics[0])
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
@@ -342,8 +357,10 @@ def main() -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "biological_context", "executed" if _as_bool(config.biological_context.get("enabled"), True) else "disabled_by_config", _as_bool(config.biological_context.get("enabled"), True), True, output_sheets="Biological_Context_Priorities; Context_Supported_Candidates")
         review_results = build_review_dashboard_results(optional_results, config)
         optional_results.update(review_results)
-        update_top50_affected(zero_summary, review_results.get("Top_Modification_Candidates", []))
+        update_zero_top50_affected(zero_summary, review_results.get("Top_Modification_Candidates", []))
+        update_effective_top50_affected(effective_summary, review_results.get("Top_Modification_Candidates", []))
         optional_results.pop("_MS2_Zero_Intensity_Candidate_Summary", None)
+        optional_results.pop("_MS2_Effective_Ambiguity_Candidate_Summary", None)
         _record_workflow_step(workflow_rows, analysis_mode, "review_dashboard", "executed", True, True, output_sheets="Review_*")
 
     report_path = write_excel_report(
