@@ -323,6 +323,11 @@ class MS2SpectrumInfo:
     base_peak_intensity: float | None
     total_ion_current: float
     peaks: list[tuple[float, float]] = field(default_factory=list)
+    raw_peaks: list[tuple[float, float]] | None = None
+    scan_mz_min: float | None = None
+    scan_mz_max: float | None = None
+    effective_intensity_threshold: float | None = None
+    threshold_information_available: bool = False
 
 
 @dataclass
