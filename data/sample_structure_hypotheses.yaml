@@ -1,0 +1,23 @@
+schema_version: 1
+enabled: true
+target:
+  name: Mac_tRNA-Glu-UUC
+  length: 78
+  sequence_sha256: 3bd563cf7c629b3d9d346c9287441d01da3728e780fbd5849fc725a1da7e2835
+  organism: Methanosarcina acetivorans
+  rule_set: methanosarcina_acetivorans
+hypotheses:
+  - hypothesis_id: U37_composite_001
+    positions:
+      37:
+        parent_base: U
+        transformations:
+          - s2U
+          - cnm5U
+          - side_chain_thioamide_oxo1
+    backbone:
+      - bond_id: "37_38"
+        state: phosphorothioate
+    terminal_state:
+      five_prime: inherited
+      three_prime: inherited

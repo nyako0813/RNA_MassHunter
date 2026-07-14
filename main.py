@@ -7,6 +7,7 @@ from rna_masshunter.config import load_config, validate_config, resolve_paths
 from rna_masshunter.composite_modification_audit import (
     append_composite_diagnostics, build_composite_modification_audit,
 )
+from rna_masshunter.composite_observation_audit import build_composite_observation_audit
 from rna_masshunter.audit_policy import (
     AUDIT_LEVELS, AUDIT_STATUS_COLUMNS, AuditPolicy, append_audit_level_diagnostics,
     audit_status_row, sheet_category,
@@ -293,6 +294,7 @@ def main(argv: list[str] | None = None) -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "disabled_by_config", False, False, "modification_search.enabled=false")
 
     optional_results = {"Workflow_Summary": workflow_rows}
+    ms2_spectra_for_shadow = []
     if intact_engine_artifacts.get("rt_envelope_diagnostics") is not None:
         optional_results["RT_Envelope_Diagnostics"] = intact_engine_artifacts.get("rt_envelope_diagnostics", [])
     if intact_engine_artifacts.get("missing_charge_diagnostics") is not None:
@@ -318,6 +320,7 @@ def main(argv: list[str] | None = None) -> None:
             modifications=modifications,
             warnings=warnings,
         ))
+        ms2_spectra_for_shadow = list(optional_results.get("_MS2_Ambiguous_Audit_Context", {}).get("spectra", []))
         _record_workflow_step(workflow_rows, analysis_mode, "MS2_annotation", "executed" if _as_bool(config.ms2_annotation.get("enabled"), True) else "disabled_by_config", _as_bool(config.ms2_annotation.get("enabled"), True), _as_bool(config.ms2_annotation.get("enabled"), True), output_sheets="MS2_*")
         if is_p1_enabled(config):
             optional_results.update(build_p1_optional_results(config, tier_result, base_masses, modifications))
@@ -603,6 +606,35 @@ def main(argv: list[str] | None = None) -> None:
             audit_status_row("Cleavage blocking constraints", "Digestion", audit_policy, True, True, audit_policy.include_detail, 0.0, composite_audit.peak_memory_mb),
         ])
 
+    if audit_policy.run_shadow_audits and sequence and not intact_only and composite_audit is not None:
+        tracemalloc.start()
+        composite_observation_started = time.perf_counter()
+        shadow_legacy_matches = [
+            match for fragment_context in ms1_audit_context.get("fragments", [])
+            for match in fragment_context.get("ranked_matches", [])
+        ] + list(known_modification_candidates)
+        composite_observation = build_composite_observation_audit(
+            project_root=project_root, sequence=sequence,
+            theoretical_fragments=theoretical_fragments, peaks=peaks,
+            spectra=ms2_spectra_for_shadow, config=config, base_masses=base_masses,
+            phase1_sheets=composite_audit.sheets, formal_ms1_matches=shadow_legacy_matches,
+            formal_ranking=ranking_rows, audit_level=audit_policy.level,
+        )
+        composite_observation_seconds = time.perf_counter() - composite_observation_started
+        _, composite_observation_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        optional_results.update(composite_observation.sheets)
+        audit_status_rows.append(audit_status_row(
+            "Composite observation connection", "MS1/MS2", audit_policy, True, True,
+            audit_policy.include_detail, composite_observation_seconds,
+            composite_observation_peak_bytes / (1024 * 1024),
+        ))
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "composite_observation_shadow", "executed",
+            True, True, output_sheets="Composite_*; Blocked_Cleavage_Matches; Legacy_Composite_Compare",
+            notes=f"valid_hypotheses={len(composite_observation.structures)}; invalid_hypotheses={len(composite_observation.invalid_rows)}",
+        )
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
@@ -611,6 +643,7 @@ def main(argv: list[str] | None = None) -> None:
         ("Composite modification constraints", "Modification"),
         ("Backbone modification candidates", "Backbone"),
         ("Cleavage blocking constraints", "Digestion"),
+        ("Composite observation connection", "MS1/MS2"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:
