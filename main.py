@@ -31,6 +31,11 @@ from rna_masshunter.ms1_top50_dedup_audit import (
     append_top50_shadow_columns,
     build_ms1_top50_dedup_audit,
 )
+from rna_masshunter.ms1_cross_fragment_ambiguity import (
+    append_crossfrag_diagnostic_columns,
+    append_crossfrag_top_columns,
+    build_ms1_cross_fragment_ambiguity_audit,
+)
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.ms2_ambiguous_peak_audit import (
     build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
@@ -468,6 +473,7 @@ def main(argv: list[str] | None = None) -> None:
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), selection_audit
         )
 
+    top50_audit = None
     top50_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Tier_Top50_Full_Shadow"), True)
     dedup_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Physical_Peak_Dedup_Audit"), True)
     top50_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Tier_Top50_To_Formal_Result"), False)
@@ -492,6 +498,30 @@ def main(argv: list[str] | None = None) -> None:
         )
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_top50_diagnostic_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), top50_audit
+        )
+
+    crossfrag_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Cross_Fragment_Ambiguity_Audit"), True)
+    crossfrag_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Cross_Fragment_Ambiguity_To_Formal_Result"), False)
+    if not intact_only and crossfrag_enabled and not crossfrag_apply_formal and ms1_audit_context:
+        tracemalloc.start()
+        crossfrag_audit = build_ms1_cross_fragment_ambiguity_audit(
+            context=ms1_audit_context, config=config, modifications=modifications,
+            intact_results=intact_results, baseline_candidates=known_modification_candidates,
+            baseline_ranking=ranking_rows, ms2_results=optional_results,
+            rule_set=rule_set, pathways=pathways, top50_audit=top50_audit,
+        )
+        _, crossfrag_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        crossfrag_audit["summary"]["Audit_Peak_Tracked_Memory_MiB"] = crossfrag_peak_bytes / (1024 * 1024)
+        crossfrag_audit["summary_rows"][0]["Audit_Peak_Tracked_Memory_MiB"] = crossfrag_peak_bytes / (1024 * 1024)
+        optional_results["MS1_CrossFrag_Ambiguity"] = crossfrag_audit["ambiguity_rows"]
+        optional_results["MS1_CrossFrag_Detail"] = crossfrag_audit["detail_rows"]
+        optional_results["MS1_CrossFrag_Summary"] = crossfrag_audit["summary_rows"]
+        optional_results["Top_Modification_Candidates"] = append_crossfrag_top_columns(
+            optional_results.get("Top_Modification_Candidates"), crossfrag_audit
+        )
+        optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_crossfrag_diagnostic_columns(
+            optional_results.get("MS2_Unmatched_Ion_Diagnostics"), crossfrag_audit
         )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),

@@ -97,6 +97,12 @@ from rna_masshunter.ms1_top50_dedup_audit import (
     SUMMARY_COLUMNS as MS1_TOP50_DEDUP_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS,
 )
+from rna_masshunter.ms1_cross_fragment_ambiguity import (
+    AMBIGUITY_COLUMNS as MS1_CROSSFRAG_AMBIGUITY_COLUMNS,
+    DETAIL_COLUMNS as MS1_CROSSFRAG_DETAIL_COLUMNS,
+    SUMMARY_COLUMNS as MS1_CROSSFRAG_SUMMARY_COLUMNS,
+    DIAGNOSTIC_COLUMNS as MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS,
+)
 from rna_masshunter.ms2_effective_ambiguity import (
     CLUSTER_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_COLUMNS,
     DETAIL_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_DETAIL_COLUMNS,
@@ -506,6 +512,9 @@ SHEET_DESCRIPTIONS = {
     "MS1_Top50_Shadow": "Full downstream tier-top20/top50/unlimited and exact-ID dedup shadow comparison.",
     "MS1_Peak_Dedup_Detail": "Physical-peak assignment sharing, charge interpretation, near-m/z, and dedup membership detail.",
     "MS1_Top50_Dedup_Summary": "Dataset and fragment-length summary of top50 recovery and physical-peak dedup impact.",
+    "MS1_CrossFrag_Ambiguity": "Physical-peak groups with competing fragment assignments and deterministic shadow handling.",
+    "MS1_CrossFrag_Detail": "Per-assignment cross-fragment ambiguity, candidate linkage, and shadow weights.",
+    "MS1_CrossFrag_Summary": "Dataset and fragment-length cross-fragment ambiguity risk and strategy comparison.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
@@ -1250,7 +1259,7 @@ def write_excel_report(
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
-        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS,
+        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS,
         "MS1_Truncation_Audit": MS1_TRUNCATION_AUDIT_COLUMNS,
         "MS1_Truncation_Detail": MS1_TRUNCATION_DETAIL_COLUMNS,
         "MS1_Truncation_Summary": MS1_TRUNCATION_SUMMARY_COLUMNS,
@@ -1260,6 +1269,9 @@ def write_excel_report(
         "MS1_Top50_Shadow": MS1_TOP50_SHADOW_COLUMNS,
         "MS1_Peak_Dedup_Detail": MS1_PEAK_DEDUP_DETAIL_COLUMNS,
         "MS1_Top50_Dedup_Summary": MS1_TOP50_DEDUP_SUMMARY_COLUMNS,
+        "MS1_CrossFrag_Ambiguity": MS1_CROSSFRAG_AMBIGUITY_COLUMNS,
+        "MS1_CrossFrag_Detail": MS1_CROSSFRAG_DETAIL_COLUMNS,
+        "MS1_CrossFrag_Summary": MS1_CROSSFRAG_SUMMARY_COLUMNS,
         "MS2_Ambiguous_Peak_Clusters": MS2_AMBIGUOUS_CLUSTER_COLUMNS,
         "MS2_Ambiguous_Peak_Detail": MS2_AMBIGUOUS_DETAIL_COLUMNS,
         "MS2_Ambiguity_Summary": MS2_AMBIGUITY_SUMMARY_COLUMNS,
