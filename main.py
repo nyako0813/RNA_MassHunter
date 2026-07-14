@@ -20,6 +20,11 @@ from rna_masshunter.ms1_match_truncation_audit import (
     append_top_shadow_columns,
     build_ms1_truncation_audit,
 )
+from rna_masshunter.ms1_selection_strategy_audit import (
+    append_selection_diagnostic_columns,
+    append_top_selection_columns,
+    build_ms1_selection_strategy_audit,
+)
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.ms2_ambiguous_peak_audit import (
     build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
@@ -406,6 +411,34 @@ def main() -> None:
         )
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_diagnostic_shadow_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), ms1_audit
+        )
+
+    selection_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Selection_Strategy_Audit"), True)
+    selection_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Selection_Strategy_To_Formal_Result"), False)
+    if not intact_only and selection_audit_enabled and not selection_apply_formal and ms1_audit_context:
+        tracemalloc.start()
+        selection_started = time.perf_counter()
+        selection_audit = build_ms1_selection_strategy_audit(
+            context=ms1_audit_context, config=config, modifications=modifications,
+            intact_results=intact_results, baseline_matches=fragment_ms1_matches,
+            baseline_candidates=known_modification_candidates, baseline_ranking=ranking_rows,
+            ms2_results=optional_results, rule_set=rule_set, pathways=pathways,
+        )
+        selection_seconds = time.perf_counter() - selection_started
+        _, selection_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        selection_audit["summary"]["Strategy_Audit_Additional_Time_Seconds"] = selection_seconds
+        selection_audit["summary"]["Strategy_Audit_Peak_Tracked_Memory_MiB"] = selection_peak_bytes / (1024 * 1024)
+        selection_audit["summary_rows"][0]["Strategy_Audit_Additional_Time_Seconds"] = selection_seconds
+        selection_audit["summary_rows"][0]["Strategy_Audit_Peak_Tracked_Memory_MiB"] = selection_peak_bytes / (1024 * 1024)
+        optional_results["MS1_Selection_Strategy"] = selection_audit["strategy_rows"]
+        optional_results["MS1_Selection_Detail"] = selection_audit["detail_rows"]
+        optional_results["MS1_Selection_Summary"] = selection_audit["summary_rows"]
+        optional_results["Top_Modification_Candidates"] = append_top_selection_columns(
+            optional_results.get("Top_Modification_Candidates"), selection_audit
+        )
+        optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_selection_diagnostic_columns(
+            optional_results.get("MS2_Unmatched_Ion_Diagnostics"), selection_audit
         )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
