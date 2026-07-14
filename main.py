@@ -4,6 +4,10 @@ import time
 import tracemalloc
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
+from rna_masshunter.audit_policy import (
+    AUDIT_LEVELS, AUDIT_STATUS_COLUMNS, AuditPolicy, append_audit_level_diagnostics,
+    audit_status_row, sheet_category,
+)
 from rna_masshunter.biological_context import biological_context_priority_rows
 from rna_masshunter.biological_position_prior import evaluate_biological_position_priors, load_position_prior_rules
 from rna_masshunter.conversion import prepare_input_file
@@ -100,6 +104,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Path to a YAML config file. Defaults to config.yaml beside main.py.",
     )
+    parser.add_argument(
+        "--audit-level",
+        choices=AUDIT_LEVELS,
+        default="full",
+        help="Shadow audit output level: standard, audit summaries, or full detail (default: full).",
+    )
     return parser.parse_args(argv)
 
 
@@ -115,6 +125,8 @@ def resolve_config_path(project_root: Path, configured_path: str | None) -> Path
 def main(argv: list[str] | None = None) -> None:
     project_root = Path(__file__).resolve().parent
     args = parse_args(argv)
+    audit_policy = AuditPolicy.from_level(args.audit_level)
+    audit_status_rows = []
     config_path = resolve_config_path(project_root, args.config)
     logger = setup_logger(project_root / "logs")
     warnings = []
@@ -349,54 +361,86 @@ def main(argv: list[str] | None = None) -> None:
             ranking_rows, optional_results.get("MS2_Unmatched_Ion_Audit", []),
         )
         ambiguity_context = optional_results.pop("_MS2_Ambiguous_Audit_Context", {})
-        ambiguous_clusters, ambiguous_peak_details = build_ambiguous_peak_audit(
-            ambiguity_context.get("spectra", []),
-            optional_results.get("MS2_Unmatched_Ion_Audit", []),
-            optional_results.get("MS2_Modified_Theoretical_Ions", []),
-            ranking_rows, identity_assignment_rows,
-            enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
-        )
-        ambiguity_summary = build_ambiguity_summary(ranking_rows, ambiguous_clusters, ambiguous_peak_details)
-        optional_results["MS2_Ambiguous_Peak_Clusters"] = ambiguous_clusters
-        optional_results["MS2_Ambiguous_Peak_Detail"] = ambiguous_peak_details
-        optional_results["MS2_Ambiguity_Summary"] = ambiguity_summary
-        ambiguity_diagnostics = build_ambiguity_diagnostics(
-            ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
-            enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
-        )[0]
-        unmatched_diagnostics = optional_results.get("MS2_Unmatched_Ion_Diagnostics") or [{}]
-        unmatched_diagnostics[0].update(ambiguity_diagnostics)
         zero_context = optional_results.pop("_MS2_Zero_Intensity_Audit_Context", {})
-        zero_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Zero_Intensity_Audit"), True)
-        nonzero_simulation = _as_bool(config.ms2_annotation.get("Enable_Nonzero_Shadow_Simulation"), True)
-        report_row_limit = int(getattr(config, "reporting", {}).get("max_excel_rows_per_sheet", 100000) or 100000)
-        configured_zero_limit = int(config.ms2_annotation.get("max_zero_intensity_detail_rows", report_row_limit) or report_row_limit)
-        max_zero_detail_rows = min(configured_zero_limit, report_row_limit)
-        zero_spectra, zero_detail, zero_summary, zero_candidates, zero_diagnostics = build_zero_intensity_audit(
-            zero_context, ranking_rows, optional_results.get("MS2_Ion_Matches", []),
-            optional_results.get("MS2_Modified_Ion_Matches", []), identity_assignment_rows,
-            optional_results.get("MS2_Modification_Localization_Evidence", []),
-            ambiguous_clusters, ambiguous_peak_details, enabled=zero_enabled,
-            nonzero_simulation=nonzero_simulation, max_detail_rows=max_zero_detail_rows,
-        )
-        optional_results["MS2_Zero_Intensity_Spectra"] = zero_spectra
-        optional_results["MS2_Zero_Intensity_Detail"] = zero_detail
-        optional_results["MS2_Zero_Intensity_Summary"] = zero_summary
-        optional_results["_MS2_Zero_Intensity_Candidate_Summary"] = zero_candidates
-        effective_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Effective_Ambiguity_Audit"), True)
-        effective_clusters, effective_detail, effective_summary, effective_candidates, effective_diagnostics = build_effective_ambiguity(
-            ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
-            optional_results.get("MS2_Ion_Matches", []), optional_results.get("MS2_Modified_Ion_Matches", []),
-            identity_assignment_rows, optional_results.get("MS2_Modification_Localization_Evidence", []),
-            ranking_rows, zero_context, enabled=effective_enabled, max_detail_rows=report_row_limit,
-        )
-        optional_results["MS2_Effective_Ambiguity"] = effective_clusters
-        optional_results["MS2_Effective_Ambig_Detail"] = effective_detail
-        optional_results["MS2_Effective_Ambig_Summary"] = effective_summary
-        optional_results["_MS2_Effective_Ambiguity_Candidate_Summary"] = effective_candidates
-        unmatched_diagnostics[0].update(zero_diagnostics[0])
-        unmatched_diagnostics[0].update(effective_diagnostics[0])
-        optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
+        zero_summary = []
+        effective_summary = []
+        if audit_policy.run_shadow_audits:
+            tracemalloc.start()
+            audit_started = time.perf_counter()
+            ambiguous_clusters, ambiguous_peak_details = build_ambiguous_peak_audit(
+                ambiguity_context.get("spectra", []),
+                optional_results.get("MS2_Unmatched_Ion_Audit", []),
+                optional_results.get("MS2_Modified_Theoretical_Ions", []),
+                ranking_rows, identity_assignment_rows,
+                enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+            )
+            ambiguity_summary = build_ambiguity_summary(ranking_rows, ambiguous_clusters, ambiguous_peak_details)
+            ambiguity_diagnostics = build_ambiguity_diagnostics(
+                ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
+                enabled=_as_bool(config.ms2_annotation.get("enabled"), True),
+            )[0]
+            ambiguity_runtime = time.perf_counter() - audit_started
+            _, ambiguity_peak_bytes = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            audit_status_rows.append(audit_status_row(
+                "MS2_ambiguous_peak", "MS2", audit_policy, True, True, True,
+                ambiguity_runtime, ambiguity_peak_bytes / (1024 * 1024),
+            ))
+            optional_results["MS2_Ambiguous_Peak_Clusters"] = ambiguous_clusters
+            optional_results["MS2_Ambiguous_Peak_Detail"] = ambiguous_peak_details
+            optional_results["MS2_Ambiguity_Summary"] = ambiguity_summary
+            unmatched_diagnostics = optional_results.get("MS2_Unmatched_Ion_Diagnostics") or [{}]
+            unmatched_diagnostics[0].update(ambiguity_diagnostics)
+
+            zero_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Zero_Intensity_Audit"), True)
+            nonzero_simulation = _as_bool(config.ms2_annotation.get("Enable_Nonzero_Shadow_Simulation"), True)
+            report_row_limit = int(getattr(config, "reporting", {}).get("max_excel_rows_per_sheet", 100000) or 100000)
+            configured_zero_limit = int(config.ms2_annotation.get("max_zero_intensity_detail_rows", report_row_limit) or report_row_limit)
+            max_zero_detail_rows = min(configured_zero_limit, report_row_limit)
+            tracemalloc.start()
+            audit_started = time.perf_counter()
+            zero_spectra, zero_detail, zero_summary, zero_candidates, zero_diagnostics = build_zero_intensity_audit(
+                zero_context, ranking_rows, optional_results.get("MS2_Ion_Matches", []),
+                optional_results.get("MS2_Modified_Ion_Matches", []), identity_assignment_rows,
+                optional_results.get("MS2_Modification_Localization_Evidence", []),
+                ambiguous_clusters, ambiguous_peak_details, enabled=zero_enabled,
+                nonzero_simulation=nonzero_simulation, max_detail_rows=max_zero_detail_rows,
+            )
+            zero_runtime = time.perf_counter() - audit_started
+            _, zero_peak_bytes = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            audit_status_rows.append(audit_status_row(
+                "MS2_zero_intensity", "MS2", audit_policy, True, True, True,
+                zero_runtime, zero_peak_bytes / (1024 * 1024),
+            ))
+            optional_results["MS2_Zero_Intensity_Spectra"] = zero_spectra
+            optional_results["MS2_Zero_Intensity_Detail"] = zero_detail
+            optional_results["MS2_Zero_Intensity_Summary"] = zero_summary
+            optional_results["_MS2_Zero_Intensity_Candidate_Summary"] = zero_candidates
+
+            effective_enabled = _as_bool(config.ms2_annotation.get("Enable_MS2_Effective_Ambiguity_Audit"), True)
+            tracemalloc.start()
+            audit_started = time.perf_counter()
+            effective_clusters, effective_detail, effective_summary, effective_candidates, effective_diagnostics = build_effective_ambiguity(
+                ambiguous_clusters, ambiguous_peak_details, ambiguity_summary,
+                optional_results.get("MS2_Ion_Matches", []), optional_results.get("MS2_Modified_Ion_Matches", []),
+                identity_assignment_rows, optional_results.get("MS2_Modification_Localization_Evidence", []),
+                ranking_rows, zero_context, enabled=effective_enabled, max_detail_rows=report_row_limit,
+            )
+            effective_runtime = time.perf_counter() - audit_started
+            _, effective_peak_bytes = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            audit_status_rows.append(audit_status_row(
+                "MS2_effective_ambiguity", "MS2", audit_policy, True, True, True,
+                effective_runtime, effective_peak_bytes / (1024 * 1024),
+            ))
+            optional_results["MS2_Effective_Ambiguity"] = effective_clusters
+            optional_results["MS2_Effective_Ambig_Detail"] = effective_detail
+            optional_results["MS2_Effective_Ambig_Summary"] = effective_summary
+            optional_results["_MS2_Effective_Ambiguity_Candidate_Summary"] = effective_candidates
+            unmatched_diagnostics[0].update(zero_diagnostics[0])
+            unmatched_diagnostics[0].update(effective_diagnostics[0])
+            optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [
@@ -405,15 +449,16 @@ def main(argv: list[str] | None = None) -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "biological_context", "executed" if _as_bool(config.biological_context.get("enabled"), True) else "disabled_by_config", _as_bool(config.biological_context.get("enabled"), True), True, output_sheets="Biological_Context_Priorities; Context_Supported_Candidates")
         review_results = build_review_dashboard_results(optional_results, config)
         optional_results.update(review_results)
-        update_zero_top50_affected(zero_summary, review_results.get("Top_Modification_Candidates", []))
-        update_effective_top50_affected(effective_summary, review_results.get("Top_Modification_Candidates", []))
+        if audit_policy.run_shadow_audits:
+            update_zero_top50_affected(zero_summary, review_results.get("Top_Modification_Candidates", []))
+            update_effective_top50_affected(effective_summary, review_results.get("Top_Modification_Candidates", []))
         optional_results.pop("_MS2_Zero_Intensity_Candidate_Summary", None)
         optional_results.pop("_MS2_Effective_Ambiguity_Candidate_Summary", None)
         _record_workflow_step(workflow_rows, analysis_mode, "review_dashboard", "executed", True, True, output_sheets="Review_*")
 
     ms1_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Truncation_Audit"), True)
     ms1_shadow_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Expanded_Shadow_Simulation"), True)
-    if not intact_only and ms1_audit_enabled and ms1_shadow_enabled and ms1_audit_context:
+    if audit_policy.run_shadow_audits and not intact_only and ms1_audit_enabled and ms1_shadow_enabled and ms1_audit_context:
         tracemalloc.start()
         ms1_shadow_started = time.perf_counter()
         ms1_audit = build_ms1_truncation_audit(
@@ -444,10 +489,14 @@ def main(argv: list[str] | None = None) -> None:
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_diagnostic_shadow_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), ms1_audit
         )
+        audit_status_rows.append(audit_status_row(
+            "MS1_match_truncation", "MS1", audit_policy, True, True, True,
+            ms1_shadow_seconds, ms1_shadow_peak_bytes / (1024 * 1024),
+        ))
 
     selection_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Selection_Strategy_Audit"), True)
     selection_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Selection_Strategy_To_Formal_Result"), False)
-    if not intact_only and selection_audit_enabled and not selection_apply_formal and ms1_audit_context:
+    if audit_policy.run_shadow_audits and not intact_only and selection_audit_enabled and not selection_apply_formal and ms1_audit_context:
         tracemalloc.start()
         selection_started = time.perf_counter()
         selection_audit = build_ms1_selection_strategy_audit(
@@ -472,13 +521,17 @@ def main(argv: list[str] | None = None) -> None:
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_selection_diagnostic_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), selection_audit
         )
+        audit_status_rows.append(audit_status_row(
+            "MS1_selection_strategy", "MS1", audit_policy, True, True, True,
+            selection_seconds, selection_peak_bytes / (1024 * 1024),
+        ))
 
     top50_audit = None
     top50_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Tier_Top50_Full_Shadow"), True)
     dedup_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Physical_Peak_Dedup_Audit"), True)
     top50_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Tier_Top50_To_Formal_Result"), False)
     dedup_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Dedup_To_Formal_Result"), False)
-    if not intact_only and top50_audit_enabled and dedup_audit_enabled and not top50_apply_formal and not dedup_apply_formal and ms1_audit_context:
+    if audit_policy.run_shadow_audits and not intact_only and top50_audit_enabled and dedup_audit_enabled and not top50_apply_formal and not dedup_apply_formal and ms1_audit_context:
         tracemalloc.start()
         top50_audit = build_ms1_top50_dedup_audit(
             context=ms1_audit_context, config=config, modifications=modifications,
@@ -499,10 +552,15 @@ def main(argv: list[str] | None = None) -> None:
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_top50_diagnostic_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), top50_audit
         )
+        audit_status_rows.append(audit_status_row(
+            "MS1_top50_physical_peak", "MS1", audit_policy, True, True, True,
+            float(top50_audit["summary"].get("Top50_Shadow_Additional_Time_Seconds") or 0),
+            top50_peak_bytes / (1024 * 1024),
+        ))
 
     crossfrag_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Cross_Fragment_Ambiguity_Audit"), True)
     crossfrag_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Cross_Fragment_Ambiguity_To_Formal_Result"), False)
-    if not intact_only and crossfrag_enabled and not crossfrag_apply_formal and ms1_audit_context:
+    if audit_policy.run_shadow_audits and not intact_only and crossfrag_enabled and not crossfrag_apply_formal and ms1_audit_context:
         tracemalloc.start()
         crossfrag_audit = build_ms1_cross_fragment_ambiguity_audit(
             context=ms1_audit_context, config=config, modifications=modifications,
@@ -523,6 +581,40 @@ def main(argv: list[str] | None = None) -> None:
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_crossfrag_diagnostic_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), crossfrag_audit
         )
+        audit_status_rows.append(audit_status_row(
+            "MS1_cross_fragment", "MS1", audit_policy, True, True, True,
+            float(crossfrag_audit["summary"].get("Ambiguity_Grouping_Time_Seconds") or 0)
+            + float(crossfrag_audit["summary"].get("Shadow_Weighting_Time_Seconds") or 0),
+            crossfrag_peak_bytes / (1024 * 1024),
+        ))
+
+    audit_specs = (
+        ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
+        ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
+        ("MS1_selection_strategy", "MS1"), ("MS1_top50_physical_peak", "MS1"),
+        ("MS1_cross_fragment", "MS1"),
+    )
+    recorded = {row["Audit_Name"] for row in audit_status_rows}
+    for audit_name, category in audit_specs:
+        if audit_name not in recorded:
+            audit_status_rows.append(audit_status_row(
+                audit_name, category, audit_policy, False, True, True,
+                reason=f"not executed for audit_level={audit_policy.level} or unavailable/disabled input",
+            ))
+    if audit_policy.include_summary:
+        optional_results["Audit_Status"] = [
+            {column: row.get(column, "") for column in AUDIT_STATUS_COLUMNS}
+            for row in audit_status_rows
+        ]
+    shadow_sheet_count = sum(
+        1 for name in optional_results
+        if (sheet_category(name) or "").startswith("AUDIT_")
+        and audit_policy.includes_category(sheet_category(name))
+    )
+    optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_audit_level_diagnostics(
+        optional_results.get("MS2_Unmatched_Ion_Diagnostics"), audit_policy,
+        audit_status_rows, shadow_sheet_count,
+    )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
         config=config,
@@ -538,6 +630,7 @@ def main(argv: list[str] | None = None) -> None:
         known_modification_candidates=known_modification_candidate_rows(known_modification_candidates),
         known_modification_summary=known_modification_summary,
         optional_results=optional_results,
+        audit_policy=audit_policy,
     )
     logger.info("Excel report written: %s", report_path)
     logger.info("RNA_MassHunter_v2 MVP-5 finished")

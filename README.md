@@ -258,6 +258,25 @@ MVP-5.8 adds
 MVP-5.9.8c compares diagnostic dry-run competitive assignment across strict, balanced, sensitive, and permissive threshold scenarios. It reports candidates selected consistently across scenarios and supports optional audit masses for result review only. Audit masses do not affect grouping, evidence scoring, assignment, quality tiers, Comparison Ready, representatives, dominant selection, or reconstructed spectrum output. This sensitivity analysis is intended for threshold review before any production connection of assignment results.
 
 MVP-5.9.8d adds assignment strict/review eligibility and can optionally apply it to formal Comparison Ready and representative selection with `competitive_assignment.apply_to_comparison_ready`. Pre-assignment values are retained, ambiguous and threshold-sensitive candidates remain available in `Assignment_Ambiguous_Candidates`, and reconstructed spectrum assignment filtering supports `none`, `strict`, `review`, `balanced_selected`, and `all` (`review` is recommended for assignment-aware review). The connection is disabled by default for backward compatibility. Reference, audit, target-review, and theoretical masses do not affect assignment eligibility or selection.
+## Audit output levels
+
+`--audit-level` separates routine reports from research/development shadow-audit output without changing formal matching, candidates, scores, confidence, ranks, identity, localization, or warnings. The default remains `full` for backward compatibility.
+
+- `standard` is intended for routine analysis. It runs the formal workflow, omits detailed shadow sheets and Top shadow columns, and records `not_run` audit status in Diagnostics without executing the heavy MS1/MS2 shadow builders.
+- `audit` is intended for quality review. It runs the shadow audits, writes their Summary sheets and `Audit_Status`, and omits group/detail sheets. Some existing audits build Summary and Detail together, so this level currently saves Excel size more reliably than computation time.
+- `full` is intended for research and development. It runs and writes every existing Summary, group, and Detail audit and retains all Top and Diagnostics shadow columns.
+
+Examples:
+
+```bash
+python main.py --audit-level standard
+python main.py --audit-level audit
+python main.py --audit-level full
+python main.py --config config.sample.yaml --audit-level standard
+```
+
+Running `python main.py` is equivalent to `--audit-level full`. `standard` normally provides the largest runtime and memory saving because shadow calculations are skipped; `audit` and `full` may have similar compute cost where an audit currently creates its Summary and Detail in one deterministic builder. The selected level is reported in `Run_summary` and Diagnostics. Audit results remain disconnected from formal results at every level.
+
 ### MS/MS biological position prior (shadow)
 
 `ms2_annotation.biological_position_prior` evaluates candidate positions using input-sequence 1-based numbering, parent-base compatibility, and structural/isobaric alternatives. Canonical landmarks must be configured explicitly (the configured `sequence.wobble_position` is also accepted as the `wobble` landmark); no Sprinzl numbering is assumed. The results are diagnostic-only by default (`apply_to_final_score: false`) and do not change `Final_Score`, `Final_Confidence`, rank, candidate inclusion, or review priority. Review `Modification_Position_Priors` and `MS2_Biological_Plausibility` in the Excel report.

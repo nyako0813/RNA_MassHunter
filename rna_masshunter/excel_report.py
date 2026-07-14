@@ -6,6 +6,12 @@ from typing import Any
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from rna_masshunter.audit_policy import (
+    AUDIT_STATUS_COLUMNS, DIAGNOSTIC_COLUMNS as AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
+    AuditPolicy, included_sheet_names, sheet_category,
+)
+from rna_masshunter.warnings_manager import add_warning
+
 from rna_masshunter.intact_reconstruction import (
     ASSIGNMENT_DRY_RUN_COLUMNS,
     ASSIGNMENT_DRY_RUN_SUMMARY_COLUMNS,
@@ -67,47 +73,55 @@ from rna_masshunter.ms2_ambiguous_peak_audit import (
     DETAIL_COLUMNS as MS2_AMBIGUOUS_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS2_AMBIGUITY_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS,
+    TOP_SHADOW_COLUMNS as MS2_AMBIGUOUS_TOP_COLUMNS,
 )
 from rna_masshunter.ms2_unmatched_audit import (
     AUDIT_COLUMNS as MS2_UNMATCHED_ION_AUDIT_COLUMNS,
     SUMMARY_COLUMNS as MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS,
+    TOP_SHADOW_COLUMNS as MS2_UNMATCHED_TOP_COLUMNS,
 )
 from rna_masshunter.ms2_zero_intensity_audit import (
     SPECTRA_COLUMNS as MS2_ZERO_INTENSITY_SPECTRA_COLUMNS,
     DETAIL_COLUMNS as MS2_ZERO_INTENSITY_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS2_ZERO_INTENSITY_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS,
+    TOP_SHADOW_COLUMNS as MS2_ZERO_INTENSITY_TOP_COLUMNS,
 )
 from rna_masshunter.ms1_match_truncation_audit import (
     AUDIT_COLUMNS as MS1_TRUNCATION_AUDIT_COLUMNS,
     DETAIL_COLUMNS as MS1_TRUNCATION_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS1_TRUNCATION_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS1_TRUNCATION_DIAGNOSTIC_COLUMNS,
+    TOP_COLUMNS as MS1_TRUNCATION_TOP_COLUMNS,
 )
 from rna_masshunter.ms1_selection_strategy_audit import (
     STRATEGY_COLUMNS as MS1_SELECTION_STRATEGY_COLUMNS,
     DETAIL_COLUMNS as MS1_SELECTION_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS1_SELECTION_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS1_SELECTION_DIAGNOSTIC_COLUMNS,
+    TOP_COLUMNS as MS1_SELECTION_TOP_COLUMNS,
 )
 from rna_masshunter.ms1_top50_dedup_audit import (
     TOP50_COLUMNS as MS1_TOP50_SHADOW_COLUMNS,
     DETAIL_COLUMNS as MS1_PEAK_DEDUP_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS1_TOP50_DEDUP_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS,
+    TOP_COLUMNS as MS1_TOP50_DEDUP_TOP_COLUMNS,
 )
 from rna_masshunter.ms1_cross_fragment_ambiguity import (
     AMBIGUITY_COLUMNS as MS1_CROSSFRAG_AMBIGUITY_COLUMNS,
     DETAIL_COLUMNS as MS1_CROSSFRAG_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS1_CROSSFRAG_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS,
+    TOP_COLUMNS as MS1_CROSSFRAG_TOP_COLUMNS,
 )
 from rna_masshunter.ms2_effective_ambiguity import (
     CLUSTER_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_COLUMNS,
     DETAIL_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS,
+    TOP_SHADOW_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_TOP_COLUMNS,
 )
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
@@ -115,6 +129,14 @@ from rna_masshunter.p1_annotation import (
     P1_THEORETICAL_COLUMNS,
     P1_UNMATCHED_COLUMNS,
 )
+
+
+AUDIT_TOP_SHADOW_COLUMNS = list(dict.fromkeys(
+    MS2_UNMATCHED_TOP_COLUMNS + MS2_AMBIGUOUS_TOP_COLUMNS
+    + MS2_ZERO_INTENSITY_TOP_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_TOP_COLUMNS
+    + MS1_TRUNCATION_TOP_COLUMNS + MS1_SELECTION_TOP_COLUMNS
+    + MS1_TOP50_DEDUP_TOP_COLUMNS + MS1_CROSSFRAG_TOP_COLUMNS
+))
 
 
 EXCEL_MAX_ROWS = 1_048_576
@@ -515,6 +537,7 @@ SHEET_DESCRIPTIONS = {
     "MS1_CrossFrag_Ambiguity": "Physical-peak groups with competing fragment assignments and deterministic shadow handling.",
     "MS1_CrossFrag_Detail": "Per-assignment cross-fragment ambiguity, candidate linkage, and shadow weights.",
     "MS1_CrossFrag_Summary": "Dataset and fragment-length cross-fragment ambiguity risk and strategy comparison.",
+    "Audit_Status": "Audit execution status, availability, runtime, memory, and formal non-application by audit level.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
@@ -868,7 +891,9 @@ def write_excel_report(
     known_modification_candidates: list[dict[str, Any]] | None = None,
     known_modification_summary: list[dict[str, Any]] | None = None,
     optional_results: dict[str, Any] | None = None,
+    audit_policy: AuditPolicy | None = None,
 ) -> Path:
+    audit_policy = audit_policy or AuditPolicy.from_level("full")
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / f"RNA_MassHunter_MVP5_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -1259,7 +1284,8 @@ def write_excel_report(
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
-        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS,
+        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
+        "Audit_Status": AUDIT_STATUS_COLUMNS,
         "MS1_Truncation_Audit": MS1_TRUNCATION_AUDIT_COLUMNS,
         "MS1_Truncation_Detail": MS1_TRUNCATION_DETAIL_COLUMNS,
         "MS1_Truncation_Summary": MS1_TRUNCATION_SUMMARY_COLUMNS,
@@ -1310,7 +1336,25 @@ def write_excel_report(
         columns = optional_columns.get(sheet_name)
         if columns:
             frame = pd.DataFrame(frame, columns=columns)
+        if sheet_name == "Top_Modification_Candidates" and not audit_policy.include_top_shadow_columns:
+            frame = frame.drop(columns=[column for column in AUDIT_TOP_SHADOW_COLUMNS if column in frame.columns])
         data_sheets[sheet_name[:31]] = frame
+
+    included_names, unknown_names = included_sheet_names(data_sheets, audit_policy)
+    if unknown_names and audit_policy.level != "full":
+        add_warning(
+            warnings, "WARNING", "excel_report",
+            "Unclassified sheets were omitted for the selected audit level.",
+            {"audit_level": audit_policy.level, "sheets": unknown_names},
+        )
+    data_sheets = {name: frame for name, frame in data_sheets.items() if name in included_names}
+    if audit_policy.run_shadow_audits and "MS2_Unmatched_Ion_Diagnostics" in data_sheets:
+        actual_shadow_sheet_count = sum(
+            1 for name in data_sheets if (sheet_category(name) or "").startswith("AUDIT_")
+        )
+        diagnostics_frame = data_sheets["MS2_Unmatched_Ion_Diagnostics"].copy()
+        diagnostics_frame["Shadow_Audit_Sheet_Count"] = actual_shadow_sheet_count
+        data_sheets["MS2_Unmatched_Ion_Diagnostics"] = diagnostics_frame
 
     truncated_data_sheets = {
         sheet_name: _truncate_frame_if_needed(
@@ -1340,6 +1384,7 @@ def write_excel_report(
         {"Item": "Known modification summary", "Value": len(known_modification_summary)},
         {"Item": "Truncated sheets", "Value": _truncation_summary(truncations)},
         {"Item": "Warnings", "Value": len(warnings)},
+        *audit_policy.run_summary_items(),
     ]
 
     sheets: dict[str, pd.DataFrame] = {
