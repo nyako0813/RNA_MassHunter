@@ -1,0 +1,16 @@
+schema_version: RNA_MassHunter_backbone_modifications_v1
+transforms:
+  - id: phosphorothioate
+    name: phosphorothioate O-to-S substitution
+    target_scope: backbone
+    from_state: normal_phosphate
+    to_state: phosphorothioate
+    composition_delta: {O: -1, S: 1}
+    stereochemistry: unknown
+    evidence_status: hypothesis_under_test
+    blocking_rules:
+      RNase_T1: {status: blocked, evidence_status: user_research_hypothesis}
+      Nuclease_P1: {status: blocked, evidence_status: user_research_hypothesis}
+      RNase_A: {status: potentially_blocked, evidence_status: unknown}
+      RNase_T2: {status: potentially_blocked, evidence_status: unknown}
+    notes: Phase-1 assumes one phosphate oxygen is replaced by sulfur; protonation and terminal-form effects are not resolved.

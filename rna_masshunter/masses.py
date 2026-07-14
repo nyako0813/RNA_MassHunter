@@ -9,6 +9,17 @@ PROTON_MASS = 1.007276466812
 DEFAULT_WATER_MASS = 18.010564684
 DEFAULT_PHOSPHATE_MASS = 79.966331
 
+# Exact monoisotopic neutral atomic masses used by shadow composition models.
+MONOISOTOPIC_ATOMIC_MASSES = {
+    "C": 12.0,
+    "H": 1.00782503223,
+    "N": 14.00307400443,
+    "O": 15.99491461957,
+    "P": 30.97376199842,
+    "S": 31.9720711744,
+    "Se": 79.9165218,
+}
+
 
 def load_base_masses(path: str | Path, warnings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as handle:

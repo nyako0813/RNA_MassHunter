@@ -4,6 +4,9 @@ import time
 import tracemalloc
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
+from rna_masshunter.composite_modification_audit import (
+    append_composite_diagnostics, build_composite_modification_audit,
+)
 from rna_masshunter.audit_policy import (
     AUDIT_LEVELS, AUDIT_STATUS_COLUMNS, AuditPolicy, append_audit_level_diagnostics,
     audit_status_row, sheet_category,
@@ -588,11 +591,26 @@ def main(argv: list[str] | None = None) -> None:
             crossfrag_peak_bytes / (1024 * 1024),
         ))
 
+    composite_audit = None
+    if audit_policy.run_shadow_audits and sequence and not intact_only:
+        composite_audit = build_composite_modification_audit(
+            project_root, sequence, modifications, base_masses, audit_mode=audit_policy.level,
+        )
+        optional_results.update(composite_audit.sheets)
+        audit_status_rows.extend([
+            audit_status_row("Composite modification constraints", "Modification", audit_policy, True, True, audit_policy.include_detail, composite_audit.runtime_seconds, composite_audit.peak_memory_mb),
+            audit_status_row("Backbone modification candidates", "Backbone", audit_policy, True, True, audit_policy.include_detail, 0.0, composite_audit.peak_memory_mb),
+            audit_status_row("Cleavage blocking constraints", "Digestion", audit_policy, True, True, audit_policy.include_detail, 0.0, composite_audit.peak_memory_mb),
+        ])
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
         ("MS1_selection_strategy", "MS1"), ("MS1_top50_physical_peak", "MS1"),
         ("MS1_cross_fragment", "MS1"),
+        ("Composite modification constraints", "Modification"),
+        ("Backbone modification candidates", "Backbone"),
+        ("Cleavage blocking constraints", "Digestion"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:
@@ -614,6 +632,9 @@ def main(argv: list[str] | None = None) -> None:
     optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_audit_level_diagnostics(
         optional_results.get("MS2_Unmatched_Ion_Diagnostics"), audit_policy,
         audit_status_rows, shadow_sheet_count,
+    )
+    optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_composite_diagnostics(
+        optional_results.get("MS2_Unmatched_Ion_Diagnostics"), composite_audit,
     )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),

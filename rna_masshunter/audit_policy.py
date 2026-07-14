@@ -90,6 +90,7 @@ AUDIT_SUMMARY_SHEETS = {
     "MS2_Zero_Intensity_Summary", "MS2_Effective_Ambig_Summary",
     "MS1_Truncation_Summary", "MS1_Selection_Summary", "MS1_Top50_Dedup_Summary",
     "MS1_CrossFrag_Summary", "Competition_Dry_Run_Summary",
+    "Composite_Mod_Summary", "Cleavage_Block_Audit",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -103,6 +104,7 @@ AUDIT_DETAIL_SHEETS = {
     "MS2_Unmatched_Ion_Audit", "MS2_Ambiguous_Peak_Detail", "MS2_Zero_Intensity_Detail",
     "MS2_Effective_Ambig_Detail", "MS1_Truncation_Detail", "MS1_Selection_Detail",
     "MS1_Peak_Dedup_Detail", "MS1_CrossFrag_Detail",
+    "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
 }
 
 SHEET_REGISTRY = {

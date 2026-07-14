@@ -1,0 +1,8 @@
+example_only: true
+description: Hypothesis fixture for shadow validation; this does not assert that these structures exist in the Mac or Tko samples.
+nucleoside_states:
+  - position: 37
+    transforms: [cnm5U, s2U, side_chain_thioamide_oxo1]
+backbone_states:
+  - {left_position: 36, right_position: 37, transform: phosphorothioate}
+  - {left_position: 37, right_position: 38, transform: phosphorothioate}

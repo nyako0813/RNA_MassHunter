@@ -6,6 +6,11 @@ from typing import Any
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from rna_masshunter.composite_modification_audit import (
+    BACKBONE_COLUMNS, CLEAVAGE_COLUMNS, COMPOSITE_CANDIDATE_COLUMNS,
+    COMPOSITE_INVALID_COLUMNS, COMPOSITE_SUMMARY_COLUMNS,
+    DIAGNOSTIC_COLUMNS as COMPOSITE_DIAGNOSTIC_COLUMNS,
+)
 from rna_masshunter.audit_policy import (
     AUDIT_STATUS_COLUMNS, DIAGNOSTIC_COLUMNS as AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
     AuditPolicy, included_sheet_names, sheet_category,
@@ -538,6 +543,11 @@ SHEET_DESCRIPTIONS = {
     "MS1_CrossFrag_Detail": "Per-assignment cross-fragment ambiguity, candidate linkage, and shadow weights.",
     "MS1_CrossFrag_Summary": "Dataset and fragment-length cross-fragment ambiguity risk and strategy comparison.",
     "Audit_Status": "Audit execution status, availability, runtime, memory, and formal non-application by audit level.",
+    "Composite_Mod_Candidates": "Constraint-valid Phase-1 composite nucleoside states; shadow only.",
+    "Composite_Mod_Invalid": "Rejected composite attempts with structured chemical constraint reasons.",
+    "Composite_Mod_Summary": "Summary of composite state generation, legacy overlap, and formal non-propagation.",
+    "Backbone_Mod_Candidates": "Hypothetical per-bond phosphorothioate candidates; shadow only.",
+    "Cleavage_Block_Audit": "Per-enzyme phosphorothioate cleavage constraint and resulting shadow fragment audit.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
     "Modification_Evidence_Summary": "Run-level counts for integrated modification evidence ranking.",
@@ -1284,8 +1294,13 @@ def write_excel_report(
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
-        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
+        "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS + COMPOSITE_DIAGNOSTIC_COLUMNS,
         "Audit_Status": AUDIT_STATUS_COLUMNS,
+        "Composite_Mod_Candidates": COMPOSITE_CANDIDATE_COLUMNS,
+        "Composite_Mod_Invalid": COMPOSITE_INVALID_COLUMNS,
+        "Composite_Mod_Summary": COMPOSITE_SUMMARY_COLUMNS,
+        "Backbone_Mod_Candidates": BACKBONE_COLUMNS,
+        "Cleavage_Block_Audit": CLEAVAGE_COLUMNS,
         "MS1_Truncation_Audit": MS1_TRUNCATION_AUDIT_COLUMNS,
         "MS1_Truncation_Detail": MS1_TRUNCATION_DETAIL_COLUMNS,
         "MS1_Truncation_Summary": MS1_TRUNCATION_SUMMARY_COLUMNS,

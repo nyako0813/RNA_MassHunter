@@ -1,0 +1,46 @@
+schema_version: RNA_MassHunter_nucleoside_slots_v1
+common_slots: [base_identity, ribose_2prime, ribose_other, glycosidic_state]
+initial_states:
+  A:
+    base_identity: A
+    ribose_2prime: hydroxyl
+    ribose_other: unmodified
+    glycosidic_state: normal
+    A_N1: unmodified
+    A_N6: amino
+    A_C2: hydrogen
+    A_C8: hydrogen
+  G:
+    base_identity: G
+    ribose_2prime: hydroxyl
+    ribose_other: unmodified
+    glycosidic_state: normal
+    G_N1: unmodified
+    G_N2: amino
+    G_O6: oxygen
+    G_N7: unmodified
+    G_C8: hydrogen
+    G_ring_methylation_state: none
+  C:
+    base_identity: C
+    ribose_2prime: hydroxyl
+    ribose_other: unmodified
+    glycosidic_state: normal
+    C_O2: oxygen
+    C_N3: unmodified
+    C_N4: amino
+    C_C5: hydrogen
+    C_C6: hydrogen
+    C_C5_side_chain: none
+  U:
+    base_identity: U
+    ribose_2prime: hydroxyl
+    ribose_other: unmodified
+    glycosidic_state: normal
+    U_O2: oxygen
+    U_N3: hydrogen
+    U_O4: oxygen
+    U_C5: hydrogen
+    U_C5_side_chain: none
+    U_C5_side_chain_carbonyl: none
+    U_C5_side_chain_sulfur_oxidation: none
