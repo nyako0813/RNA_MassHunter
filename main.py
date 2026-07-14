@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 import time
 import tracemalloc
@@ -82,13 +83,34 @@ def _record_workflow_step(
     )
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to a YAML config file. Defaults to config.yaml beside main.py.",
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_config_path(project_root: Path, configured_path: str | None) -> Path:
+    if configured_path is None:
+        return project_root / "config.yaml"
+    path = Path(configured_path).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
+
+
+def main(argv: list[str] | None = None) -> None:
     project_root = Path(__file__).resolve().parent
+    args = parse_args(argv)
+    config_path = resolve_config_path(project_root, args.config)
     logger = setup_logger(project_root / "logs")
     warnings = []
     logger.info("RNA_MassHunter_v2 MVP-5 started")
 
-    config = load_config(project_root / "config.yaml", warnings=warnings)
+    config = load_config(config_path, warnings=warnings)
     validate_config(config, warnings=warnings)
     config = resolve_paths(config, project_root)
     analysis_mode = str((config.analysis or {}).get("mode") or "full")
@@ -96,7 +118,7 @@ def main() -> None:
     workflow_rows = []
 
     _record_workflow_step(workflow_rows, analysis_mode, "config_load_and_validation", "executed", True, True, output_sheets="Input_parameters")
-    run_startup_check(project_root, config, logger, warnings)
+    run_startup_check(project_root, config, logger, warnings, config_path=config_path)
     _record_workflow_step(workflow_rows, analysis_mode, "startup_check", "executed", True, True, output_sheets="Warnings")
 
     modifications = []

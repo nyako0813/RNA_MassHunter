@@ -10,7 +10,13 @@ from rna_masshunter.warnings_manager import add_warning
 REQUIRED_PACKAGES = ["yaml", "pandas", "openpyxl", "numpy", "pyteomics", "lxml", "tqdm"]
 
 
-def run_startup_check(project_root: str | Path, config: RunConfig, logger, warnings: list[dict[str, Any]]) -> None:
+def run_startup_check(
+    project_root: str | Path,
+    config: RunConfig,
+    logger,
+    warnings: list[dict[str, Any]],
+    config_path: str | Path | None = None,
+) -> None:
     root = Path(project_root)
     logger.info("Startup check: Python %s", sys.version.split()[0])
     if sys.version_info < (3, 10):
@@ -23,8 +29,9 @@ def run_startup_check(project_root: str | Path, config: RunConfig, logger, warni
         else:
             logger.info("Package OK: %s", package)
 
+    selected_config_path = Path(config_path) if config_path is not None else root / "config.yaml"
     required_paths = [
-        root / "config.yaml",
+        selected_config_path,
         root / "data" / "modifications.yaml",
         root / "data" / "rule_sets",
         root / "data" / "pathways",
@@ -47,7 +54,7 @@ def run_startup_check(project_root: str | Path, config: RunConfig, logger, warni
     mzml_path = config.input.get("mzml_path")
     raw_path = config.input.get("raw_path")
     if not mzml_path and not raw_path:
-        add_warning(warnings, "WARNING", "startup_check", "No mzML or raw input configured. Edit config.yaml before real analysis.")
+        add_warning(warnings, "WARNING", "startup_check", f"No mzML or raw input configured. Edit {selected_config_path} before real analysis.")
     else:
         for label, value in (("mzML", mzml_path), ("raw", raw_path)):
             if value and not Path(value).exists():

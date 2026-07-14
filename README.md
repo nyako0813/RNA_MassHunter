@@ -155,7 +155,13 @@ When AP is enabled and complete, only dephosphorylated terminal forms are genera
 python main.py
 ```
 
-Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to `.cache/`.
+Use an alternate config without replacing the repository `config.yaml`:
+
+```bash
+python main.py --config path/to/alternate.yaml
+```
+
+Relative config paths are resolved from the current working directory; absolute paths are also accepted. Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to `.cache/`.
 
 ## Current Features
 

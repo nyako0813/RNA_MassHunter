@@ -117,3 +117,11 @@ def test_internal_context_not_part_of_report_rows():
     _,_,_,a=run(1)
     assert all(not any(str(k).startswith("_") for k in row) for row in a["strategy_rows"]+a["detail_rows"]+a["summary_rows"])
     assert a["summary"]["Formal_Change_Ready"] is False
+
+@pytest.mark.parametrize("limit,expected", [(20,20),(30,30),(50,50)])
+def test_filter_first_custom_shadow_limits(limit,expected):
+    c,ctx,_,_=run(60)
+    ranked=ctx["fragments"][0]["ranked_matches"]
+    selected=select_strategy_matches(ranked,"filter_first",limit,c.fragment_mapping)
+    assert len(selected)==expected
+    assert all(passes_fragment_ms1_filter(match,c.fragment_mapping) for match in selected)
