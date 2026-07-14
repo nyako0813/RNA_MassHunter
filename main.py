@@ -26,6 +26,11 @@ from rna_masshunter.ms1_selection_strategy_audit import (
     append_top_selection_columns,
     build_ms1_selection_strategy_audit,
 )
+from rna_masshunter.ms1_top50_dedup_audit import (
+    append_top50_diagnostic_columns,
+    append_top50_shadow_columns,
+    build_ms1_top50_dedup_audit,
+)
 from rna_masshunter.ms2_annotation import annotate_ms2
 from rna_masshunter.ms2_ambiguous_peak_audit import (
     build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
@@ -461,6 +466,32 @@ def main(argv: list[str] | None = None) -> None:
         )
         optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_selection_diagnostic_columns(
             optional_results.get("MS2_Unmatched_Ion_Diagnostics"), selection_audit
+        )
+
+    top50_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Tier_Top50_Full_Shadow"), True)
+    dedup_audit_enabled = _as_bool(config.fragment_mapping.get("Enable_MS1_Physical_Peak_Dedup_Audit"), True)
+    top50_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Tier_Top50_To_Formal_Result"), False)
+    dedup_apply_formal = _as_bool(config.fragment_mapping.get("Apply_MS1_Dedup_To_Formal_Result"), False)
+    if not intact_only and top50_audit_enabled and dedup_audit_enabled and not top50_apply_formal and not dedup_apply_formal and ms1_audit_context:
+        tracemalloc.start()
+        top50_audit = build_ms1_top50_dedup_audit(
+            context=ms1_audit_context, config=config, modifications=modifications,
+            intact_results=intact_results, baseline_matches=fragment_ms1_matches,
+            baseline_candidates=known_modification_candidates, baseline_ranking=ranking_rows,
+            ms2_results=optional_results, rule_set=rule_set, pathways=pathways,
+        )
+        _, top50_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        top50_audit["summary"]["Audit_Peak_Tracked_Memory_MiB"] = top50_peak_bytes / (1024 * 1024)
+        top50_audit["summary_rows"][0]["Audit_Peak_Tracked_Memory_MiB"] = top50_peak_bytes / (1024 * 1024)
+        optional_results["MS1_Top50_Shadow"] = top50_audit["top50_rows"]
+        optional_results["MS1_Peak_Dedup_Detail"] = top50_audit["detail_rows"]
+        optional_results["MS1_Top50_Dedup_Summary"] = top50_audit["summary_rows"]
+        optional_results["Top_Modification_Candidates"] = append_top50_shadow_columns(
+            optional_results.get("Top_Modification_Candidates"), top50_audit
+        )
+        optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_top50_diagnostic_columns(
+            optional_results.get("MS2_Unmatched_Ion_Diagnostics"), top50_audit
         )
     report_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
