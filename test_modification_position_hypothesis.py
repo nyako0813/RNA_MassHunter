@@ -224,6 +224,37 @@ def test_oxidation_family_rows_keep_candidates_separate(tmp_path):
     assert u["Delta_Oxidation_Da"]==pytest.approx(15.99491461957)
     assert u["Oxidation_Origin_Assessable"] is False and u["Possible_Ex_Vivo_Oxidation"]=="unknown"
 
+def test_oxidation_family_uses_only_position_informative_fragments(tmp_path):
+    from types import SimpleNamespace
+    from rna_masshunter.backbone_state import load_backbone_transformations
+    from rna_masshunter.modification_constraints import load_transformations
+    from rna_masshunter.sample_structure_schema import SampleStructureHypothesis,PositionHypothesis
+    from rna_masshunter.structure_fragment import build_complete_structure_state
+    from test_pt_paired_evidence import cfg
+    loaded=load(tmp_path,[
+        hyp("U",kind="composite_structure",position=37,parent_base="U",modification_ids=["s2U","cnm5U","side_chain_thioamide"]),
+        hyp("O",kind="composite_structure",position=37,parent_base="U",modification_ids=["s2U","cnm5U","side_chain_thioamide_oxo1"])])
+    transforms=load_transformations(ROOT/"data/modification_transforms_v2.yaml")
+    backbone=load_backbone_transformations(ROOT/"data/backbone_modifications.yaml")[0]
+    structures=[]
+    for candidate,ids in (("U",("s2U","cnm5U","side_chain_thioamide")),("O",("s2U","cnm5U","side_chain_thioamide_oxo1"))):
+        state,error=build_complete_structure_state(SampleStructureHypothesis(candidate,(PositionHypothesis(37,"U",ids),),()),SEQ,transforms,ROOT/"data/nucleoside_slots.yaml",backbone)
+        assert error is None;structures.append(state)
+    common={"Fragment_ID":"uninformative","Included_Modified_Positions":"","Match_Status":"matched","Support_Class":"observation_nondiscriminating","Theoretical_mz":500.0,"Observed_mz":500.0,"Observed_Scan":"shared","Observed_RT":1.0}
+    rows=[dict(common,Candidate_ID=candidate) for candidate in ("U","O")]
+    rows.extend([
+        {"Candidate_ID":"U","Fragment_ID":"position37","Included_Modified_Positions":"37","Match_Status":"matched","Support_Class":"unique_composite_support","Theoretical_mz":700.0,"Observed_mz":700.0,"Observed_Scan":"unoxidized","Observed_RT":2.0},
+        {"Candidate_ID":"O","Fragment_ID":"position37","Included_Modified_Positions":"37","Match_Status":"matched","Support_Class":"unique_composite_support","Theoretical_mz":708.0,"Observed_mz":708.0,"Observed_Scan":"monooxide","Observed_RT":2.1},
+    ])
+    obs=SimpleNamespace(structures=tuple(structures),sheets={"Composite_MS1_Matches":rows})
+    audit=build_modification_hypothesis_audit(loaded,config=cfg(),composite_observation=obs,project_root=ROOT)
+    family=audit.sheets["Mod_Oxidation_Family"]
+    unoxidized=next(row for row in family if row["Oxidation_State"]=="unoxidized")
+    monooxide=next(row for row in family if row["Oxidation_State"]=="monooxide")
+    assert unoxidized["Theoretical_mz"]==700.0 and monooxide["Theoretical_mz"]==708.0
+    assert "shared" not in unoxidized["Physical_Peak_IDs"] and "shared" not in monooxide["Physical_Peak_IDs"]
+    assert unoxidized["Final_Family_Interpretation"]=="BOTH_SUPPORTED_AS_MIXTURE"
+
 def test_nucleoside_only_composite_does_not_select_pt_pair(tmp_path):
     from test_pt_paired_evidence import pair
     h=load(tmp_path,[hyp(kind="composite_structure",position=10,parent_base="G",modification_ids=["m22G","Gm"])]).hypotheses[0]

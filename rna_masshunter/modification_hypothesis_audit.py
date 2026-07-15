@@ -151,12 +151,15 @@ def _build_oxidation_family_rows(hypotheses,structures,composite_sheets,project_
                 modified_bonds={k for k,v in structure.bond_states.items() if getattr(v,"state","normal_phosphate")!="normal_phosphate"}
                 if actual=={positions[0]:state_id} and not modified_bonds and _structure_composition(structure).canonical_string()==comp:matching.append(structure)
             structure_ids=[x.candidate_id for x in matching];support_rows=[support[x] for x in structure_ids if x in support]
-            detail=[r for x in structure_ids for r in ms1[x]];matched_detail=[r for r in detail if r.get("Match_Status")=="matched"]
-            matched=bool(matched_detail) or any(int(r.get("MS1_Matched_Fragment_Count") or 0)>0 for r in support_rows)
-            observable=any(r.get("Match_Status")!="not_observable" for r in detail) if detail else any(int(r.get("Observable_Fragment_Count") or 0)>0 for r in support_rows)
-            specific=any(r.get("Support_Class")=="unique_composite_support" for r in matched_detail) or any(int(r.get("MS1_Unique_Support_Count") or 0)>0 for r in support_rows)
+            detail=[r for x in structure_ids for r in ms1[x]]
+            position_tokens={str(position) for position in positions}
+            informative_detail=[r for r in detail if position_tokens & set(str(r.get("Included_Modified_Positions") or "").split(";"))]
+            matched_detail=[r for r in informative_detail if r.get("Match_Status")=="matched"]
+            matched=bool(matched_detail) if detail else any(int(r.get("MS1_Matched_Fragment_Count") or 0)>0 for r in support_rows)
+            observable=any(r.get("Match_Status")!="not_observable" for r in informative_detail) if detail else any(int(r.get("Observable_Fragment_Count") or 0)>0 for r in support_rows)
+            specific=any(r.get("Support_Class")=="unique_composite_support" for r in matched_detail) if detail else any(int(r.get("MS1_Unique_Support_Count") or 0)>0 for r in support_rows)
             physical={f"{r.get('Observed_Scan','')}|{r.get('Observed_RT','')}|{r.get('Observed_mz','')}" for r in matched_detail}
-            first=matched_detail[0] if matched_detail else (detail[0] if detail else {})
+            first=matched_detail[0] if matched_detail else (informative_detail[0] if informative_detail else {})
             candidates.append({"Modification_Family_ID":family_id,"Hypothesis_ID":explicit.hypothesis_id if explicit else "",
                 "Candidate_ID":explicit.hypothesis_id if explicit else f"{family_id}|{oxidation}","Oxidation_State":oxidation,
                 "Modification_IDs":";".join(ids),"Canonical_Nucleoside_State":state_id,"Composition_Delta":comp,"Exact_Mass_Delta":mass,
