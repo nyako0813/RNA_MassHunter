@@ -259,3 +259,23 @@ def test_nucleoside_only_composite_does_not_select_pt_pair(tmp_path):
     from test_pt_paired_evidence import pair
     h=load(tmp_path,[hyp(kind="composite_structure",position=10,parent_base="G",modification_ids=["m22G","Gm"])]).hypotheses[0]
     assert not _matches_pair(h,pair(("m22G","Gm")))
+
+
+def test_enzyme_context_is_not_applicable_on_nuclease_p1_run(tmp_path):
+    from test_pt_paired_evidence import cfg
+    loaded = load(tmp_path, [
+        hyp("PT_T1", kind="backbone_modification", bond_id="10_11",
+            modification_id="phosphorothioate", enzyme_context=["RNase_T1"]),
+        hyp("M22", position=10, parent_base="G", modification_id="m22G"),
+    ])
+    config = cfg(max_charge=1)
+    config.digestion = {"enzyme": "Nuclease_P1"}
+    audit = build_modification_hypothesis_audit(loaded, peaks=[], config=config, audit_level="audit")
+    rows = {row["Hypothesis_ID"]: row for row in audit.sheets["Mod_Hypothesis_Summary"]}
+    pt = rows["PT_T1"]
+    assert pt["Configured_Enzyme"] == "Nuclease_P1"
+    assert pt["Enzyme_Context_Applicable"] is False
+    assert pt["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_RNase_P1_run"
+    assert pt["Final_Shadow_Interpretation"] == "NOT_APPLICABLE_TO_ENZYME"
+    assert pt["Overall_Data_Sufficiency"] == "not_applicable"
+    assert rows["M22"]["Enzyme_Context_Applicable"] is True

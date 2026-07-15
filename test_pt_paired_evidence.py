@@ -200,3 +200,17 @@ def test_same_composition_structural_isomers_compete():
     rows,_=build_pt_evidence([a,b],[Peak(mz,3000,rt=2.0,scan_id="P")],cfg(max_charge=1))
     assert all(r["Evidence_Class"]=="AMBIGUOUS_PEAK_ASSIGNMENT" for r in rows)
     assert all(r["Modified_Competition_Count"]>0 for r in rows)
+
+
+def test_pt_audit_is_not_applicable_to_nuclease_p1_run():
+    from rna_masshunter.pt_paired_audit import build_pt_paired_audit
+    run = cfg(max_charge=1)
+    run.digestion = {"enzyme": "Nuclease_P1"}
+    result = build_pt_paired_audit(ROOT, SEQ, IDENTITY["sequence_id"], [], [], run, audit_level="full")
+    assert not result.pairs
+    assert result.sheets["PT_Discovery_Candidates"] == []
+    assert "PT_Paired_Evidence" not in result.sheets
+    assert all(row["Configured_Enzyme"] == "Nuclease_P1" for row in result.sheets["PT_Paired_Summary"])
+    assert all(row["Enzyme_Context_Applicable"] is False for row in result.sheets["PT_Paired_Summary"])
+    assert all(row["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_RNase_P1_run"
+        for row in result.sheets["PT_Paired_Summary"])
