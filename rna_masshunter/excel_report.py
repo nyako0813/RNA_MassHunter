@@ -145,6 +145,16 @@ from rna_masshunter.p1_annotation import (
     P1_THEORETICAL_COLUMNS,
     P1_UNMATCHED_COLUMNS,
 )
+from rna_masshunter.p1_sap_chemical_state_audit import (
+    CHEMICAL_STATE_COLUMNS as P1_SAP_CHEMICAL_STATE_COLUMNS,
+    COMPETITION_COLUMNS as P1_SAP_COMPETITION_COLUMNS,
+    CROSS_ENZYME_COLUMNS as P1_SAP_CROSS_ENZYME_COLUMNS,
+    FEATURE_COLUMNS as P1_SAP_FEATURE_COLUMNS,
+    MS2_PROVENANCE_COLUMNS as P1_SAP_MS2_PROVENANCE_COLUMNS,
+    PT_FAMILY_COLUMNS as P1_SAP_PT_FAMILY_COLUMNS,
+    SUMMARY_COLUMNS as P1_SAP_SUMMARY_COLUMNS,
+    TERMINAL_COLUMNS as P1_SAP_TERMINAL_COLUMNS,
+)
 
 
 AUDIT_TOP_SHADOW_COLUMNS = list(dict.fromkeys(
@@ -1321,6 +1331,14 @@ def write_excel_report(
         "P1_Theoretical_Structures": P1_THEORETICAL_COLUMNS,
         "P1_Peak_Annotations": P1_ANNOTATION_COLUMNS,
         "P1_Unmatched_Peaks": P1_UNMATCHED_COLUMNS,
+        "P1_SAP_Chemical_State": P1_SAP_CHEMICAL_STATE_COLUMNS,
+        "P1_SAP_PT_Family": P1_SAP_PT_FAMILY_COLUMNS,
+        "P1_SAP_Terminal_Audit": P1_SAP_TERMINAL_COLUMNS,
+        "P1_SAP_Chemistry_Summary": P1_SAP_SUMMARY_COLUMNS,
+        "P1_SAP_Features": P1_SAP_FEATURE_COLUMNS,
+        "P1_SAP_Competition": P1_SAP_COMPETITION_COLUMNS,
+        "Cross_Enzyme_Chemistry": P1_SAP_CROSS_ENZYME_COLUMNS,
+        "P1_SAP_MS2_Provenance": P1_SAP_MS2_PROVENANCE_COLUMNS,
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
         "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,

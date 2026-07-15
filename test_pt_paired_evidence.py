@@ -212,5 +212,5 @@ def test_pt_audit_is_not_applicable_to_nuclease_p1_run():
     assert "PT_Paired_Evidence" not in result.sheets
     assert all(row["Configured_Enzyme"] == "Nuclease_P1" for row in result.sheets["PT_Paired_Summary"])
     assert all(row["Enzyme_Context_Applicable"] is False for row in result.sheets["PT_Paired_Summary"])
-    assert all(row["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_RNase_P1_run"
+    assert all(row["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_Nuclease_P1_run"
         for row in result.sheets["PT_Paired_Summary"])

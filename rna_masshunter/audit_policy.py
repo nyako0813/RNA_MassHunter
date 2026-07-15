@@ -98,6 +98,8 @@ AUDIT_SUMMARY_SHEETS = {
     "PT_Cross_Run_Pairs", "PT_Cross_Run_Decoy", "PT_Cross_Run_Target",
     "Mod_Hypothesis_Summary", "Mod_Hypothesis_Cross_Run", "Mod_Hypothesis_Invalid",
     "Mod_Hypothesis_Structure_Map", "Mod_Hypothesis_ID_Audit", "Mod_Oxidation_Family",
+    "P1_SAP_Chemical_State", "P1_SAP_PT_Family", "P1_SAP_Terminal_Audit",
+    "P1_SAP_Chemistry_Summary",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -116,6 +118,8 @@ AUDIT_DETAIL_SHEETS = {
     "Composite_MS2_Matches", "Blocked_Cleavage_Matches", "Composite_Obs_Invalid",
     "PT_Paired_Evidence", "PT_State_Search", "PT_Cross_Run_Detail", "PT_Cross_Run_Decoy_Detail", "PT_Cross_Run_MS2_Detail",
     "Mod_Hypothesis_Detail", "Mod_Hypothesis_Alternatives",
+    "P1_SAP_Features", "P1_SAP_Competition", "Cross_Enzyme_Chemistry",
+    "P1_SAP_MS2_Provenance",
 }
 
 SHEET_REGISTRY = {

@@ -275,7 +275,7 @@ def test_enzyme_context_is_not_applicable_on_nuclease_p1_run(tmp_path):
     pt = rows["PT_T1"]
     assert pt["Configured_Enzyme"] == "Nuclease_P1"
     assert pt["Enzyme_Context_Applicable"] is False
-    assert pt["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_RNase_P1_run"
+    assert pt["Evidence_Not_Applicable_Reason"] == "RNase_T1_hypothesis_on_Nuclease_P1_run"
     assert pt["Final_Shadow_Interpretation"] == "NOT_APPLICABLE_TO_ENZYME"
     assert pt["Overall_Data_Sufficiency"] == "not_applicable"
     assert rows["M22"]["Enzyme_Context_Applicable"] is True

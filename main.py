@@ -65,6 +65,9 @@ from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
 from rna_masshunter.p1_annotation import build_p1_optional_results, is_p1_enabled
+from rna_masshunter.p1_sap_chemical_state_audit import (
+    build_p1_sap_chemical_state_audit, write_p1_sap_summary_json,
+)
 from rna_masshunter.peak_filtering import classify_peak_tiers
 from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
@@ -614,6 +617,7 @@ def main(argv: list[str] | None = None) -> None:
     composite_audit = None
     composite_observation = None
     pt_paired_audit = None
+    p1_sap_audit = None
     if audit_policy.run_shadow_audits and sequence and not intact_only:
         composite_audit = build_composite_modification_audit(
             project_root, sequence, modifications, base_masses, audit_mode=audit_policy.level,
@@ -735,6 +739,24 @@ def main(argv: list[str] | None = None) -> None:
             True, False, f"audit_level={audit_policy.level}; hypothesis file was not read",
         )
 
+    if (audit_policy.run_shadow_audits and sequence and not intact_only and is_p1_enabled(config)
+            and _as_bool((config.alkaline_phosphatase or {}).get("enabled"), False)):
+        p1_sap_audit = build_p1_sap_chemical_state_audit(
+            project_root, sequence, peaks, config, modifications, audit_level=audit_policy.level,
+            mzml_path=mzml_path,
+        )
+        optional_results.update(p1_sap_audit.sheets)
+        audit_status_rows.append(audit_status_row(
+            "P1 SAP chemical-state", "MS1/MS2", audit_policy, True, True,
+            audit_policy.include_detail, float(p1_sap_audit.metrics.get("Audit_Runtime") or 0),
+            float(p1_sap_audit.metrics.get("Tracemalloc_Peak_MiB") or 0),
+        ))
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "p1_sap_chemical_state_shadow", "executed", True, True,
+            output_sheets="P1_SAP_Chemical_State; P1_SAP_PT_Family; P1_SAP_Terminal_Audit; P1_SAP_Features; Cross_Enzyme_Chemistry",
+            notes=f"candidates={p1_sap_audit.metrics.get('Candidate_Count', 0)}; independent_features={p1_sap_audit.metrics.get('Independent_Feature_Count', 0)}",
+        )
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
@@ -747,6 +769,7 @@ def main(argv: list[str] | None = None) -> None:
         ("PT paired evidence", "MS1/MS2"),
         ("PT cross-run recurrence", "MS1/MS2"),
         ("Modification position hypotheses", "MS1/MS2"),
+        ("P1 SAP chemical-state", "MS1/MS2"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:
@@ -790,6 +813,13 @@ def main(argv: list[str] | None = None) -> None:
         audit_policy=audit_policy,
     )
     logger.info("Excel report written: %s", report_path)
+    if p1_sap_audit is not None:
+        summary_path = write_p1_sap_summary_json(
+            p1_sap_audit, Path(config.project["output_dir"]), mzml_path=mzml_path,
+            config_path=config_path, original_config_path=project_root / "config.yaml",
+            audit_level=audit_policy.level, excel_path=report_path,
+        )
+        logger.info("P1 SAP chemical-state JSON written: %s", summary_path)
     logger.info("RNA_MassHunter_v2 MVP-5 finished")
 
 if __name__ == "__main__":
