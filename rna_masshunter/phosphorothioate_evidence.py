@@ -58,7 +58,8 @@ def _matches(sorted_peaks: list[dict[str, Any]], mz_values: list[float], theoret
 
 
 def build_pt_evidence(pairs: list[Any], peaks: list[Any], config: Any, *, legacy_matches: list[Any] = (),
-    other_composite_matches: list[Any] = (), audit_level: str = "full", include_detail: bool = True) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    other_composite_matches: list[Any] = (), audit_level: str = "full", include_detail: bool = True,
+    include_compact_states: bool = False) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     mapping = getattr(config, "fragment_mapping", {}) or {}; reconstruction = getattr(config, "reconstruction", {}) or {}
     polarity = str(mapping.get("polarity") or "auto").lower()
     if polarity == "auto": polarity = str((getattr(config, "instrument", {}) or {}).get("polarity") or "negative").lower()
@@ -107,8 +108,16 @@ def build_pt_evidence(pairs: list[Any], peaks: list[Any], config: Any, *, legacy
         obs["competitors"] = sorted(competitors); obs["Competition_Count"] = len(competitors)
     state_rows = []
     for obs in observations:
-        if not include_detail: continue
         pair = obs["pair"]; fragment = obs["fragment"]; nearest = obs["nearest"]; match = obs["match"]
+        if not include_detail:
+            if include_compact_states:
+                state_rows.append({"Candidate_ID":pair.spec.candidate_id,"Hypothesis_ID":pair.spec.hypothesis_id,"Search_Mode":pair.spec.search_mode,
+                    "Sequence_ID":pair.spec.sequence_id,"Enzyme":pair.spec.enzyme,"Bond_ID":pair.spec.bond_id,
+                    "Shared_Nucleoside_States":";".join(f"{x.position}:{'+'.join(x.transform_ids) or 'unmodified'}" for x in pair.spec.position_states) or "unmodified",
+                    "Shared_Modified_Positions":";".join(str(x.position) for x in pair.spec.position_states),"Backbone_State":obs["Backbone_State"],
+                    "Fragment_Start":fragment.start,"Fragment_End":fragment.end,"Terminal_Form":fragment.terminal_form,"Charge":obs["Charge"],
+                    "Theoretical_mz":obs["Theoretical_mz"],"Observable":obs["Observable"],"Matched":obs["Matched"],"Competition_Count":obs["Competition_Count"],**FALSE_FLAGS})
+            continue
         state_rows.append({"Audit_Level": audit_level, "Candidate_ID": pair.spec.candidate_id,
             "Hypothesis_ID": pair.spec.hypothesis_id, "Search_Mode": pair.spec.search_mode,
             "Candidate_State_ID": obs["Candidate_State_ID"], "Sequence_ID": pair.spec.sequence_id,

@@ -27,3 +27,6 @@ data/source/*.xlsx
 
 # Local cross-run PT manifest
 data/pt_cross_run_manifest.yaml
+
+# Local unpublished modification-position hypotheses
+data/modification_position_hypotheses.yaml

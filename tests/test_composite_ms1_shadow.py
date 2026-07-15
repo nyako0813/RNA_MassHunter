@@ -15,7 +15,7 @@ def _structure():
         backbone_bond_ids={f"{i}_{i+1}" for i in range(1, len(SEQ))}, target_identity=TARGET_IDENTITY,
     )
     state, error = build_complete_structure_state(
-        loaded.hypotheses[0], SEQ, transforms, ROOT / "data/nucleoside_slots.yaml",
+        next(x for x in loaded.hypotheses if x.hypothesis_id == "U37_side_chain_plus_PT_37_38"), SEQ, transforms, ROOT / "data/nucleoside_slots.yaml",
         load_backbone_transformations(ROOT / "data/backbone_modifications.yaml")[0],
     )
     assert error is None
@@ -24,7 +24,7 @@ def _structure():
 def test_sample_schema_loads_valid_complete_hypothesis():
     loaded, state = _structure()
     assert loaded.enabled
-    assert len(loaded.hypotheses) == 1
+    assert len(loaded.hypotheses) == 3
     assert not loaded.invalid_rows
     assert state.position_states[37].applied_transform_ids == ("s2U", "cnm5U", "side_chain_thioamide_oxo1")
     assert state.bond_states["37_38"].state == "phosphorothioate"

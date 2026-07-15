@@ -96,6 +96,8 @@ AUDIT_SUMMARY_SHEETS = {
     "PT_Paired_Summary", "PT_Discovery_Candidates",
     "PT_Cross_Run_Runs", "PT_Cross_Run_Summary", "PT_Cross_Run_Neutral",
     "PT_Cross_Run_Pairs", "PT_Cross_Run_Decoy", "PT_Cross_Run_Target",
+    "Mod_Hypothesis_Summary", "Mod_Hypothesis_Cross_Run", "Mod_Hypothesis_Invalid",
+    "Mod_Hypothesis_Structure_Map", "Mod_Hypothesis_ID_Audit", "Mod_Oxidation_Family",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -113,6 +115,7 @@ AUDIT_DETAIL_SHEETS = {
     "Composite_Fragment_Masses", "Composite_MS1_Matches", "Composite_MS2_Ions",
     "Composite_MS2_Matches", "Blocked_Cleavage_Matches", "Composite_Obs_Invalid",
     "PT_Paired_Evidence", "PT_State_Search", "PT_Cross_Run_Detail", "PT_Cross_Run_Decoy_Detail", "PT_Cross_Run_MS2_Detail",
+    "Mod_Hypothesis_Detail", "Mod_Hypothesis_Alternatives",
 }
 
 SHEET_REGISTRY = {

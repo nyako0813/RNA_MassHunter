@@ -59,6 +59,8 @@ from rna_masshunter.ms2_effective_ambiguity import (
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.pt_paired_audit import build_pt_paired_audit
 from rna_masshunter.pt_cross_run_audit import build_pt_cross_run_audit
+from rna_masshunter.modification_hypothesis_schema import load_modification_position_hypotheses
+from rna_masshunter.modification_hypothesis_audit import build_modification_hypothesis_audit
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
@@ -120,6 +122,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--cross-run-manifest",
         default=None,
         help="Explicit PT cross-run YAML manifest; ignored at standard audit level.",
+    )
+    parser.add_argument(
+        "--position-hypotheses", default=None,
+        help="Explicit modification-position hypothesis YAML; ignored at standard audit level.",
+    )
+    parser.add_argument(
+        "--hypothesis-mode", choices=("targeted", "discovery", "both"), default="both",
+        help="Position-hypothesis audit scope (default: both).",
     )
     return parser.parse_args(argv)
 
@@ -671,6 +681,7 @@ def main(argv: list[str] | None = None) -> None:
             notes=f"pairs={len(pt_paired_audit.pairs)}; invalid={len(pt_paired_audit.invalid_rows)}",
         )
 
+    cross_run = None
     if audit_policy.run_shadow_audits and args.cross_run_manifest and pt_paired_audit is not None:
         cross_started = time.perf_counter()
         cross_run = build_pt_cross_run_audit(
@@ -695,6 +706,35 @@ def main(argv: list[str] | None = None) -> None:
             True, False, f"audit_level={audit_policy.level}; manifest was not read",
         )
 
+    if audit_policy.run_shadow_audits and args.position_hypotheses and composite_observation is not None and pt_paired_audit is not None:
+        hypothesis_loaded = load_modification_position_hypotheses(
+            args.position_hypotheses, project_root=project_root, sequence=sequence,
+            sequence_id=config.sequence.get("name", ""), sequence_name=config.sequence.get("name", ""),
+            organism=config.organism.get("species", ""), rule_set=config.organism.get("rule_set", ""),
+        )
+        hypothesis_audit = build_modification_hypothesis_audit(
+            hypothesis_loaded, pt_pairs=pt_paired_audit.pairs, peaks=peaks, config=config,
+            composite_observation=composite_observation,
+            cross_run_sheets=cross_run.sheets if cross_run is not None else {},
+            audit_level=audit_policy.level, hypothesis_mode=args.hypothesis_mode, project_root=project_root,
+        )
+        optional_results.update(hypothesis_audit.sheets)
+        audit_status_rows.append(audit_status_row(
+            "Modification position hypotheses", "MS1/MS2", audit_policy, True, True,
+            audit_policy.include_detail, float(hypothesis_audit.metrics.get("Hypothesis_Audit_Runtime") or 0),
+            float(hypothesis_audit.metrics.get("Hypothesis_Audit_Tracemalloc_Peak_MiB") or 0),
+        ))
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "modification_position_hypothesis_shadow", "executed", True, True,
+            output_sheets="Mod_Hypothesis_Summary; Mod_Hypothesis_Cross_Run; Mod_Hypothesis_Invalid; Mod_Hypothesis_Structure_Map; Mod_Hypothesis_ID_Audit; Mod_Oxidation_Family; Mod_Hypothesis_Detail; Mod_Hypothesis_Alternatives",
+            notes=f"valid={len(hypothesis_loaded.hypotheses)}; invalid={len(hypothesis_loaded.invalid_rows)}; mode={args.hypothesis_mode}",
+        )
+    elif args.position_hypotheses:
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "modification_position_hypothesis_shadow", "skipped_by_audit_level",
+            True, False, f"audit_level={audit_policy.level}; hypothesis file was not read",
+        )
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
@@ -706,6 +746,7 @@ def main(argv: list[str] | None = None) -> None:
         ("Composite observation connection", "MS1/MS2"),
         ("PT paired evidence", "MS1/MS2"),
         ("PT cross-run recurrence", "MS1/MS2"),
+        ("Modification position hypotheses", "MS1/MS2"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:

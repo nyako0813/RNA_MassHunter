@@ -16,13 +16,14 @@ ROOT = Path(__file__).resolve().parent
 SEQ = "GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA"
 TARGET_IDENTITY = {"name": "Mac_tRNA-Glu-UUC", "organism": "Methanosarcina acetivorans", "rule_set": "methanosarcina_acetivorans"}
 
-def state_and_fragment():
+def state_and_fragment(include_pt=False):
     transforms = load_transformations(ROOT/"data/modification_transforms_v2.yaml")
     loaded = load_sample_structure_hypotheses(ROOT/"data/sample_structure_hypotheses.yaml", sequence=SEQ,
         transformations=transforms, backbone_bond_ids={f"{i}_{i+1}" for i in range(1,len(SEQ))},
         target_identity=TARGET_IDENTITY)
     bt = load_backbone_transformations(ROOT/"data/backbone_modifications.yaml")[0]
-    state, error = build_complete_structure_state(loaded.hypotheses[0], SEQ, transforms,
+    hypothesis = next(x for x in loaded.hypotheses if x.hypothesis_id == ("U37_side_chain_plus_PT_37_38" if include_pt else "U37_side_chain_thioamide"))
+    state, error = build_complete_structure_state(hypothesis, SEQ, transforms,
         ROOT/"data/nucleoside_slots.yaml", bt)
     assert error is None
     parent = Fragment("F35_40","T",SEQ[34:40],35,40,35,40,"Nuclease_P1",0,"default",0.0)
@@ -54,7 +55,7 @@ def test_ms1_not_observable_is_distinct():
     assert rows[0]["Not_Observable_Reason"]=="theoretical_mz_above_acquisition_range"
 
 def test_ms2_state_propagates_only_to_containing_ions():
-    state,parent,_,_=state_and_fragment()
+    state,parent,_,_=state_and_fragment(include_pt=True)
     ions=generate_composite_theoretical_ions([state],[parent],SEQ,cfg())
     assert any(i["Position_Informative"] for i in ions)
     assert any(i["Backbone_Informative"] for i in ions)
@@ -72,7 +73,7 @@ def test_ms2_match_is_shadow_only():
     assert match_composite_ms2(ions,[spectrum],cfg()) == []
 
 def test_phosphorothioate_blocked_is_not_stochastic_missed():
-    state,parent,_,bt=state_and_fragment()
+    state,parent,_,bt=state_and_fragment(include_pt=True)
     rows=match_blocked_cleavage_fragments([state],SEQ,[],cfg(),bt,
         load_base_masses(ROOT/"data/base_masses.yaml"),[parent])
     assert rows

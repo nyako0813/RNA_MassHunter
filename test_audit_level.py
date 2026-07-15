@@ -53,6 +53,14 @@ def make_report(tmp_path, level):
         "PT_Cross_Run_Summary":[{"Cross_Run_Candidate_Key":"k","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Pairs":[{"Pair_Key":"p","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Detail":[{"Run_ID":"r1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_Summary":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_Cross_Run":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_Invalid":[],
+        "Mod_Hypothesis_Structure_Map":[{"Position_Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_ID_Audit":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Oxidation_Family":[{"Modification_Family_ID":"f","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_Detail":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "Mod_Hypothesis_Alternatives":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
     }
     return write_excel_report(
         output_dir=out,config=config(out),diagnostics={},intact_results=[],charge_state_peaks=[],
@@ -134,6 +142,13 @@ def test_cross_run_excel_sheets_follow_audit_level(tmp_path):
     assert not any(name.startswith("PT_Cross_Run") for name in names["standard"])
     assert {"PT_Cross_Run_Runs","PT_Cross_Run_Summary","PT_Cross_Run_Pairs"} <= names["audit"]
     assert "PT_Cross_Run_Detail" not in names["audit"] and "PT_Cross_Run_Detail" in names["full"]
+
+def test_modification_hypothesis_excel_sheets_follow_audit_level(tmp_path):
+    names={level:set(load_workbook(make_report(tmp_path,level),read_only=True).sheetnames) for level in AUDIT_LEVELS}
+    assert not any(name.startswith("Mod_Hypothesis") or name=="Mod_Oxidation_Family" for name in names["standard"])
+    assert {"Mod_Hypothesis_Summary","Mod_Hypothesis_Cross_Run","Mod_Hypothesis_Invalid","Mod_Hypothesis_Structure_Map","Mod_Hypothesis_ID_Audit","Mod_Oxidation_Family"} <= names["audit"]
+    assert "Mod_Hypothesis_Detail" not in names["audit"] and "Mod_Hypothesis_Alternatives" not in names["audit"]
+    assert {"Mod_Hypothesis_Detail","Mod_Hypothesis_Alternatives"} <= names["full"]
 
 def test_top_formal_columns_stable_and_standard_shadow_removed(tmp_path):
     paths={level:make_report(tmp_path,level) for level in AUDIT_LEVELS}

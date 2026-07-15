@@ -26,3 +26,9 @@ def test_valid_invalid_separation():
     r=compose(); assert r.valid_candidates and r.invalid_attempts and all(x.result.valid is False for x in r.invalid_attempts)
 @pytest.mark.parametrize('base','AGCU')
 def test_all_bases_supported(base): assert compose(base).valid_candidates
+
+def test_completed_and_explicit_three_transform_have_same_canonical_state():
+    from rna_masshunter.modification_composer import apply_transform_ids
+    a,result_a,_=apply_transform_ids("U",37,("s2U","cnm5U","side_chain_thioamide_oxo1"),TRANS,ROOT/"data/nucleoside_slots.yaml")
+    b,result_b,_=apply_transform_ids("U",37,("cnm5s2U","side_chain_thioamide_oxo1"),TRANS,ROOT/"data/nucleoside_slots.yaml")
+    assert result_a.valid and result_b.valid and a.canonical_structure_id==b.canonical_structure_id and a.elemental_composition_delta==b.elemental_composition_delta

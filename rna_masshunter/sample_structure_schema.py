@@ -55,17 +55,41 @@ def load_sample_structure_hypotheses(path: str | Path, *, sequence: str = "",
     required_target = raw.get("target") or {}
     actual_target = dict(target_identity or {})
     target_failures: list[str] = []
+    
     if required_target:
         checks = {
             "name": str(actual_target.get("name") or ""),
             "length": len(seq),
-            "sequence_sha256": hashlib.sha256(seq.encode("utf-8")).hexdigest() if seq else "",
+            "sequence_sha256": (
+                hashlib.sha256(seq.encode("utf-8")).hexdigest()
+                if seq
+                else ""
+            ),
             "organism": str(actual_target.get("organism") or ""),
             "rule_set": str(actual_target.get("rule_set") or ""),
         }
+
+        raw_aliases = required_target.get("name_aliases") or ()
+        if isinstance(raw_aliases, str):
+            aliases = {raw_aliases}
+        else:
+            aliases = {str(value) for value in raw_aliases}
+
         for field, required in required_target.items():
-            if field not in checks or str(checks[field]) != str(required):
-                target_failures.append(f"{field}:{checks.get(field, '')}!={required}")
+            if field == "name_aliases":
+                continue
+
+            actual = str(checks.get(field, ""))
+            matches = actual == str(required)
+
+            if field == "name":
+                matches = matches or actual in aliases
+
+            if field not in checks or not matches:
+                target_failures.append(
+                    f"{field}:{actual}!={required}"
+                )
+
     if target_failures:
         return SampleStructureLoadResult(schema_version, enabled, (),
             (_invalid("", "target_identity_mismatch", ";".join(target_failures)),))

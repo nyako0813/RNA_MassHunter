@@ -1,0 +1,22 @@
+# Generic schema example only. Replace all target identity fields for real data.
+schema_version: 1
+targets:
+  - target_id: example_rna
+    sequence_id: example_rna
+    sequence_name: example_rna
+    sequence_length: 4
+    sequence_sha256: a3c532aca6cd82dd0949dc252d6d1031da32eefbb7f2f42404923359b1a9f08a
+    organism: example_organism
+    rule_set: example_rule_set
+    hypotheses:
+      - hypothesis_id: example_C2_m5C_Cm
+        hypothesis_type: composite_structure
+        priority: normal
+        position: 2
+        parent_base: C
+        modification_ids: [m5C, Cm]
+        prior_status: exploratory
+        prior_strength: unknown
+        evidence_basis: [manual_expert_hypothesis]
+        required_observation: [fragment_contains_position, exact_mass_match]
+        preferred_observation: [position_localizing_MS2]
