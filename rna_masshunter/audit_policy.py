@@ -93,6 +93,7 @@ AUDIT_SUMMARY_SHEETS = {
     "Composite_Mod_Summary", "Cleavage_Block_Audit",
     "Composite_MS1_Summary", "Composite_Support_Summary", "Legacy_Composite_Compare",
     "Composite_Shadow_Score", "Composite_Obs_Summary",
+    "PT_Paired_Summary", "PT_Discovery_Candidates",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -109,6 +110,7 @@ AUDIT_DETAIL_SHEETS = {
     "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
     "Composite_Fragment_Masses", "Composite_MS1_Matches", "Composite_MS2_Ions",
     "Composite_MS2_Matches", "Blocked_Cleavage_Matches", "Composite_Obs_Invalid",
+    "PT_Paired_Evidence", "PT_State_Search",
 }
 
 SHEET_REGISTRY = {

@@ -57,6 +57,7 @@ from rna_masshunter.ms2_effective_ambiguity import (
     build_effective_ambiguity, update_top50_affected as update_effective_top50_affected,
 )
 from rna_masshunter.position_mapper import build_position_map
+from rna_masshunter.pt_paired_audit import build_pt_paired_audit
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
@@ -595,6 +596,8 @@ def main(argv: list[str] | None = None) -> None:
         ))
 
     composite_audit = None
+    composite_observation = None
+    pt_paired_audit = None
     if audit_policy.run_shadow_audits and sequence and not intact_only:
         composite_audit = build_composite_modification_audit(
             project_root, sequence, modifications, base_masses, audit_mode=audit_policy.level,
@@ -635,6 +638,33 @@ def main(argv: list[str] | None = None) -> None:
             notes=f"valid_hypotheses={len(composite_observation.structures)}; invalid_hypotheses={len(composite_observation.invalid_rows)}",
         )
 
+    if audit_policy.run_shadow_audits and sequence and not intact_only and composite_observation is not None:
+        tracemalloc.start()
+        pt_started = time.perf_counter()
+        pt_paired_audit = build_pt_paired_audit(
+            project_root=project_root, sequence=sequence,
+            sequence_id=config.sequence.get("name", "target_tRNA"), peaks=peaks,
+            spectra=ms2_spectra_for_shadow, config=config, legacy_matches=shadow_legacy_matches,
+            other_composite_matches=composite_observation.sheets.get("Composite_MS1_Matches", []),
+            audit_level=audit_policy.level,
+        )
+        pt_seconds = time.perf_counter() - pt_started
+        _, pt_peak_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        for row in pt_paired_audit.sheets.get("PT_Paired_Summary", []):
+            row["PT_Audit_Runtime_Seconds"] = pt_seconds
+            row["PT_Audit_Peak_Memory_MiB"] = pt_peak_bytes / (1024 * 1024)
+        optional_results.update(pt_paired_audit.sheets)
+        audit_status_rows.append(audit_status_row(
+            "PT paired evidence", "MS1/MS2", audit_policy, True, True,
+            audit_policy.include_detail, pt_seconds, pt_peak_bytes / (1024 * 1024),
+        ))
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "pt_paired_evidence_shadow", "executed", True, True,
+            output_sheets="PT_Paired_Summary; PT_Discovery_Candidates; PT_Paired_Evidence; PT_State_Search",
+            notes=f"pairs={len(pt_paired_audit.pairs)}; invalid={len(pt_paired_audit.invalid_rows)}",
+        )
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
@@ -644,6 +674,7 @@ def main(argv: list[str] | None = None) -> None:
         ("Backbone modification candidates", "Backbone"),
         ("Cleavage blocking constraints", "Digestion"),
         ("Composite observation connection", "MS1/MS2"),
+        ("PT paired evidence", "MS1/MS2"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:

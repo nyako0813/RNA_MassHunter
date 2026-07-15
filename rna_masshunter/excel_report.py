@@ -19,6 +19,9 @@ from rna_masshunter.composite_observation_audit import (
     OBS_SUMMARY_COLUMNS as COMPOSITE_OBS_SUMMARY_COLUMNS, SCORE_COLUMNS as COMPOSITE_SCORE_COLUMNS,
     SUPPORT_COLUMNS as COMPOSITE_SUPPORT_COLUMNS,
 )
+from rna_masshunter.pt_paired_audit import (
+    PT_DISCOVERY_COLUMNS, PT_PAIRED_EVIDENCE_COLUMNS, PT_STATE_SEARCH_COLUMNS, PT_SUMMARY_COLUMNS,
+)
 from rna_masshunter.audit_policy import (
     AUDIT_STATUS_COLUMNS, DIAGNOSTIC_COLUMNS as AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
     AuditPolicy, included_sheet_names, sheet_category,
@@ -566,6 +569,10 @@ SHEET_DESCRIPTIONS = {
     "Legacy_Composite_Compare": "Formal legacy versus valid complete-structure shadow comparison.",
     "Composite_Shadow_Score": "Non-propagating what-if score and rank simulation.",
     "Composite_Obs_Summary": "Phase-2 observation connection status and formal non-propagation summary.",
+    "PT_Paired_Summary": "Normal-phosphate/PT paired evidence summary; shadow-only.",
+    "PT_Discovery_Candidates": "Enzyme-rule-driven PT cleavage-bond discovery candidates; shadow-only.",
+    "PT_Paired_Evidence": "Charge-resolved normal/PT paired exact-mass and physical-peak evidence; shadow-only.",
+    "PT_State_Search": "Four-state and discovery-state MS1 search detail; shadow-only.",
     "Composite_Obs_Invalid": "Invalid sample structure hypotheses excluded from observation matching.",
     "Known_Modification_Candidates": "Known modification candidates explaining fragment or intact mass shifts.",
     "Known_Modification_Summary": "Grouped summary of known modification candidates.",
@@ -1330,6 +1337,10 @@ def write_excel_report(
         "Legacy_Composite_Compare": COMPOSITE_COMPARE_COLUMNS,
         "Composite_Shadow_Score": COMPOSITE_SCORE_COLUMNS,
         "Composite_Obs_Summary": COMPOSITE_OBS_SUMMARY_COLUMNS,
+        "PT_Paired_Summary": PT_SUMMARY_COLUMNS,
+        "PT_Discovery_Candidates": PT_DISCOVERY_COLUMNS,
+        "PT_Paired_Evidence": PT_PAIRED_EVIDENCE_COLUMNS,
+        "PT_State_Search": PT_STATE_SEARCH_COLUMNS,
         "Composite_Obs_Invalid": COMPOSITE_OBS_INVALID_COLUMNS,
         "MS1_Truncation_Audit": MS1_TRUNCATION_AUDIT_COLUMNS,
         "MS1_Truncation_Detail": MS1_TRUNCATION_DETAIL_COLUMNS,
