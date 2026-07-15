@@ -94,6 +94,8 @@ AUDIT_SUMMARY_SHEETS = {
     "Composite_MS1_Summary", "Composite_Support_Summary", "Legacy_Composite_Compare",
     "Composite_Shadow_Score", "Composite_Obs_Summary",
     "PT_Paired_Summary", "PT_Discovery_Candidates",
+    "PT_Cross_Run_Runs", "PT_Cross_Run_Summary", "PT_Cross_Run_Neutral",
+    "PT_Cross_Run_Pairs", "PT_Cross_Run_Decoy", "PT_Cross_Run_Target",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -110,7 +112,7 @@ AUDIT_DETAIL_SHEETS = {
     "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
     "Composite_Fragment_Masses", "Composite_MS1_Matches", "Composite_MS2_Ions",
     "Composite_MS2_Matches", "Blocked_Cleavage_Matches", "Composite_Obs_Invalid",
-    "PT_Paired_Evidence", "PT_State_Search",
+    "PT_Paired_Evidence", "PT_State_Search", "PT_Cross_Run_Detail", "PT_Cross_Run_Decoy_Detail", "PT_Cross_Run_MS2_Detail",
 }
 
 SHEET_REGISTRY = {

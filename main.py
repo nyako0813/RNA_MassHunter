@@ -58,6 +58,7 @@ from rna_masshunter.ms2_effective_ambiguity import (
 )
 from rna_masshunter.position_mapper import build_position_map
 from rna_masshunter.pt_paired_audit import build_pt_paired_audit
+from rna_masshunter.pt_cross_run_audit import build_pt_cross_run_audit
 from rna_masshunter.review_dashboard import build_review_dashboard_results
 from rna_masshunter.mzml_diagnostics import run_mzml_diagnostics
 from rna_masshunter.pathway_loader import load_pathways, validate_pathways
@@ -114,6 +115,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=AUDIT_LEVELS,
         default="full",
         help="Shadow audit output level: standard, audit summaries, or full detail (default: full).",
+    )
+    parser.add_argument(
+        "--cross-run-manifest",
+        default=None,
+        help="Explicit PT cross-run YAML manifest; ignored at standard audit level.",
     )
     return parser.parse_args(argv)
 
@@ -665,6 +671,30 @@ def main(argv: list[str] | None = None) -> None:
             notes=f"pairs={len(pt_paired_audit.pairs)}; invalid={len(pt_paired_audit.invalid_rows)}",
         )
 
+    if audit_policy.run_shadow_audits and args.cross_run_manifest and pt_paired_audit is not None:
+        cross_started = time.perf_counter()
+        cross_run = build_pt_cross_run_audit(
+            args.cross_run_manifest, pt_paired_audit.pairs, config,
+            audit_level=audit_policy.level, legacy_matches=shadow_legacy_matches,
+            other_composite_matches=composite_observation.sheets.get("Composite_MS1_Matches", []),
+        )
+        optional_results.update(cross_run.sheets)
+        audit_status_rows.append(audit_status_row(
+            "PT cross-run recurrence", "MS1/MS2", audit_policy, True, True,
+            audit_policy.include_detail, time.perf_counter() - cross_started,
+            float(cross_run.metrics.get("Cross_Run_Tracemalloc_Peak_MiB") or 0),
+        ))
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "pt_cross_run_recurrence_shadow", "executed", True, True,
+            output_sheets="PT_Cross_Run_Runs; PT_Cross_Run_Summary; PT_Cross_Run_Pairs; PT_Cross_Run_Decoy",
+            notes=f"runs={cross_run.metrics.get('Run_Count', 0)}; manifest={args.cross_run_manifest}",
+        )
+    elif args.cross_run_manifest:
+        _record_workflow_step(
+            workflow_rows, analysis_mode, "pt_cross_run_recurrence_shadow", "skipped_by_audit_level",
+            True, False, f"audit_level={audit_policy.level}; manifest was not read",
+        )
+
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
         ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
@@ -675,6 +705,7 @@ def main(argv: list[str] | None = None) -> None:
         ("Cleavage blocking constraints", "Digestion"),
         ("Composite observation connection", "MS1/MS2"),
         ("PT paired evidence", "MS1/MS2"),
+        ("PT cross-run recurrence", "MS1/MS2"),
     )
     recorded = {row["Audit_Name"] for row in audit_status_rows}
     for audit_name, category in audit_specs:

@@ -79,8 +79,10 @@ def load_pt_pair_hypotheses(path: str | Path, *, sequence: str, sequence_id: str
     actual = {"name": sequence_id, "length": len(seq),
         "sequence_sha256": hashlib.sha256(seq.encode("utf-8")).hexdigest() if seq else "",
         "organism": organism, "rule_set": rule_set}
+    name_aliases = {str(required.get("name") or ""), *(str(x) for x in (required.get("name_aliases") or ())) }
     failures = [f"{key}:{actual.get(key, '')}!={value}" for key, value in required.items()
-        if str(actual.get(key, "")) != str(value)]
+        if key != "name_aliases" and not (key == "name" and str(actual.get("name", "")) in name_aliases)
+        and str(actual.get(key, "")) != str(value)]
     if failures:
         return PTHypothesisLoadResult(schema_version, enabled, (),
             (_invalid("", "target_identity_mismatch", ";".join(failures)),))

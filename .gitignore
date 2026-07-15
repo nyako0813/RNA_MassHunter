@@ -24,3 +24,6 @@ Thumbs.db
 
 # Local curated source workbooks (redistribution rights not confirmed)
 data/source/*.xlsx
+
+# Local cross-run PT manifest
+data/pt_cross_run_manifest.yaml

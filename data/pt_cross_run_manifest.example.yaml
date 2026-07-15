@@ -1,0 +1,16 @@
+schema_version: 1
+runs:
+  - run_id: Mac_PT_run_001
+    mzml_path: /absolute/path/to/run1.mzML
+    sample_id: Mac_tRNA_Glu_UUC
+    biological_replicate_id: bio_1
+    sample_preparation_id: prep_1
+    digestion_id: digest_1
+    technical_replicate_id: tech_1
+    acquisition_batch_id: batch_1
+    instrument_method_id: method_1
+    condition: wild_type
+    enzyme: RNase_T1
+    sequence_id: MA_tRNA_Glu-UUC
+    organism: Methanosarcina_acetivorans
+    notes: replace with an explicitly approved run path

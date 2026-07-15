@@ -55,6 +55,11 @@ def test_fixture_target_and_scientific_coordinates():
     assert SEQ[9:11]=="GU" and item.bond_id=="10_11" and item.position_states[0].transform_ids==("m22G",)
     assert "10_11" in {x.bond_id for x in discover_candidate_cleavage_bonds(SEQ,item.sequence_id,item.enzyme)}
 
+def test_fixture_accepts_explicit_sequence_name_alias():
+    loaded=load_pt_pair_hypotheses(ROOT/"data/sample_pt_pair_hypotheses.yaml",sequence=SEQ,
+        sequence_id="MA_tRNA^Glu-UUC",organism=IDENTITY["organism"],rule_set=IDENTITY["rule_set"],transformations=transforms())
+    assert len(loaded.specs)==1 and not loaded.invalid_rows
+
 def test_fixture_target_guard_rejects_mismatch():
     loaded=load_pt_pair_hypotheses(ROOT/"data/sample_pt_pair_hypotheses.yaml",sequence=SEQ,
         sequence_id="wrong",organism=IDENTITY["organism"],rule_set=IDENTITY["rule_set"],transformations=transforms())

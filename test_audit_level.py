@@ -49,6 +49,10 @@ def make_report(tmp_path, level):
         "MS1_CrossFrag_Ambiguity":[{"Applied_To_Formal_Result":False}],
         "MS1_CrossFrag_Detail":[{"Applied_To_Formal_Result":False}],
         "Audit_Status":status_rows(p),
+        "PT_Cross_Run_Runs":[{"Run_ID":"r1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "PT_Cross_Run_Summary":[{"Cross_Run_Candidate_Key":"k","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "PT_Cross_Run_Pairs":[{"Pair_Key":"p","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
+        "PT_Cross_Run_Detail":[{"Run_ID":"r1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
     }
     return write_excel_report(
         output_dir=out,config=config(out),diagnostics={},intact_results=[],charge_state_peaks=[],
@@ -124,6 +128,12 @@ def test_full_has_summary_group_detail_and_status(tmp_path):
     path=make_report(tmp_path,"full"); names=load_workbook(path,read_only=True).sheetnames
     assert {"MS1_Truncation_Summary","MS1_Truncation_Audit","MS1_Truncation_Detail","Audit_Status"}<=set(names)
 
+
+def test_cross_run_excel_sheets_follow_audit_level(tmp_path):
+    names={level:set(load_workbook(make_report(tmp_path,level),read_only=True).sheetnames) for level in AUDIT_LEVELS}
+    assert not any(name.startswith("PT_Cross_Run") for name in names["standard"])
+    assert {"PT_Cross_Run_Runs","PT_Cross_Run_Summary","PT_Cross_Run_Pairs"} <= names["audit"]
+    assert "PT_Cross_Run_Detail" not in names["audit"] and "PT_Cross_Run_Detail" in names["full"]
 
 def test_top_formal_columns_stable_and_standard_shadow_removed(tmp_path):
     paths={level:make_report(tmp_path,level) for level in AUDIT_LEVELS}
