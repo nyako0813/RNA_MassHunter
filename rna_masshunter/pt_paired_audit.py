@@ -131,7 +131,7 @@ def build_pt_paired_audit(project_root: str | Path, sequence: str, sequence_id: 
         summary = _summaries([], [], 0, 1, 0, len(spectra or ()), ms2, audit_level)
         for row in summary:
             row.update({"Configured_Enzyme": configured_enzyme, "Enzyme_Context_Applicable": False,
-                "Evidence_Not_Applicable_Reason": "RNase_T1_hypothesis_on_RNase_P1_run" if configured_enzyme == "Nuclease_P1" else "RNase_T1_hypothesis_on_other_enzyme_run"})
+                "Evidence_Not_Applicable_Reason": "RNase_T1_hypothesis_on_Nuclease_P1_run" if configured_enzyme == "Nuclease_P1" else "RNase_T1_hypothesis_on_other_enzyme_run"})
         return PTPairedAuditResult({"PT_Paired_Summary": summary, "PT_Discovery_Candidates": []}, (), ())
     root = Path(project_root); transforms = load_transformations(root / "data/modification_transforms_v2.yaml")
     backbone_transform = load_backbone_transformations(root / "data/backbone_modifications.yaml")[0]

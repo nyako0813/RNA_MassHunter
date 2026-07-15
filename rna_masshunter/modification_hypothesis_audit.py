@@ -290,7 +290,7 @@ def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,
         if not applicable:
             observable=matched=specific=ambiguous=False;level=0
             interpretation=confidence=hypothesis_result=localization="NOT_APPLICABLE_TO_ENZYME";observed="not_applicable"
-            not_applicable_reason="RNase_T1_hypothesis_on_RNase_P1_run" if configured_enzyme=="Nuclease_P1" else "hypothesis_enzyme_context_mismatch"
+            not_applicable_reason="RNase_T1_hypothesis_on_Nuclease_P1_run" if configured_enzyme=="Nuclease_P1" else "hypothesis_enzyme_context_mismatch"
             reason=f"configured_enzyme={configured_enzyme}; required_enzyme={';'.join(h.enzyme_context)}; {not_applicable_reason}"
         source="hypothesis_and_discovery" if any(p.spec.search_mode=="discovery" for p in pairs) else "hypothesis"
         hypothesis_alternatives=[x for x in alternatives if x["Hypothesis_ID"]==h.hypothesis_id]
