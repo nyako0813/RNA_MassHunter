@@ -7,6 +7,7 @@ import tracemalloc
 from pathlib import Path
 from typing import Any
 from rna_masshunter.elemental_composition import ElementalComposition
+from rna_masshunter.enzymes import normalize_enzyme_name
 from rna_masshunter.modification_composer import apply_transform_ids
 from rna_masshunter.modification_constraints import load_transformations
 from rna_masshunter.modification_hypothesis_schema import FALSE_FLAGS,ModificationHypothesisLoadResult,ModificationPositionHypothesis
@@ -193,9 +194,12 @@ def _build_oxidation_family_rows(hypotheses,structures,composite_sheets,project_
 
 def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,*,pt_pairs=(),peaks=(),config=None,composite_observation=None,cross_run_sheets=None,audit_level="audit",hypothesis_mode="both",project_root=None):
     started=time.perf_counter();tracemalloc.start();hypotheses=list(loaded.hypotheses)
-    selected_by_h={h.hypothesis_id:[p for p in pt_pairs if _matches_pair(h,p)] for h in hypotheses}
+    configured_enzyme=normalize_enzyme_name(((getattr(config,"digestion",{}) or {}).get("enzyme", "")))
+    enzyme_applicable={h.hypothesis_id:not h.enzyme_context or not configured_enzyme or configured_enzyme in h.enzyme_context for h in hypotheses}
+    selected_by_h={h.hypothesis_id:[p for p in pt_pairs if _matches_pair(h,p)] if enzyme_applicable[h.hypothesis_id] else [] for h in hypotheses}
     relevant=[]
     for h in hypotheses:
+        if not enzyme_applicable[h.hypothesis_id]:continue
         context=selected_by_h[h.hypothesis_id]
         if hypothesis_mode in {"both","discovery"}:
             context=context+[p for p in pt_pairs if (h.bonds and p.spec.bond_id in h.bonds) or (h.positions and set(h.positions)&_pair_positions(p))]
@@ -237,7 +241,8 @@ def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,
     for r in composite_sheets.get("Composite_MS2_Matches",[]):composite_ms2[r.get("Candidate_ID")].append(r)
     summary=[];details=[];alternatives=[];cross_rows=[]
     for h in hypotheses:
-        pairs=selected_by_h[h.hypothesis_id];pair_ids={p.spec.candidate_id for p in pairs};matching_structures=[s for s in structures if _matches_structure(h,s)];structure_ids={s.candidate_id for s in matching_structures}
+        applicable=enzyme_applicable[h.hypothesis_id]
+        pairs=selected_by_h[h.hypothesis_id];pair_ids={p.spec.candidate_id for p in pairs};matching_structures=[s for s in structures if _matches_structure(h,s)] if applicable else [];structure_ids={s.candidate_id for s in matching_structures}
         selected_evidence=[r for cid in pair_ids for r in evidence_by_id[cid]];selected_states=[r for cid in pair_ids for r in states_by_id[cid]];selected_support=[support_by_id[x] for x in structure_ids if x in support_by_id]
         target_backbone=h.hypothesis_type in {"backbone_modification","cleavage_behavior"} or bool(h.canonical_backbone_states)
         target_states=[r for r in selected_states if (not target_backbone or r.get("Backbone_State")=="phosphorothioate") and (not h.modification_ids or not set(h.modification_ids)-{"phosphorothioate"} or any(x in str(r.get("Shared_Nucleoside_States") or "") for x in set(h.modification_ids)-{"phosphorothioate"}))]
@@ -281,6 +286,12 @@ def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,
         localization="BOND_LOCALIZED" if ms2_backbone else "EXACT_POSITION_LOCALIZED" if ms2_position and h.exact_position else "POSITION_RANGE_SUPPORTED" if matched and h.position_range else "BOND_UNRESOLVED" if h.bonds else "POSITION_UNRESOLVED"
         observed="supporting_observation" if matched else "no_observation" if observable else "not_observable"
         reason=f"observable={observable}; matched={matched}; candidate_specific={specific}; ambiguous={ambiguous}; MS2_position={ms2_position}; MS2_backbone={ms2_backbone}; recurrence={recurrence}"
+        not_applicable_reason=""
+        if not applicable:
+            observable=matched=specific=ambiguous=False;level=0
+            interpretation=confidence=hypothesis_result=localization="NOT_APPLICABLE_TO_ENZYME";observed="not_applicable"
+            not_applicable_reason="RNase_T1_hypothesis_on_RNase_P1_run" if configured_enzyme=="Nuclease_P1" else "hypothesis_enzyme_context_mismatch"
+            reason=f"configured_enzyme={configured_enzyme}; required_enzyme={';'.join(h.enzyme_context)}; {not_applicable_reason}"
         source="hypothesis_and_discovery" if any(p.spec.search_mode=="discovery" for p in pairs) else "hypothesis"
         hypothesis_alternatives=[x for x in alternatives if x["Hypothesis_ID"]==h.hypothesis_id]
         supported_alternatives=[x for x in hypothesis_alternatives if x["Observed_Support_Class"]=="supported"]
@@ -292,7 +303,7 @@ def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,
             "Modification_Family":h.modification_family,"Oxidation_State":h.oxidation_state,"Chemical_Model_Status":h.chemical_model_status,"Chemical_Model_Note":h.chemical_model_note,
             "Exact_Structure_Match":any(x["Exact_Structure_Match"] for x in mapping_by_h[h.hypothesis_id]),
             "Unexpected_Backbone_State":";".join(x["Unexpected_Backbone_State"] for x in mapping_by_h[h.hypothesis_id] if x["Unexpected_Backbone_State"]),
-            "Candidate_Source":source,"Hypothesis_Mode":hypothesis_mode,"Observable":observable,"Candidate_Observable":observable,"Expected_mz_In_Range":any(r.get("Theoretical_mz") not in (None,"") and (getattr(config,"reconstruction",{}) or {}).get("mz_min",0)<=float(r.get("Theoretical_mz"))<=(getattr(config,"reconstruction",{}) or {}).get("mz_max",float("inf")) for r in target_states),"Expected_Charge_In_Range":bool(target_states),"Eligible_MS1_Spectra_Present":bool(peaks),
+            "Candidate_Source":source,"Hypothesis_Mode":hypothesis_mode,"Configured_Enzyme":configured_enzyme,"Enzyme_Context_Applicable":applicable,"Evidence_Not_Applicable_Reason":not_applicable_reason,"Observable":observable,"Candidate_Observable":observable,"Expected_mz_In_Range":applicable and any(r.get("Theoretical_mz") not in (None,"") and (getattr(config,"reconstruction",{}) or {}).get("mz_min",0)<=float(r.get("Theoretical_mz"))<=(getattr(config,"reconstruction",{}) or {}).get("mz_max",float("inf")) for r in target_states),"Expected_Charge_In_Range":applicable and bool(target_states),"Eligible_MS1_Spectra_Present":bool(peaks),
             "Precursor_Compatible_MS2_Present":bool(ms2_position or ms2_backbone),"Expected_Fragment_Generated":bool(pairs or matching_structures),"Detection_Sensitivity_Adequate":bool(peaks),"Cross_Run_Evaluable":evaluable_runs>=2,
             "Observed_Evidence_Status":observed,"Observed_Evidence_Level":level,"Highest_Evidence_Level":level,"Evidence_Level_Label":level_labels[level],"Evidence_Level_Reason":reason,"Hypothesis_Result_Class":hypothesis_result,
             "Hypothesis_Confidence":confidence,"Cross_Run_Status":recurrence,"Position_Localization_Status":localization,
@@ -301,8 +312,8 @@ def build_modification_hypothesis_audit(loaded:ModificationHypothesisLoadResult,
             "Chemically_Exclusive_Alternative_Count":sum(bool(x["Chemically_Exclusive"]) for x in hypothesis_alternatives),"Observation_Discriminating":specific and not ambiguous,
             "MS2_Discriminating":bool(ms2_position or ms2_backbone),"Best_Alternative_Explanation":supported_alternatives[0]["Alternative_Candidate_ID"] if supported_alternatives else "",
             "MS1_Data_Sufficient":bool(peaks) and observable,"MS2_Data_Sufficient":bool(ms2_position or ms2_backbone),"Cross_Run_Data_Sufficient":evaluable_runs>=2,"Control_Data_Sufficient":level>=7,
-            "Overall_Data_Sufficiency":"sufficient" if level>=5 or independent else "limited","Final_Shadow_Interpretation":interpretation,"Evidence_Reason":reason,
-            "Recommended_Next_Evidence":_recommend(h,matched,bool(ms2_position or ms2_backbone),"EVALUABLE" if evaluable_runs>=2 else "NOT_EVALUABLE",ambiguous),**FALSE_FLAGS})
+            "Overall_Data_Sufficiency":"not_applicable" if not applicable else "sufficient" if level>=5 or independent else "limited","Final_Shadow_Interpretation":interpretation,"Evidence_Reason":reason,
+            "Recommended_Next_Evidence":"evaluate_with_RNase_T1_run" if not applicable else _recommend(h,matched,bool(ms2_position or ms2_backbone),"EVALUABLE" if evaluable_runs>=2 else "NOT_EVALUABLE",ambiguous),**FALSE_FLAGS})
         cross_rows.append({"Hypothesis_ID":h.hypothesis_id,"Evaluable_Run_Count":evaluable_runs,"Detected_Run_Count":detected_runs,"Candidate_Specific_Run_Count":specific_runs,"Independent_Run_Count":independent,
             "Detection_Rate":detected_runs/evaluable_runs if evaluable_runs else 0.0,"Independent_Detection_Rate":independent/evaluable_runs if evaluable_runs else 0.0,"Recurrence_Evidence_Class":recurrence,
             "Mass_Error_Consistency":next((r.get("Error_Sign_Consistency") for r in cr),"NOT_EVALUABLE"),"Charge_Consistency":next((r.get("Charge_Consistency_Status") for r in cr),"NOT_EVALUABLE"),

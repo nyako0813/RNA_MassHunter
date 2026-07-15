@@ -8,6 +8,7 @@ from rna_masshunter.backbone_state import load_backbone_transformations
 from rna_masshunter.cleavage_site_discovery import discovery_candidate_row
 from rna_masshunter.composite_ms2_matcher import match_composite_ms2
 from rna_masshunter.composite_ms2_propagation import generate_composite_theoretical_ions
+from rna_masshunter.enzymes import normalize_enzyme_name
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.models import Fragment
 from rna_masshunter.modification_constraints import load_transformations
@@ -123,6 +124,15 @@ def _summaries(evidence: list[dict[str, Any]], pairs: list[Any], invalid_count: 
 def build_pt_paired_audit(project_root: str | Path, sequence: str, sequence_id: str, peaks: list[Any],
     spectra: list[Any], config: Any, *, legacy_matches: list[Any] = (), other_composite_matches: list[Any] = (),
     audit_level: str = "full", fixture_path: str | Path | None = None) -> PTPairedAuditResult:
+    configured_enzyme = normalize_enzyme_name((getattr(config, "digestion", {}) or {}).get("enzyme", ""))
+    if configured_enzyme and configured_enzyme != "RNase_T1":
+        ms2 = {"compatible": 0, "matched_spectra": 0, "matched_rows": 0, "position": 0, "backbone": 0,
+            "reason": "RNase_T1_hypothesis_on_non_RNase_T1_run"}
+        summary = _summaries([], [], 0, 1, 0, len(spectra or ()), ms2, audit_level)
+        for row in summary:
+            row.update({"Configured_Enzyme": configured_enzyme, "Enzyme_Context_Applicable": False,
+                "Evidence_Not_Applicable_Reason": "RNase_T1_hypothesis_on_RNase_P1_run" if configured_enzyme == "Nuclease_P1" else "RNase_T1_hypothesis_on_other_enzyme_run"})
+        return PTPairedAuditResult({"PT_Paired_Summary": summary, "PT_Discovery_Candidates": []}, (), ())
     root = Path(project_root); transforms = load_transformations(root / "data/modification_transforms_v2.yaml")
     backbone_transform = load_backbone_transformations(root / "data/backbone_modifications.yaml")[0]
     fixture = Path(fixture_path) if fixture_path else root / "data/sample_pt_pair_hypotheses.yaml"
