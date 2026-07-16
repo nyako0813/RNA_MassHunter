@@ -11,6 +11,10 @@ from rna_masshunter.composite_modification_audit import (
     COMPOSITE_INVALID_COLUMNS, COMPOSITE_SUMMARY_COLUMNS,
     DIAGNOSTIC_COLUMNS as COMPOSITE_DIAGNOSTIC_COLUMNS,
 )
+from rna_masshunter.composite_structure_provenance import (
+    POSITION_MAP_COLUMNS as COMPOSITE_STRUCTURE_POSITION_MAP_COLUMNS,
+    BOND_MAP_COLUMNS as COMPOSITE_STRUCTURE_BOND_MAP_COLUMNS,
+)
 from rna_masshunter.composite_observation_audit import (
     BLOCKED_COLUMNS as COMPOSITE_BLOCKED_COLUMNS, COMPARE_COLUMNS as COMPOSITE_COMPARE_COLUMNS,
     FRAGMENT_COLUMNS as COMPOSITE_FRAGMENT_COLUMNS, INVALID_COLUMNS as COMPOSITE_OBS_INVALID_COLUMNS,
@@ -614,6 +618,8 @@ SHEET_DESCRIPTIONS = {
     "Composite_MS2_Ions": "Position/bond-state propagated complete-structure theoretical MS2 ions.",
     "Composite_MS2_Matches": "Observed MS2 support for propagated complete-structure ions.",
     "Composite_MS2_Assignment_Compe": "Excel alias for all within-tolerance composite MS2 assignment competition provenance.",
+    "Composite_Structure_Position_Ma": "Excel alias for position-level component provenance derived directly from complete structure states; shadow-only.",
+    "Composite_Structure_Bond_Map": "Bond-level component provenance derived directly from complete structure states; shadow-only.",
     "Composite_Support_Summary": "Candidate-level MS1/MS2/blocked-cleavage shadow support.",
     "Blocked_Cleavage_Matches": "Observed phosphorothioate-blocked cleavage fragments and mechanism comparison.",
     "Legacy_Composite_Compare": "Formal legacy versus valid complete-structure shadow comparison.",
@@ -1437,6 +1443,8 @@ def write_excel_report(
         "Composite_MS2_Ions": COMPOSITE_MS2_ION_COLUMNS,
         "Composite_MS2_Matches": COMPOSITE_MS2_MATCH_COLUMNS,
         "Composite_MS2_Assignment_Competition": COMPOSITE_MS2_ASSIGNMENT_COMPETITION_COLUMNS,
+        "Composite_Structure_Position_Map": COMPOSITE_STRUCTURE_POSITION_MAP_COLUMNS,
+        "Composite_Structure_Bond_Map": COMPOSITE_STRUCTURE_BOND_MAP_COLUMNS,
         "Composite_Support_Summary": COMPOSITE_SUPPORT_COLUMNS,
         "Blocked_Cleavage_Matches": COMPOSITE_BLOCKED_COLUMNS,
         "Legacy_Composite_Compare": COMPOSITE_COMPARE_COLUMNS,

@@ -666,6 +666,7 @@ def main(argv: list[str] | None = None) -> None:
             spectra=ms2_spectra_for_shadow, config=config, base_masses=base_masses,
             phase1_sheets=composite_audit.sheets, formal_ms1_matches=shadow_legacy_matches,
             formal_ranking=ranking_rows, audit_level=audit_policy.level,
+            legacy_modifications=modifications,
         )
         composite_observation_seconds = time.perf_counter() - composite_observation_started
         _, composite_observation_peak_bytes = tracemalloc.get_traced_memory()

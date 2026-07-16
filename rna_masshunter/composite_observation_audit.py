@@ -11,6 +11,7 @@ from rna_masshunter.composite_ms1_matcher import match_composite_fragments_to_pe
 from rna_masshunter.composite_ms2_matcher import match_composite_ms2
 from rna_masshunter.composite_ms2_propagation import generate_composite_theoretical_ions
 from rna_masshunter.rnase_ms2_composite_evidence_synthesis import build_rnase_ms2_composite_evidence_synthesis
+from rna_masshunter.composite_structure_provenance import build_composite_structure_provenance
 from rna_masshunter.legacy_composite_comparison import compare_legacy_composite
 from rna_masshunter.modification_constraints import load_transformations
 from rna_masshunter.sample_structure_schema import load_sample_structure_hypotheses
@@ -75,7 +76,8 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     theoretical_fragments: list[Any], peaks: list[Any], spectra: list[Any], config: Any,
     base_masses: dict, phase1_sheets: dict[str, Any], formal_ms1_matches: list[Any],
     formal_ranking: list[dict[str, Any]], *, audit_level: str = "full",
-    fixture_path: str | Path | None = None) -> CompositeObservationResult:
+    fixture_path: str | Path | None = None,
+    legacy_modifications: list[Any] | tuple[Any, ...] = ()) -> CompositeObservationResult:
     root = Path(project_root)
     transforms = load_transformations(root / "data/modification_transforms_v2.yaml")
     backbone_transform = load_backbone_transformations(root / "data/backbone_modifications.yaml")[0]
@@ -122,6 +124,9 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     evidence_synthesis = build_rnase_ms2_composite_evidence_synthesis(
         ions, ms2_rows, ms2_competition, support, comparison,
     )
+    component_provenance = build_composite_structure_provenance(
+        structures, legacy_modifications,
+    )
     matched_blocked = sum(r.get("Observed_mz") not in ("", None) for r in blocked)
     summary = [{
         "Schema_Version": loaded.schema_version, "Enabled": loaded.enabled,
@@ -145,6 +150,8 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
             "Composite_MS2_Assignment_Competition": ms2_competition,
             "RNase_MS2_Composite_Evidence": evidence_synthesis.evidence_rows,
             "RNase_MS2_Composite_Peak_Evidence": evidence_synthesis.peak_rows,
+            "Composite_Structure_Position_Map": component_provenance.position_rows,
+            "Composite_Structure_Bond_Map": component_provenance.bond_rows,
             "Blocked_Cleavage_Matches": blocked})
         if invalid: sheets["Composite_Obs_Invalid"] = invalid
     return CompositeObservationResult(sheets, tuple(structures), tuple(invalid))
