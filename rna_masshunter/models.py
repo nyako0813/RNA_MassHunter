@@ -18,6 +18,7 @@ class RunConfig:
     modification_search: dict[str, Any] = field(default_factory=dict)
     peak_filtering: dict[str, Any] = field(default_factory=dict)
     p1_annotation: dict[str, Any] = field(default_factory=dict)
+    p1_sap_dinucleotide: dict[str, Any] = field(default_factory=dict)
     ms2_annotation: dict[str, Any] = field(default_factory=dict)
     modification_evidence_ranking: dict[str, Any] = field(default_factory=dict)
     biological_context: dict[str, Any] = field(default_factory=dict)

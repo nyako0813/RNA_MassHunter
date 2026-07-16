@@ -155,6 +155,19 @@ from rna_masshunter.p1_sap_chemical_state_audit import (
     SUMMARY_COLUMNS as P1_SAP_SUMMARY_COLUMNS,
     TERMINAL_COLUMNS as P1_SAP_TERMINAL_COLUMNS,
 )
+from rna_masshunter.p1_sap_dinucleotide_candidates import (
+    SUMMARY_COLUMNS as P1_SAP_DINUC_SUMMARY_COLUMNS,
+    GROUP_COLUMNS as P1_SAP_DINUC_GROUP_COLUMNS,
+    ASSIGNMENT_COLUMNS as P1_SAP_DINUC_ASSIGNMENT_COLUMNS,
+)
+from rna_masshunter.p1_sap_dinucleotide_feature_audit import (
+    SPECPEAK_COLUMNS as P1_SAP_DINUC_SPECPEAK_COLUMNS,
+    FEATURE_COLUMNS as P1_SAP_DINUC_FEATURE_COLUMNS,
+    ISOTOPE_COLUMNS as P1_SAP_DINUC_ISOTOPE_COLUMNS,
+    COMPETITION_COLUMNS as P1_SAP_DINUC_COMPETITION_COLUMNS,
+    MS2_COLUMNS as P1_SAP_DINUC_MS2_COLUMNS,
+)
+from rna_masshunter.p1_sap_dinucleotide_interpretation import TARGET_COLUMNS as P1_SAP_DINUC_TARGET_COLUMNS
 from rna_masshunter.p1_sap_feature_quality import (
     P1_SAP_SPECTRUM_PEAK_COLUMNS,
     P1_SAP_REFINED_FEATURE_COLUMNS,
@@ -1351,6 +1364,15 @@ def write_excel_report(
         "P1_SAP_Feature_Quality": P1_SAP_FEATURE_QUALITY_COLUMNS,
         "P1_SAP_Isotope_Audit": P1_SAP_ISOTOPE_AUDIT_COLUMNS,
         "P1_SAP_Quality_Summary": P1_SAP_QUALITY_SUMMARY_COLUMNS,
+        "P1_SAP_Dinuc_Summary": P1_SAP_DINUC_SUMMARY_COLUMNS,
+        "P1_SAP_Dinuc_Groups": P1_SAP_DINUC_GROUP_COLUMNS,
+        "P1_SAP_Dinuc_Assignments": P1_SAP_DINUC_ASSIGNMENT_COLUMNS,
+        "P1_SAP_Dinuc_SpecPeaks": P1_SAP_DINUC_SPECPEAK_COLUMNS,
+        "P1_SAP_Dinuc_Features": P1_SAP_DINUC_FEATURE_COLUMNS,
+        "P1_SAP_Dinuc_Isotopes": P1_SAP_DINUC_ISOTOPE_COLUMNS,
+        "P1_SAP_Dinuc_Competition": P1_SAP_DINUC_COMPETITION_COLUMNS,
+        "P1_SAP_Dinuc_MS2": P1_SAP_DINUC_MS2_COLUMNS,
+        "P1_SAP_Dinuc_Targets": P1_SAP_DINUC_TARGET_COLUMNS,
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
         "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,

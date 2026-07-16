@@ -207,6 +207,28 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "min_peak_tier": ["Major", "Minor"],
         "min_confidence": ["High", "Medium"],
     },
+    "p1_sap_dinucleotide": {
+        "enabled": True,
+        "candidate_generation": {
+            "max_modifications_per_side": 3,
+            "max_composite_states_per_position": 64,
+            "max_candidate_count": 100000,
+            "include_normal_phosphate": True,
+            "include_phosphorothioate": True,
+            "charges": [1],
+            "polarity": "positive",
+        },
+        "search": {"mz_min": 100, "mz_max": 1000, "tolerance_ppm": 10},
+        "mass_accuracy": {"strong_ppm": 2, "moderate_ppm": 5, "search_ppm": 10},
+        "feature_quality": {
+            "min_spectrum_count": 2, "min_profile_point_count": 2,
+            "max_rt_gap_min": 0.08, "background_window_rt_min": 0.5,
+            "background_mz_tolerance_ppm": 10,
+        },
+        "isotope": {"enabled": True, "tolerance_ppm": 20, "require_same_scan": True},
+        "ms2_provenance": {"enabled": True},
+        "targets": [],
+    },
     "p1_annotation": {
         "enabled": True,
         "include_unmatched_peaks": True,

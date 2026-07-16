@@ -24,6 +24,7 @@ from rna_masshunter.enzymes import normalize_enzyme_name
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.modification_constraints import load_transformations
 from rna_masshunter.p1_sap_feature_quality import build_p1_sap_feature_quality
+from rna_masshunter.p1_sap_dinucleotide_interpretation import build_p1_sap_dinucleotide_audit
 from rna_masshunter.mzml_diagnostics import _rt_minutes
 from rna_masshunter.mzml_reader import iter_spectra
 
@@ -572,6 +573,7 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
     raw_peaks=[_raw_peak(p,i) for i,p in enumerate(peaks)]
     features,competition,raw_counts=match_and_group_features(candidates,peaks,tolerance_ppm=tolerance)
     quality_results=build_p1_sap_feature_quality(candidates, features, raw_peaks, config, tolerance)
+    dinucleotide_audit=build_p1_sap_dinucleotide_audit(root, sequence, peaks, config, audit_level=audit_level, mzml_path=mzml_path)
     _update_candidates(candidates,features,raw_counts);families=_family_rows(family_specs,candidates,features);terminal=_terminal_rows(family_specs,candidates,features);cross=_cross_enzyme_rows(candidates)
     for feature in features:
         feature.pop("_point_ids",None); feature.pop("_scan_ids",None)
@@ -608,6 +610,7 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
         "P1_SAP_Isotope_Audit":quality_results["isotope_rows"],
         "P1_SAP_Quality_Summary":[quality_results["summary_row"]]}
     if audit_level=="full":sheets.update({"P1_SAP_Features":features,"P1_SAP_Competition":competition,"Cross_Enzyme_Chemistry":cross,"P1_SAP_MS2_Provenance":ms2})
+    sheets.update(dinucleotide_audit["sheets"])
     metrics=dict(summary)
     payload={"experiment_treatment":["Nuclease P1 digestion","SAP alkaline phosphatase","SCIEX ZenoTOF positive profile"],
         "p1_cleavage_model":{k:summary[k] for k in ("Configured_Enzyme","Rule_ID","Cleavage_Specificity","Cleavage_Side","Expected_Product_Type","Expected_5prime_Terminal_State","Expected_3prime_Terminal_State","Expected_Phosphate_Product","Missed_Cleavage_Model","P1_Cleaves_Normal_Phosphodiester","P1_PT_Cleavage_Behavior")},
@@ -620,6 +623,7 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
         "feature_quality":{"summary":quality_results["summary_row"],"features":quality_results["quality_rows"],"isotope_audit":quality_results["isotope_rows"]},
         "cross_enzyme_comparison":cross,"formal_flags":FALSE_FLAGS,"performance":{"audit_runtime_seconds":runtime,"tracemalloc_peak_mib":peak_bytes/(1024*1024),"feature_detail_rows":summary["Feature_Detail_Row_Count"]},
         "final_interpretation":final}
+    payload.update(dinucleotide_audit["payload"])
     payload["performance"]["maximum_rss_mib"]=maximum_rss_mib
     return P1SAPAuditResult(sheets,metrics,payload)
 

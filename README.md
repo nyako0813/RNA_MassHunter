@@ -329,3 +329,15 @@ Output by audit level is:
 - `full`: `Composite_Mod_Candidates`, `Composite_Mod_Invalid`, `Composite_Mod_Summary`, `Backbone_Mod_Candidates`, and `Cleavage_Block_Audit` are written.
 
 All new rows use `Applied_To_Formal_Result=false`; `Formal_Change_Ready` is also false in Phase 1. `data/examples/composite_structure_example.yaml` is an `example_only` U37/two-bond hypothesis fixture for tests and shadow exploration. It is not read from `config.yaml`, is not applied automatically to Mac data, and is not evidence that the example structure occurs in any biological sample.
+
+## Generic P1 + AP dinucleotide chemical-state audit (shadow)
+
+The generic v2 P1 + AP system separates sequence-aware candidate construction, measured-feature auditing, and evidence interpretation. Candidate construction uses every adjacent 5′→3′ bond in an arbitrary input RNA, the schema-defined nucleoside transformations and position hypotheses that match that RNA, full elemental compositions, explicitly enabled linkage states, configured charges, and configured polarity. Composition-identical assignments are grouped without treating the first assignment as confirmed; every structural assignment remains available in a separate table.
+
+Low-m/z dinucleotide ranges are configured independently from intact reconstruction. Acquisition, MS1 extraction, dinucleotide search, and MS2 product-ion ranges are reported separately. Observable groups are searched whether or not a target list is supplied. Raw matching uses sorted m/z indexes, same-scan profile points are reconstructed as spectrum-level local peaks, all disconnected RT features are retained, and the existing v1.1 background and same-scan CHNOSP isotope algorithms are reused. Sulfur evaluation is driven by the sulfur count in the complete composition and cannot by itself establish a phosphorothioate linkage.
+
+Mass accuracy, background, isotope compatibility, physical-feature competition, precursor-compatible MS2 provenance, feature classification, and group interpretation use the same generic logic for every group. MS2 product ions below the MS1 extraction range remain in provenance counts. No dinucleotide fragmentation score or diagnostic ion is generated until a validated model exists. Position and original-bond localization always remain disabled after P1 + AP preparation.
+
+Optional `p1_sap_dinucleotide.targets` entries contain an arbitrary label, theoretical m/z, and tolerance. They filter already-computed groups and features for display only; zero, one, or many targets produce identical generic analysis results. No target-specific JSON keys or processing functions are used.
+
+At `audit` level, `P1_SAP_Dinuc_Summary`, `P1_SAP_Dinuc_Groups`, and `P1_SAP_Dinuc_Targets` are written. At `full` level, assignment, spectrum-peak, feature, isotope, competition, and MS2 detail sheets are added. JSON is stored under the generic `dinucleotide_audit` object. All rows use `Applied_To_Formal_Result=false`, `Formal_Change_Ready=false`, and `Formal_Result_Changed=false`.

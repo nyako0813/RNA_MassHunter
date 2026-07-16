@@ -100,6 +100,7 @@ AUDIT_SUMMARY_SHEETS = {
     "Mod_Hypothesis_Structure_Map", "Mod_Hypothesis_ID_Audit", "Mod_Oxidation_Family",
     "P1_SAP_Chemical_State", "P1_SAP_PT_Family", "P1_SAP_Terminal_Audit",
     "P1_SAP_Chemistry_Summary", "P1_SAP_Quality_Summary", "P1_SAP_Feature_Quality",
+    "P1_SAP_Dinuc_Summary", "P1_SAP_Dinuc_Groups", "P1_SAP_Dinuc_Targets",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -120,6 +121,8 @@ AUDIT_DETAIL_SHEETS = {
     "Mod_Hypothesis_Detail", "Mod_Hypothesis_Alternatives",
     "P1_SAP_Features", "P1_SAP_Competition", "Cross_Enzyme_Chemistry",
     "P1_SAP_MS2_Provenance", "P1_SAP_Spectrum_Peaks", "P1_SAP_Refined_Features", "P1_SAP_Isotope_Audit",
+    "P1_SAP_Dinuc_Assignments", "P1_SAP_Dinuc_SpecPeaks", "P1_SAP_Dinuc_Features",
+    "P1_SAP_Dinuc_Isotopes", "P1_SAP_Dinuc_Competition", "P1_SAP_Dinuc_MS2",
 }
 
 SHEET_REGISTRY = {

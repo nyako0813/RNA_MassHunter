@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_left, bisect_right
 import re
 from collections import Counter, defaultdict
 from typing import Any
@@ -347,24 +348,39 @@ def _near_mz(point: dict[str, Any], target: float, ppm: float) -> bool:
     return target > 0 and abs(float(point["mz"]) - target) <= _ppm_tolerance(target, ppm)
 
 
+def _raw_mz_index(raw_points: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[float]]:
+    ordered = sorted(raw_points, key=lambda point: float(point["mz"]))
+    return ordered, [float(point["mz"]) for point in ordered]
+
+
+def _indexed_mz_slice(index: tuple[list[dict[str, Any]], list[float]] | None, raw_points: list[dict[str, Any]], low: float, high: float) -> list[dict[str, Any]]:
+    if index is None:
+        return raw_points
+    ordered, mzs = index
+    return ordered[bisect_left(mzs, low):bisect_right(mzs, high)]
+
+
 def _background_points(
     feature: dict[str, Any],
     candidate: dict[str, Any],
     raw_points: list[dict[str, Any]],
     settings: dict[str, Any],
+    raw_mz_index: tuple[list[dict[str, Any]], list[float]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     target = _target_mz(feature, candidate)
     start = float(feature.get("RT_Start") or 0.0)
     end = float(feature.get("RT_End") or start)
     window = settings["background_window_rt_min"]
+    mz_delta = _ppm_tolerance(target, settings["background_mz_tolerance_ppm"])
+    local_points = _indexed_mz_slice(raw_mz_index, raw_points, target-mz_delta, target+mz_delta)
     inside = [
-        point for point in raw_points
+        point for point in local_points
         if point.get("rt") is not None
         and start <= float(point["rt"]) <= end
         and _near_mz(point, target, settings["background_mz_tolerance_ppm"])
     ]
     outside = [
-        point for point in raw_points
+        point for point in local_points
         if point.get("rt") is not None
         and ((start - window) <= float(point["rt"]) < start or end < float(point["rt"]) <= (end + window))
         and _near_mz(point, target, settings["background_mz_tolerance_ppm"])
@@ -389,51 +405,31 @@ def _competition_context(
     candidates: dict[str, dict[str, Any]],
     tolerance_ppm: float,
 ) -> dict[str, dict[str, Any]]:
-    rows_by_feature: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in spectrum_peaks:
-        rows_by_feature[str(row["Feature_ID"])].append(row)
+    """Index by physical feature instead of comparing every feature pair."""
     context: dict[str, dict[str, Any]] = {
         str(feature["Feature_ID"]): {"candidate_ids": set(), "isomer": False}
         for feature in features
     }
-    for index, left in enumerate(features):
-        for right in features[index + 1:]:
-            left_id = str(left["Feature_ID"])
-            right_id = str(right["Feature_ID"])
-            if left.get("Chemical_State_ID") == right.get("Chemical_State_ID"):
-                continue
-            same_physical = (
-                left.get("Physical_Feature_ID") not in {None, ""}
-                and left.get("Physical_Feature_ID") == right.get("Physical_Feature_ID")
+    by_physical: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for feature in features:
+        physical_id = str(feature.get("Physical_Feature_ID") or "")
+        if physical_id:
+            by_physical[physical_id].append(feature)
+    for members in by_physical.values():
+        composition_by_candidate: dict[str, tuple[dict[str, int] | None, str]] = {}
+        for feature in members:
+            candidate_id = str(feature.get("Chemical_State_ID"))
+            composition_by_candidate.setdefault(candidate_id, _parse_composition(candidates.get(candidate_id, {}).get("Elemental_Composition")))
+        candidate_ids = set(composition_by_candidate)
+        for feature in members:
+            feature_id = str(feature["Feature_ID"]); candidate_id = str(feature.get("Chemical_State_ID"))
+            others = candidate_ids - {candidate_id}
+            context[feature_id]["candidate_ids"].update(others)
+            left_comp, left_state = composition_by_candidate[candidate_id]
+            context[feature_id]["isomer"] = any(
+                left_state == right_state == "ASSESSED" and left_comp == right_comp
+                for other in others for right_comp, right_state in [composition_by_candidate[other]]
             )
-            overlaps = False
-            for lrow in rows_by_feature[left_id]:
-                for rrow in rows_by_feature[right_id]:
-                    if str(lrow["Spectrum_ID"]) != str(rrow["Spectrum_ID"]):
-                        continue
-                    left_mz = float(lrow["Local_Centroid_mz"])
-                    right_mz = float(rrow["Local_Centroid_mz"])
-                    limit = max(_ppm_tolerance(left_mz, tolerance_ppm), _ppm_tolerance(right_mz, tolerance_ppm))
-                    boundary_overlap = (
-                        float(lrow["Local_Peak_Boundary_Left"]) <= float(rrow["Local_Peak_Boundary_Right"]) + limit
-                        and float(rrow["Local_Peak_Boundary_Left"]) <= float(lrow["Local_Peak_Boundary_Right"]) + limit
-                    )
-                    if boundary_overlap or abs(left_mz - right_mz) <= limit:
-                        overlaps = True
-                        break
-                if overlaps:
-                    break
-            if not (same_physical or overlaps):
-                continue
-            left_candidate = str(left.get("Chemical_State_ID"))
-            right_candidate = str(right.get("Chemical_State_ID"))
-            context[left_id]["candidate_ids"].add(right_candidate)
-            context[right_id]["candidate_ids"].add(left_candidate)
-            left_comp, left_state = _parse_composition(candidates.get(left_candidate, {}).get("Elemental_Composition"))
-            right_comp, right_state = _parse_composition(candidates.get(right_candidate, {}).get("Elemental_Composition"))
-            isomer = left_state == right_state == "ASSESSED" and left_comp == right_comp
-            context[left_id]["isomer"] = context[left_id]["isomer"] or isomer
-            context[right_id]["isomer"] = context[right_id]["isomer"] or isomer
     return context
 
 
@@ -454,6 +450,7 @@ def assess_isotope_envelope(
     raw_points: list[dict[str, Any]],
     candidate: dict[str, Any],
     tolerance_ppm: float,
+    raw_mz_index: tuple[list[dict[str, Any]], list[float]] | None = None,
 ) -> dict[str, Any]:
     composition, model_status = _parse_composition(candidate.get("Elemental_Composition"))
     charge = abs(int(candidate.get("Charge") or feature.get("Charge") or 1))
@@ -502,7 +499,9 @@ def assess_isotope_envelope(
     start = float(feature.get("RT_Start") or 0.0)
     end = float(feature.get("RT_End") or start)
     by_scan: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for point in raw_points:
+    isotope_delta = _ppm_tolerance(theoretical + 2.0 * ISOTOPE_SPACING / charge, tolerance_ppm)
+    isotope_points = _indexed_mz_slice(raw_mz_index, raw_points, theoretical-isotope_delta, theoretical+2.0*ISOTOPE_SPACING/charge+isotope_delta)
+    for point in isotope_points:
         if point.get("rt") is not None and start <= float(point["rt"]) <= end:
             by_scan[str(point.get("scan_id") or "")].append(point)
 
@@ -568,8 +567,9 @@ def _quality_measurements(
     raw_points: list[dict[str, Any]],
     spectrum_peaks: list[dict[str, Any]],
     settings: dict[str, Any],
+    raw_mz_index: tuple[list[dict[str, Any]], list[float]] | None = None,
 ) -> dict[str, Any]:
-    inside, outside = _background_points(feature, candidate, raw_points, settings)
+    inside, outside = _background_points(feature, candidate, raw_points, settings, raw_mz_index)
     inside_intensities = [float(point["intensity"]) for point in inside]
     outside_intensities = [float(point["intensity"]) for point in outside]
     median_inside = _median(inside_intensities)
@@ -742,6 +742,7 @@ def build_p1_sap_feature_quality(
 ) -> dict[str, Any]:
     candidates_by_id = {str(candidate["Chemical_State_ID"]): candidate for candidate in candidates}
     settings = _quality_config(config)
+    raw_mz_index = _raw_mz_index(raw_peaks)
     spectrum_peaks = build_spectrum_level_peaks(features, raw_peaks, tolerance_ppm)
     refined = build_refined_chromatographic_features(spectrum_peaks, candidates_by_id, features, config, tolerance_ppm)
     competition = _competition_context(features, spectrum_peaks, candidates_by_id, tolerance_ppm)
@@ -750,7 +751,7 @@ def build_p1_sap_feature_quality(
     for feature in features:
         candidate = candidates_by_id.get(str(feature["Chemical_State_ID"]), {})
         isotope_internal.append(
-            assess_isotope_envelope(feature, raw_peaks, candidate, settings["isotope_match_tolerance_ppm"])
+            assess_isotope_envelope(feature, raw_peaks, candidate, settings["isotope_match_tolerance_ppm"], raw_mz_index)
         )
     _mark_shared_isotope_peaks(isotope_internal, competition)
     isotope_by_feature = {str(row["Feature_ID"]): row for row in isotope_internal}
@@ -762,7 +763,7 @@ def build_p1_sap_feature_quality(
         feature_id = str(feature["Feature_ID"])
         candidate = candidates_by_id.get(str(feature["Chemical_State_ID"]), {})
         isotope = isotope_by_feature[feature_id]
-        measurements = _quality_measurements(feature, candidate, raw_peaks, spectrum_peaks, settings)
+        measurements = _quality_measurements(feature, candidate, raw_peaks, spectrum_peaks, settings, raw_mz_index)
         quality = _classify_quality(measurements, feature, isotope, competition[feature_id], settings)
         components = _quality_score_components(quality, isotope)
         quality.update(components)
@@ -797,7 +798,7 @@ def build_p1_sap_feature_quality(
             counts["Model_Not_Defined_Count"] += 1
         elif status == "RAW_MATCH_ONLY":
             counts["Raw_Match_Only_Count"] += 1
-        if feature.get("Chemical_Family") in {"PHOSPHOROTHIOATE", "P1_RESISTANT_PT_OLIGOMER"} and status.startswith("QUALIFIED"):
+        if feature.get("Chemical_Family") in {"PHOSPHOROTHIOATE", "P1_RESISTANT_PT_OLIGOMER", "P1_RESISTANT_PT_DINUCLEOTIDE"} and status.startswith("QUALIFIED"):
             counts["Qualified_PT_Feature_Count"] += 1
 
     _propagate_refined_quality(refined, quality_rows)
