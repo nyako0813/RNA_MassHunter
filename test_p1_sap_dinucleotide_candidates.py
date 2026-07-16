@@ -1,11 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
+import ast
 import json
 
 import pytest
 
 from rna_masshunter.audit_policy import AuditPolicy, included_sheet_names
-from rna_masshunter.config import load_config
 from rna_masshunter.p1_sap_dinucleotide_candidates import (
     CONDENSATION_ADJUSTMENT, DINUCLEOTIDE_MODEL_VERSION, FORMAL_FALSE,
     LINKAGE_COMPOSITIONS, LOCALIZATION_FALSE, NUCLEOSIDE_COMPOSITIONS, PT_DELTA,
@@ -17,6 +17,12 @@ from rna_masshunter.p1_sap_dinucleotide_interpretation import (
 )
 
 ROOT = Path(__file__).resolve().parent
+FIXED_SEQUENCE = "GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA"
+FIXED_ORGANISM = {
+    "group": "archaea",
+    "species": "Methanosarcina acetivorans",
+    "rule_set": "methanosarcina_acetivorans",
+}
 
 
 def cfg(*, max_mods=1, charges=(1,), polarity="positive", strict=None, targets=None, search=(100, 1000), organism="generic"):
@@ -38,9 +44,26 @@ def cfg(*, max_mods=1, charges=(1,), polarity="positive", strict=None, targets=N
             "isotope": {"enabled": True, "tolerance_ppm": 20, "require_same_scan": True},
             "ms2_provenance": {"enabled": True}, "targets": targets or [],
         },
-        sequence={"wobble_position": 34}, organism={"species": organism},
+        sequence={"wobble_position": 37}, organism={"species": organism},
         instrument={}, p1_annotation={},
     )
+
+
+def fixed_config(*, polarity="positive"):
+    config = cfg(max_mods=3, polarity=polarity, organism=FIXED_ORGANISM["species"])
+    config.sequence = {"sequence": FIXED_SEQUENCE, "wobble_position": 37}
+    config.organism = dict(FIXED_ORGANISM)
+    return config
+
+
+@pytest.fixture(scope="module")
+def fixed_positive_result():
+    return generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="positive"))
+
+
+@pytest.fixture(scope="module")
+def fixed_negative_result():
+    return generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="negative"))
 
 
 def assignments(result, left=None, right=None, linkage=None):
@@ -188,16 +211,54 @@ def test_legacy_flat_config_is_backward_compatible():
     assert settings["polarity"] == "negative"
 
 
-def test_fixture_mass_uses_generic_generation_and_preserves_assignments():
-    config = load_config(ROOT / "config.yaml")
-    config.p1_sap_dinucleotide["candidate_generation"]["polarity"] = "positive"
-    result = generate_dinucleotide_candidates(config.sequence["sequence"], ROOT, config=config)
-    groups = extract_target_candidates(result.candidates, 634.13269, 634.13272)
+def target_group(result, low, high):
+    groups = extract_target_candidates(result.candidates, low, high)
     assert len(groups) == 1
-    group = groups[0]
-    assert group["Structural_Assignment_Count"] == 85
+    return groups[0]
+
+
+def test_fixture_mass_uses_generic_generation_and_preserves_assignments(fixed_positive_result):
+    group = target_group(fixed_positive_result, 634.13269, 634.13272)
+    assert group["Structural_Assignment_Count"] == 90
     assert group["Possible_Source_Bonds"] == "7-8;10-11;11-12;12-13;15-16;55-56"
     assert "10:m22G-PHOSPHOROTHIOATE-11:U" in group["Possible_Position_Assignments"]
+
+
+def test_fixed_positive_fixture_reproduces_target_group(fixed_positive_result):
+    group = target_group(fixed_positive_result, 634.13269, 634.13272)
+    assert group["Final_Elemental_Composition"] == "C21H28N7O12P1S1"
+    assert group["Polarity"] == "positive"
+    assert group["Theoretical_mz"] == pytest.approx(634.1327040079219)
+
+
+def test_fixed_negative_fixture_reproduces_polarity_conversion(fixed_positive_result, fixed_negative_result):
+    positive = target_group(fixed_positive_result, 634.13269, 634.13272)
+    negative = target_group(fixed_negative_result, 632.11814, 632.11816)
+    assert negative["Final_Elemental_Composition"] == positive["Final_Elemental_Composition"]
+    assert negative["Structural_Assignment_Count"] == positive["Structural_Assignment_Count"]
+    assert negative["Polarity"] == "negative"
+    assert negative["Theoretical_mz"] == pytest.approx(632.118151074298)
+
+
+def test_fixed_fixture_does_not_depend_on_working_directory_config(tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text("not: the test fixture\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    result = generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="positive"))
+    assert target_group(result, 634.13269, 634.13272)["Structural_Assignment_Count"] == 90
+
+
+def test_dinucleotide_tests_do_not_read_root_config_directly():
+    offenders = []
+    for path in ROOT.glob("test*dinucleotide*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Div):
+                continue
+            if not isinstance(node.left, ast.Name) or node.left.id != "ROOT":
+                continue
+            if isinstance(node.right, ast.Constant) and node.right.value == "config.yaml":
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert offenders == []
 
 
 def test_generic_sheet_policy_and_excel_lengths():
