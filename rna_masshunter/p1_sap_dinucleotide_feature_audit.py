@@ -316,10 +316,35 @@ def _precursor_metadata(spectrum: dict[str, Any]) -> tuple[float | None, str, An
     return observed, target, isolation.get("isolation window lower offset", ""), isolation.get("isolation window upper offset", "")
 
 
+def _indexed_ms2_features(
+    features: list[dict[str, Any]],
+    groups: dict[str, dict[str, Any]],
+) -> list[tuple[float, str, dict[str, Any]]]:
+    """Return scalar-keyed feature records; dictionaries are never compared."""
+    records: list[tuple[float, str, float, str, int, dict[str, Any]]] = []
+    for original_index, feature in enumerate(features):
+        group_id = str(feature.get("Dinucleotide_Group_ID") or "")
+        feature_id = str(
+            feature.get("Dinucleotide_Feature_ID")
+            or feature.get("Physical_Feature_ID")
+            or f"FEATURE_INDEX_{original_index:08d}"
+        )
+        records.append((
+            float(groups[group_id]["Theoretical_mz"]),
+            group_id,
+            float(feature.get("RT_Apex") or 0.0),
+            feature_id,
+            original_index,
+            feature,
+        ))
+    records.sort(key=lambda item: item[:5])
+    return [(theoretical_mz, feature_id, feature) for theoretical_mz, _group_id, _rt, feature_id, _index, feature in records]
+
+
 def build_ms2_provenance(mzml_path: str | Path | None, features: list[dict[str, Any]], groups: dict[str, dict[str, Any]], tolerance_ppm: float) -> list[dict[str, Any]]:
     if not mzml_path or not features: return []
     records: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    indexed_features = sorted((float(groups[str(feature["Dinucleotide_Group_ID"])]["Theoretical_mz"]), feature) for feature in features)
+    indexed_features = _indexed_ms2_features(features, groups)
     feature_mzs = [row[0] for row in indexed_features]
     for spectrum in iter_spectra(mzml_path):
         if int(spectrum.get("ms level", 0) or 0) != 2: continue
@@ -328,17 +353,17 @@ def build_ms2_provenance(mzml_path: str | Path | None, features: list[dict[str, 
         product_array = spectrum.get("m/z array")
         products = [float(value) for value in product_array] if product_array is not None else []
         rt = _rt_minutes(spectrum); delta = precursor * tolerance_ppm / 1e6
-        for theoretical, feature in indexed_features[bisect_left(feature_mzs, precursor-delta):bisect_right(feature_mzs, precursor+delta)]:
+        for theoretical, feature_id, feature in indexed_features[bisect_left(feature_mzs, precursor-delta):bisect_right(feature_mzs, precursor+delta)]:
             if feature.get("RT_Start") is not None and rt is not None and not (float(feature["RT_Start"]) - 0.08 <= float(rt) <= float(feature["RT_End"]) + 0.08): continue
-            records[str(feature["Dinucleotide_Feature_ID"])].append({
+            records[feature_id].append({
                 "id": str(spectrum.get("id") or ""), "rt": rt, "target": isolation_target,
                 "lower": lower, "upper": upper, "error": (precursor-theoretical)/theoretical*1e6,
                 "min": min(products, default=""), "max": max(products, default=""), "count": len(products),
                 "below": sum(value < 500 for value in products), "above": sum(value >= 500 for value in products),
             })
     output = []
-    for feature in features:
-        feature_id = str(feature["Dinucleotide_Feature_ID"]); rows = records.get(feature_id, [])
+    for _theoretical, feature_id, feature in indexed_features:
+        rows = records.get(feature_id, [])
         output.append({
             "Dinucleotide_Group_ID": feature["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": feature_id,
             "Precursor_Compatible_MS2_Spectrum_Count": len(rows), "MS2_Spectrum_IDs": ";".join(row["id"] for row in rows),

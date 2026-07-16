@@ -201,3 +201,93 @@ def test_targets_do_not_change_generic_groups_or_features():
     assert normalize(base["generated"].candidates) == normalize(targeted["generated"].candidates)
     assert base["features"] == targeted["features"]
     assert targeted["sheets"]["P1_SAP_Dinuc_Targets"][0]["Target_Label"] == "arbitrary"
+
+
+def _ms2_spectrum(group, spectrum_id, rt):
+    return {
+        "ms level": 2,
+        "id": spectrum_id,
+        "m/z array": [50.0, 250.0, 600.0],
+        "scanList": {"scan": [{"scan start time": rt}]},
+        "precursorList": {"precursor": [{
+            "selectedIonList": {"selectedIon": [{"selected ion m/z": group["Theoretical_mz"]}]},
+            "isolationWindow": {
+                "isolation window target m/z": group["Theoretical_mz"],
+                "isolation window lower offset": 0.7,
+                "isolation window upper offset": 0.9,
+            },
+        }]},
+    }
+
+
+def test_ms2_provenance_same_group_multiple_features(monkeypatch):
+    import rna_masshunter.p1_sap_dinucleotide_feature_audit as module
+    group, _config = one_group()
+    features = [
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "late", "Physical_Feature_ID": "PF2", "RT_Start": 1.9, "RT_End": 2.1, "RT_Apex": 2.0},
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "early", "Physical_Feature_ID": "PF1", "RT_Start": 0.9, "RT_End": 1.1, "RT_Apex": 1.0},
+    ]
+    spectra = [_ms2_spectrum(group, "ms2-early", 1.0), _ms2_spectrum(group, "ms2-late", 2.0)]
+    monkeypatch.setattr(module, "iter_spectra", lambda _path: iter(spectra))
+    rows = build_ms2_provenance("unused", features, {group["Dinucleotide_Group_ID"]: group}, 10)
+    assert [row["Dinucleotide_Feature_ID"] for row in rows] == ["early", "late"]
+    assert [row["MS2_Spectrum_IDs"] for row in rows] == ["ms2-early", "ms2-late"]
+    assert all(row["Precursor_Compatible_MS2_Spectrum_Count"] == 1 for row in rows)
+
+
+def test_ms2_provenance_different_groups_same_theoretical_mz(monkeypatch):
+    import rna_masshunter.p1_sap_dinucleotide_feature_audit as module
+    group_a, _config = one_group()
+    group_b = deepcopy(group_a)
+    group_a["Dinucleotide_Group_ID"] = "GROUP_A"
+    group_b["Dinucleotide_Group_ID"] = "GROUP_B"
+    groups = {"GROUP_A": group_a, "GROUP_B": group_b}
+    features = [
+        {"Dinucleotide_Group_ID": "GROUP_B", "Dinucleotide_Feature_ID": "FB", "RT_Start": 0.9, "RT_End": 1.1, "RT_Apex": 1.0},
+        {"Dinucleotide_Group_ID": "GROUP_A", "Dinucleotide_Feature_ID": "FA", "RT_Start": 0.9, "RT_End": 1.1, "RT_Apex": 1.0},
+    ]
+    monkeypatch.setattr(module, "iter_spectra", lambda _path: iter([_ms2_spectrum(group_a, "ms2", 1.0)]))
+    rows = build_ms2_provenance("unused", features, groups, 10)
+    assert [row["Dinucleotide_Group_ID"] for row in rows] == ["GROUP_A", "GROUP_B"]
+    assert all(row["Precursor_Compatible_MS2_Spectrum_Count"] == 1 for row in rows)
+
+
+def test_ms2_provenance_missing_feature_ids_uses_fallback(monkeypatch):
+    import rna_masshunter.p1_sap_dinucleotide_feature_audit as module
+    group, _config = one_group()
+    features = [
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Physical_Feature_ID": "PHYSICAL_ONLY", "RT_Apex": 1.0},
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "RT_Apex": 2.0},
+    ]
+    monkeypatch.setattr(module, "iter_spectra", lambda _path: iter([]))
+    rows = build_ms2_provenance("unused", features, {group["Dinucleotide_Group_ID"]: group}, 10)
+    assert [row["Dinucleotide_Feature_ID"] for row in rows] == ["PHYSICAL_ONLY", "FEATURE_INDEX_00000001"]
+
+
+def test_ms2_provenance_order_is_deterministic_for_unique_scalar_keys(monkeypatch):
+    import rna_masshunter.p1_sap_dinucleotide_feature_audit as module
+    group, _config = one_group()
+    features = [
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "F3", "RT_Apex": 3.0},
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "F1", "RT_Apex": 1.0},
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "F2", "RT_Apex": 2.0},
+    ]
+    monkeypatch.setattr(module, "iter_spectra", lambda _path: iter([]))
+    groups = {group["Dinucleotide_Group_ID"]: group}
+    forward = build_ms2_provenance("unused", features, groups, 10)
+    reverse = build_ms2_provenance("unused", list(reversed(features)), groups, 10)
+    assert [row["Dinucleotide_Feature_ID"] for row in forward] == ["F1", "F2", "F3"]
+    assert [row["Dinucleotide_Feature_ID"] for row in reverse] == ["F1", "F2", "F3"]
+
+
+def test_ms2_provenance_identical_scalar_keys_preserves_original_order(monkeypatch):
+    import rna_masshunter.p1_sap_dinucleotide_feature_audit as module
+    group, _config = one_group()
+    features = [
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "SAME", "RT_Apex": 1.0, "marker": "first"},
+        {"Dinucleotide_Group_ID": group["Dinucleotide_Group_ID"], "Dinucleotide_Feature_ID": "SAME", "RT_Apex": 1.0, "marker": "second"},
+    ]
+    monkeypatch.setattr(module, "iter_spectra", lambda _path: iter([]))
+    rows = build_ms2_provenance("unused", features, {group["Dinucleotide_Group_ID"]: group}, 10)
+    assert len(rows) == 2
+    assert [row["Dinucleotide_Feature_ID"] for row in rows] == ["SAME", "SAME"]
