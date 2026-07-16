@@ -216,7 +216,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "include_normal_phosphate": True,
             "include_phosphorothioate": True,
             "charges": [1],
-            "polarity": "positive",
+            "polarity": "auto",
         },
         "search": {"mz_min": 100, "mz_max": 1000, "tolerance_ppm": 10},
         "mass_accuracy": {"strong_ppm": 2, "moderate_ppm": 5, "search_ppm": 10},

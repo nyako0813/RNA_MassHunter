@@ -190,6 +190,7 @@ def test_legacy_flat_config_is_backward_compatible():
 
 def test_fixture_mass_uses_generic_generation_and_preserves_assignments():
     config = load_config(ROOT / "config.yaml")
+    config.p1_sap_dinucleotide["candidate_generation"]["polarity"] = "positive"
     result = generate_dinucleotide_candidates(config.sequence["sequence"], ROOT, config=config)
     groups = extract_target_candidates(result.candidates, 634.13269, 634.13272)
     assert len(groups) == 1
@@ -234,3 +235,16 @@ def test_excel_column_schemas_are_unique():
     from rna_masshunter.p1_sap_dinucleotide_interpretation import TARGET_COLUMNS
     for columns in (GROUP_COLUMNS, ASSIGNMENT_COLUMNS, SUMMARY_COLUMNS, SPECPEAK_COLUMNS, FEATURE_COLUMNS, ISOTOPE_COLUMNS, COMPETITION_COLUMNS, MS2_COLUMNS, TARGET_COLUMNS):
         assert len(columns) == len(set(columns))
+
+
+def test_auto_polarity_inherits_instrument_polarity():
+    config = cfg(max_mods=0, polarity="auto")
+    config.instrument = {"polarity": "negative"}
+    assert dinucleotide_settings(config)["polarity"] == "negative"
+    assert all(row["Polarity"] == "negative" for row in generate_dinucleotide_candidates("AG", ROOT, config=config).candidates)
+
+
+def test_explicit_dinucleotide_polarity_overrides_instrument():
+    config = cfg(max_mods=0, polarity="positive")
+    config.instrument = {"polarity": "negative"}
+    assert dinucleotide_settings(config)["polarity"] == "positive"

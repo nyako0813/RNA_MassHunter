@@ -172,6 +172,11 @@ def dinucleotide_settings(config: Any | None) -> dict[str, Any]:
     acquisition_max = float(search.get("acquisition_mz_max", instrument.get("ms1_mz_max", search_max)))
     extraction_min = float(search.get("ms1_extraction_mz_min", p1.get("mz_min", search_min)))
     extraction_max = float(search.get("ms1_extraction_mz_max", p1.get("mz_max", search_max)))
+    configured_polarity = str(generation.get("polarity", section.get("polarity", "auto"))).lower()
+    instrument_polarity = str(instrument.get("polarity", "positive")).lower()
+    resolved_polarity = instrument_polarity if configured_polarity == "auto" else configured_polarity
+    if resolved_polarity not in {"positive", "negative"}:
+        resolved_polarity = "positive"
     return {
         "enabled": bool(section.get("enabled", True)),
         "max_modifications_per_side": max(0, int(generation.get("max_modifications_per_side", 3))),
@@ -180,7 +185,7 @@ def dinucleotide_settings(config: Any | None) -> dict[str, Any]:
         "include_normal_phosphate": bool(generation.get("include_normal_phosphate", True)),
         "include_phosphorothioate": bool(generation.get("include_phosphorothioate", True)),
         "charges": tuple(int(value) for value in generation.get("charges", section.get("charges", [1]))),
-        "polarity": str(generation.get("polarity", section.get("polarity", "positive"))).lower(),
+        "polarity": resolved_polarity,
         "strict_positions": {str(k): {int(x) for x in v} for k, v in (generation.get("strict_positions") or {}).items()},
         "search_mz_min": search_min, "search_mz_max": search_max,
         "acquisition_mz_min": acquisition_min, "acquisition_mz_max": acquisition_max,
