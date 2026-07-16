@@ -153,6 +153,10 @@ from rna_masshunter.rnase_ms2_consensus_synthesis import (
     SUMMARY_COLUMNS as RNASE_MS2_CONSENSUS_SUMMARY_COLUMNS,
     EVIDENCE_COLUMNS as RNASE_MS2_CONSENSUS_EVIDENCE_COLUMNS,
 )
+from rna_masshunter.sciex_profile_parser import (
+    DIAGNOSTIC_COLUMNS as SCIEX_PROFILE_DIAGNOSTIC_COLUMNS,
+    INPUT_COLUMNS as SCIEX_PROFILE_INPUT_COLUMNS,
+)
 from rna_masshunter.rnase_ms2_standard_composite_crosswalk import (
     SUMMARY_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
     CROSSWALK_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
@@ -673,6 +677,8 @@ SHEET_DESCRIPTIONS = {
     "RNase_MS2_Standard_Composite_Cr": "Excel alias for standard-to-composite RNase MS/MS crosswalk detail; shadow-only.",
     "RNase_MS2_Consensus_Summary": "Final standard/composite RNase MS/MS consensus summary; shadow-only.",
     "RNase_MS2_Consensus_Evidence": "Candidate-level final standard/composite RNase MS/MS consensus; shadow-only.",
+    "SCIEX_Profile_Diagnostics": "SCIEX profile text header, filename expectation, numeric validity, spacing, and routing diagnostics; shadow-only.",
+    "SCIEX_Profile_Input": "Parsed SCIEX profile points with neutral-mass and m/z coordinates kept separate; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -1444,6 +1450,8 @@ def write_excel_report(
         "RNase_MS2_Standard_Composite_Crosswalk": RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
         "RNase_MS2_Consensus_Summary": RNASE_MS2_CONSENSUS_SUMMARY_COLUMNS,
         "RNase_MS2_Consensus_Evidence": RNASE_MS2_CONSENSUS_EVIDENCE_COLUMNS,
+        "SCIEX_Profile_Diagnostics": SCIEX_PROFILE_DIAGNOSTIC_COLUMNS,
+        "SCIEX_Profile_Input": SCIEX_PROFILE_INPUT_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
         "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS + COMPOSITE_DIAGNOSTIC_COLUMNS,
