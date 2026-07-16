@@ -16,6 +16,7 @@ from rna_masshunter.composite_observation_audit import (
     FRAGMENT_COLUMNS as COMPOSITE_FRAGMENT_COLUMNS, INVALID_COLUMNS as COMPOSITE_OBS_INVALID_COLUMNS,
     MS1_COLUMNS as COMPOSITE_MS1_COLUMNS, MS1_SUMMARY_COLUMNS as COMPOSITE_MS1_SUMMARY_COLUMNS,
     MS2_ION_COLUMNS as COMPOSITE_MS2_ION_COLUMNS, MS2_MATCH_COLUMNS as COMPOSITE_MS2_MATCH_COLUMNS,
+    MS2_ASSIGNMENT_COMPETITION_COLUMNS as COMPOSITE_MS2_ASSIGNMENT_COMPETITION_COLUMNS,
     OBS_SUMMARY_COLUMNS as COMPOSITE_OBS_SUMMARY_COLUMNS, SCORE_COLUMNS as COMPOSITE_SCORE_COLUMNS,
     SUPPORT_COLUMNS as COMPOSITE_SUPPORT_COLUMNS,
 )
@@ -607,6 +608,7 @@ SHEET_DESCRIPTIONS = {
     "Composite_MS1_Summary": "Candidate-level MS1 observation and observability counts.",
     "Composite_MS2_Ions": "Position/bond-state propagated complete-structure theoretical MS2 ions.",
     "Composite_MS2_Matches": "Observed MS2 support for propagated complete-structure ions.",
+    "Composite_MS2_Assignment_Compe": "Excel alias for all within-tolerance composite MS2 assignment competition provenance.",
     "Composite_Support_Summary": "Candidate-level MS1/MS2/blocked-cleavage shadow support.",
     "Blocked_Cleavage_Matches": "Observed phosphorothioate-blocked cleavage fragments and mechanism comparison.",
     "Legacy_Composite_Compare": "Formal legacy versus valid complete-structure shadow comparison.",
@@ -1423,6 +1425,7 @@ def write_excel_report(
         "Composite_MS1_Summary": COMPOSITE_MS1_SUMMARY_COLUMNS,
         "Composite_MS2_Ions": COMPOSITE_MS2_ION_COLUMNS,
         "Composite_MS2_Matches": COMPOSITE_MS2_MATCH_COLUMNS,
+        "Composite_MS2_Assignment_Competition": COMPOSITE_MS2_ASSIGNMENT_COMPETITION_COLUMNS,
         "Composite_Support_Summary": COMPOSITE_SUPPORT_COLUMNS,
         "Blocked_Cleavage_Matches": COMPOSITE_BLOCKED_COLUMNS,
         "Legacy_Composite_Compare": COMPOSITE_COMPARE_COLUMNS,
@@ -1485,7 +1488,12 @@ def write_excel_report(
             frame = pd.DataFrame(frame, columns=columns)
         if sheet_name == "Top_Modification_Candidates" and not audit_policy.include_top_shadow_columns:
             frame = frame.drop(columns=[column for column in AUDIT_TOP_SHADOW_COLUMNS if column in frame.columns])
-        data_sheets[sheet_name[:31]] = frame
+        excel_sheet_name = (
+            "Composite_MS2_Assignment_Compe"
+            if sheet_name == "Composite_MS2_Assignment_Competition"
+            else sheet_name[:31]
+        )
+        data_sheets[excel_sheet_name] = frame
 
     included_names, unknown_names = included_sheet_names(data_sheets, audit_policy)
     if unknown_names and audit_policy.level != "full":

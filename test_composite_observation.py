@@ -121,13 +121,15 @@ def test_phase2_orchestrator_audit_and_full_are_formal_immutable():
     assert "Composite_Obs_Summary" in audit.sheets
     assert "Composite_MS1_Matches" not in audit.sheets
     assert "Composite_MS1_Matches" in full.sheets
+    assert "Composite_MS2_Assignment_Competition" not in audit.sheets
+    assert "Composite_MS2_Assignment_Competition" in full.sheets
     assert full.sheets["Composite_MS1_Matches"][0]["Match_Status"]=="matched"
     assert before==(formal_ms1,formal_ranking)
     assert all(row["Applied_To_Formal_Result"] is False for rows in full.sheets.values() for row in rows)
     assert all(row["Formal_Change_Ready"] is False for rows in full.sheets.values() for row in rows)
 
 def test_phase2_sheet_policy_standard_audit_full():
-    names=["Run_summary","Composite_Obs_Summary","Composite_MS1_Matches"]
+    names=["Run_summary","Composite_Obs_Summary","Composite_MS1_Matches","Composite_MS2_Assignment_Compe"]
     standard,_=included_sheet_names(names,AuditPolicy.from_level("standard"))
     audit,_=included_sheet_names(names,AuditPolicy.from_level("audit"))
     full,_=included_sheet_names(names,AuditPolicy.from_level("full"))

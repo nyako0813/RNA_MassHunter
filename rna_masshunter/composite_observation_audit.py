@@ -22,6 +22,25 @@ MS1_COLUMNS = ["Candidate_ID","Complete_Structure_ID","Fragment_ID","Fragment_Ty
 MS1_SUMMARY_COLUMNS = ["Candidate_ID","Matched_Count","No_Observation_Count","Not_Observable_Count","Unique_Support_Count","Shared_Legacy_Count","Shared_Composite_Count","Nondiscriminating_Count","Isomeric_Unresolved_Count"] + COMMON_STATUS_COLUMNS
 MS2_ION_COLUMNS = ["Candidate_ID","Complete_Structure_ID","Parent_Fragment_ID","Parent_Sequence","Parent_Start","Parent_End","Parent_Neutral_Mass","Ion_ID","Ion_Series","Ion_Number","Cleavage_Position","Ion_Sequence","Included_Positions","Included_Modified_Positions","Included_Backbone_Bonds","Theoretical_Neutral_Mass","Charge","Theoretical_mz","Position_Informative","Backbone_Informative"] + COMMON_STATUS_COLUMNS
 MS2_MATCH_COLUMNS = ["Candidate_ID","Complete_Structure_ID","Spectrum_ID","Precursor_mz","Precursor_Charge","Ion_Series","Ion_Number","Cleavage_Position","Included_Positions","Included_Modified_Positions","Included_Backbone_Bonds","Theoretical_Neutral_Mass","Theoretical_mz","Observed_mz","Mass_Error_Da","Mass_Error_ppm","Observed_Intensity","Position_Informative","Backbone_Informative","Candidate_Discriminating","Isomer_Discriminating","Legacy_Competition_Class"] + COMMON_STATUS_COLUMNS
+MS2_ASSIGNMENT_COMPETITION_COLUMNS = [
+    "Composite_Match_ID", "Physical_Observed_Peak_Key", "Observed_Peak_Index",
+    "Raw_Peak_Index", "Raw_Peak_Index_Missing_Reason", "Scan_Index", "Spectrum_ID",
+    "RT", "Observed_mz", "Observed_Intensity", "Observed_Intensity_State", "Ion_ID",
+    "Candidate_ID", "Complete_Structure_ID", "Parent_Fragment_ID", "Ion_Series",
+    "Ion_Number", "Cleavage_Position", "Charge", "Theoretical_mz", "Mass_Error_Da",
+    "Mass_Error_ppm", "Assignment_Rank", "Best_Assignment",
+    "Within_Tolerance_Assignment_Count", "Competing_Candidate_Count",
+    "Competing_Candidate_IDs", "Competing_Complete_Structure_Count",
+    "Competing_Complete_Structure_IDs", "Competing_Theoretical_Ion_Count",
+    "Competing_Ion_IDs", "Best_Error_ppm", "Second_Best_Error_ppm",
+    "Best_vs_Second_Error_Margin_ppm", "Candidate_Specific",
+    "Complete_Structure_Specific", "Theoretical_Ion_Specific", "Position_Specific",
+    "Backbone_Bond_Specific", "Included_Positions", "Included_Modified_Positions",
+    "Included_Backbone_Bonds", "Position_Informative", "Backbone_Informative",
+    "Candidate_Discriminating", "Isomer_Discriminating", "Legacy_Competition_Class",
+    "Audit_Level", "Applied_To_Formal_Result", "Formal_Change_Ready",
+    "Formal_Result_Changed",
+]
 SUPPORT_COLUMNS = ["Candidate_ID","Complete_Structure_ID","Parent_Base","Modified_Positions","Backbone_Modified_Bonds","Theoretical_Fragment_Count","Observable_Fragment_Count","MS1_Matched_Fragment_Count","MS1_Unique_Support_Count","MS1_Shared_Support_Count","MS1_Nondiscriminating_Count","MS1_Isomeric_Unresolved_Count","MS2_Matched_Ion_Count","MS2_Position_Informative_Count","MS2_Backbone_Informative_Count","Blocked_Cleavage_Match_Count","Conflicting_Observation_Count","Support_Coverage","Support_Status"] + COMMON_STATUS_COLUMNS
 BLOCKED_COLUMNS = ["Candidate_ID","Enzyme","Fragment_ID","Start_Position","End_Position","Blocked_Bond_ID","Blocked_Cleavage_Position","Cleavage_Status","Blocked_Cleavage_Reason","Contains_Phosphorothioate","Backbone_Modification_Count","Backbone_Modification_Positions","Backbone_Mass_Delta","Theoretical_mz","Observed_mz","Mass_Error_ppm","Observed_Intensity","Alternative_Stochastic_Fragment_Exists","Mechanism_Discriminating"] + COMMON_STATUS_COLUMNS
 COMPARE_COLUMNS = ["Candidate_ID","Legacy_Candidate_IDs","Legacy_Parent_IDs","Exact_Phase1_Candidate_IDs","Comparison_Class","Neutral_Mass_Equivalent","Position_Compatible","Chemical_Exclusivity_Checked","MS1_Support_Count","MS1_Nondiscriminating_Count","MS2_Localization_Support_Count","Legacy_Formal_Ranks"] + COMMON_STATUS_COLUMNS
@@ -90,7 +109,9 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     ms1_rows = match_composite_fragments_to_peaks(fragments, peaks, config,
         legacy_matches=formal_ms1_matches, isomer_groups=isomer_groups, audit_level=audit_level)
     ions = generate_composite_theoretical_ions(structures, theoretical_fragments, sequence, config, audit_level=audit_level)
-    ms2_rows = match_composite_ms2(ions, spectra, config, audit_level=audit_level)
+    ms2_rows, ms2_competition = match_composite_ms2(
+        ions, spectra, config, audit_level=audit_level, return_competition=True,
+    )
     blocked = match_blocked_cleavage_fragments(structures, sequence, peaks, config,
         backbone_transform, base_masses, theoretical_fragments, audit_level=audit_level)
     support = aggregate_candidate_support(structures, fragment_rows, ms1_rows, ms2_rows, blocked, audit_level=audit_level)
@@ -116,6 +137,7 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     if audit_level == "full":
         sheets.update({"Composite_Fragment_Masses": fragment_rows, "Composite_MS1_Matches": ms1_rows,
             "Composite_MS2_Ions": ions, "Composite_MS2_Matches": ms2_rows,
+            "Composite_MS2_Assignment_Competition": ms2_competition,
             "Blocked_Cleavage_Matches": blocked})
         if invalid: sheets["Composite_Obs_Invalid"] = invalid
     return CompositeObservationResult(sheets, tuple(structures), tuple(invalid))
