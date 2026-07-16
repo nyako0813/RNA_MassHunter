@@ -101,6 +101,7 @@ AUDIT_SUMMARY_SHEETS = {
     "P1_SAP_Chemical_State", "P1_SAP_PT_Family", "P1_SAP_Terminal_Audit",
     "P1_SAP_Chemistry_Summary", "P1_SAP_Quality_Summary", "P1_SAP_Feature_Quality",
     "P1_SAP_Dinuc_Summary", "P1_SAP_Dinuc_Groups", "P1_SAP_Dinuc_Targets",
+    "P1_SAP_Dinuc_Evidence_Summary",
 }
 AUDIT_GROUP_SHEETS = {
     "Intact_Competition_Groups", "Intact_Competition_Scores", "Intact_Assignment_Dry_Run",
@@ -108,6 +109,7 @@ AUDIT_GROUP_SHEETS = {
     "Assignment_Ambiguous_Candidates", "Preassignment_Comparison",
     "MS2_Ambiguous_Peak_Clusters", "MS2_Zero_Intensity_Spectra",
     "MS2_Effective_Ambiguity", "MS1_Truncation_Audit", "MS1_Selection_Strategy",
+    "P1_SAP_Dinuc_Evidence", "P1_SAP_Dinuc_Group_Evidence",
     "MS1_Top50_Shadow", "MS1_CrossFrag_Ambiguity",
 }
 AUDIT_DETAIL_SHEETS = {

@@ -58,6 +58,18 @@ def make_report(tmp_path, level):
         "P1_SAP_Dinuc_Competition":[{"Dinucleotide_Group_ID":"d1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "P1_SAP_Dinuc_MS2":[{"Dinucleotide_Group_ID":"d1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "P1_SAP_Dinuc_Targets":[],
+        "P1_SAP_Dinuc_Evidence":[{
+            "Physical_Feature_ID":"p1","Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
+        "P1_SAP_Dinuc_Group_Evidence":[{
+            "Dinucleotide_Group_ID":"d1","Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
+        "P1_SAP_Dinuc_Evidence_Summary":[{
+            "Physical_Feature_Count":1,"Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
         "PT_Cross_Run_Runs":[{"Run_ID":"r1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Summary":[{"Cross_Run_Candidate_Key":"k","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Pairs":[{"Pair_Key":"p","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
@@ -144,6 +156,21 @@ def test_audit_summary_without_group_or_detail(tmp_path):
 def test_full_has_summary_group_detail_and_status(tmp_path):
     path=make_report(tmp_path,"full"); names=load_workbook(path,read_only=True).sheetnames
     assert {"MS1_Truncation_Summary","MS1_Truncation_Audit","MS1_Truncation_Detail","Audit_Status"}<=set(names)
+
+def test_dinucleotide_evidence_sheets_follow_audit_level(tmp_path):
+    names = {
+        level: set(load_workbook(make_report(tmp_path, level), read_only=True).sheetnames)
+        for level in AUDIT_LEVELS
+    }
+    new_sheets = {
+        "P1_SAP_Dinuc_Evidence",
+        "P1_SAP_Dinuc_Group_Evidence",
+        "P1_SAP_Dinuc_Evidence_Summary",
+    }
+    assert not (new_sheets & names["standard"])
+    assert new_sheets & names["audit"] == {"P1_SAP_Dinuc_Evidence_Summary"}
+    assert new_sheets <= names["full"]
+
 
 
 def test_cross_run_excel_sheets_follow_audit_level(tmp_path):

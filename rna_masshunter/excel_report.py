@@ -168,6 +168,11 @@ from rna_masshunter.p1_sap_dinucleotide_feature_audit import (
     MS2_COLUMNS as P1_SAP_DINUC_MS2_COLUMNS,
 )
 from rna_masshunter.p1_sap_dinucleotide_interpretation import TARGET_COLUMNS as P1_SAP_DINUC_TARGET_COLUMNS
+from rna_masshunter.p1_sap_dinucleotide_evidence_synthesis import (
+    EVIDENCE_COLUMNS as P1_SAP_DINUC_EVIDENCE_COLUMNS,
+    GROUP_EVIDENCE_COLUMNS as P1_SAP_DINUC_GROUP_EVIDENCE_COLUMNS,
+    SUMMARY_COLUMNS as P1_SAP_DINUC_EVIDENCE_SUMMARY_COLUMNS,
+)
 from rna_masshunter.p1_sap_feature_quality import (
     P1_SAP_SPECTRUM_PEAK_COLUMNS,
     P1_SAP_REFINED_FEATURE_COLUMNS,
@@ -560,6 +565,9 @@ SHEET_DESCRIPTIONS = {
     "Intact_Engine_Comparison": "Optional comparison between legacy_cluster and rt_localized intact engines.",
     "Intact_Competition_Groups": "Diagnostic groups of intact candidates sharing supporting local peaks; no candidate exclusion is applied.",
     "Intact_Competition_Scores": "Envelope-internal evidence scores and rank details within competition groups.",
+    "P1_SAP_Dinuc_Evidence": "Physical-feature P1+SAP dinucleotide evidence synthesis; shadow-only.",
+    "P1_SAP_Dinuc_Group_Evidence": "Group-level P1+SAP dinucleotide evidence and targeted MS/MS priority; shadow-only.",
+    "P1_SAP_Dinuc_Evidence_Summary": "Run-level P1+SAP dinucleotide evidence synthesis counts; shadow-only.",
     "Intact_Assignment_Dry_Run": "Diagnostic-only dry-run peak assignment for competing intact candidates.",
     "Competition_Dry_Run_Summary": "Component-level summary of diagnostic dry-run assignment outcomes.",
     "Assignment_Sensitivity": "Threshold-only competitive assignment sensitivity scenarios.",
@@ -1373,6 +1381,9 @@ def write_excel_report(
         "P1_SAP_Dinuc_Competition": P1_SAP_DINUC_COMPETITION_COLUMNS,
         "P1_SAP_Dinuc_MS2": P1_SAP_DINUC_MS2_COLUMNS,
         "P1_SAP_Dinuc_Targets": P1_SAP_DINUC_TARGET_COLUMNS,
+        "P1_SAP_Dinuc_Evidence": P1_SAP_DINUC_EVIDENCE_COLUMNS,
+        "P1_SAP_Dinuc_Group_Evidence": P1_SAP_DINUC_GROUP_EVIDENCE_COLUMNS,
+        "P1_SAP_Dinuc_Evidence_Summary": P1_SAP_DINUC_EVIDENCE_SUMMARY_COLUMNS,
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
         "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,

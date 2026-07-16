@@ -17,6 +17,9 @@ from rna_masshunter.p1_sap_dinucleotide_feature_audit import (
     COMPETITION_COLUMNS, FEATURE_COLUMNS, ISOTOPE_COLUMNS, MS2_COLUMNS, SPECPEAK_COLUMNS,
     DinucleotideFeatureAuditResult, audit_dinucleotide_features,
 )
+from rna_masshunter.p1_sap_dinucleotide_evidence_synthesis import (
+    build_p1_sap_dinucleotide_evidence_synthesis,
+)
 
 TARGET_COLUMNS = [
     "Target_Label", "Target_mz", "Tolerance_ppm", "Matched_Group_Count", "Matched_Group_IDs",
@@ -141,6 +144,10 @@ def build_p1_sap_dinucleotide_audit(project_root: str | Path, sequence: str, pea
     started = time.perf_counter(); candidate = generate_dinucleotide_candidates(sequence, project_root, config=config); candidate_runtime = time.perf_counter()-started
     audit = audit_dinucleotide_features(candidate.candidates, peaks, config, mzml_path=mzml_path)
     started = time.perf_counter(); classify_features(audit, candidate.candidates, config); interpret_groups(candidate.candidates, audit); interpretation_runtime = time.perf_counter()-started
+    synthesis = build_p1_sap_dinucleotide_evidence_synthesis(
+        candidate.candidates, candidate.assignments, audit.features,
+        audit.competition, audit.isotopes, audit.ms2_provenance,
+    )
     targets = build_target_results(dinucleotide_settings(config)["targets"], candidate.candidates, audit.features)
     _current, peak_bytes = tracemalloc.get_traced_memory()
     if owns_tracemalloc: tracemalloc.stop()
@@ -154,7 +161,7 @@ def build_p1_sap_dinucleotide_audit(project_root: str | Path, sequence: str, pea
     summary = _summary(candidate, audit, performance)
     sheets = {
         "P1_SAP_Dinuc_Summary": [summary], "P1_SAP_Dinuc_Groups": candidate.candidates,
-        "P1_SAP_Dinuc_Targets": targets,
+        "P1_SAP_Dinuc_Targets": targets, **synthesis.sheets,
     }
     if audit_level == "full":
         sheets.update({
@@ -172,8 +179,12 @@ def build_p1_sap_dinucleotide_audit(project_root: str | Path, sequence: str, pea
             "group_summary": summary, "groups": candidate.candidates,
             "features": audit.features, "isotope_audit": audit.isotopes,
             "competition": audit.competition, "ms2_provenance": audit.ms2_provenance,
-            "target_results": targets,
+            "evidence_synthesis": synthesis.to_jsonable(), "target_results": targets,
         }
     }
     json.dumps(payload, ensure_ascii=False, default=str)
-    return {"generated": candidate, "audit": audit, "sheets": sheets, "payload": payload, "features": audit.features, "ms2": audit.ms2_provenance, "summary": summary}
+    return {
+        "generated": candidate, "audit": audit, "synthesis": synthesis, "sheets": sheets,
+        "payload": payload, "features": audit.features, "ms2": audit.ms2_provenance,
+        "summary": summary,
+    }
