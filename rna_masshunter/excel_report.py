@@ -139,6 +139,11 @@ from rna_masshunter.ms2_effective_ambiguity import (
     DIAGNOSTIC_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS,
     TOP_SHADOW_COLUMNS as MS2_EFFECTIVE_AMBIGUITY_TOP_COLUMNS,
 )
+from rna_masshunter.rnase_ms2_evidence_synthesis import (
+    SUMMARY_COLUMNS as RNASE_MS2_EVIDENCE_SUMMARY_COLUMNS,
+    CANDIDATE_EVIDENCE_COLUMNS as RNASE_MS2_CANDIDATE_EVIDENCE_COLUMNS,
+    PEAK_EVIDENCE_COLUMNS as RNASE_MS2_PEAK_EVIDENCE_COLUMNS,
+)
 from rna_masshunter.p1_annotation import (
     P1_ANNOTATION_COLUMNS,
     P1_SUMMARY_COLUMNS,
@@ -637,6 +642,9 @@ SHEET_DESCRIPTIONS = {
     "Modification_Position_Priors": "Diagnostic input-sequence position priors; no Sprinzl numbering is assumed.",
     "MS2_Biological_Plausibility": "Shadow biological plausibility, parent-base compatibility, and structural ambiguity review.",
     "MS2_Modification_Identity": "Shadow summary separating modified fragment ions, position localization, and structure/isomer resolution.",
+    "RNase_MS2_Evidence_Summary": "Run-level RNase MS/MS evidence-synthesis status counts; shadow-only.",
+    "RNase_MS2_Candidate_Evidence": "Candidate-level RNase MS/MS identity, localization, structure, and ambiguity synthesis; shadow-only.",
+    "RNase_MS2_Peak_Evidence": "Physical-peak RNase MS/MS assignment and ambiguity provenance; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -1398,6 +1406,9 @@ def write_excel_report(
         "MS2_Biological_Plausibility": BIOLOGICAL_PLAUSIBILITY_COLUMNS,
         "MS2_Modification_Identity": IDENTITY_COLUMNS,
         "MS2_Identity_Peak_Assignments": PEAK_ASSIGNMENT_COLUMNS,
+        "RNase_MS2_Evidence_Summary": RNASE_MS2_EVIDENCE_SUMMARY_COLUMNS,
+        "RNase_MS2_Candidate_Evidence": RNASE_MS2_CANDIDATE_EVIDENCE_COLUMNS,
+        "RNase_MS2_Peak_Evidence": RNASE_MS2_PEAK_EVIDENCE_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
         "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS + COMPOSITE_DIAGNOSTIC_COLUMNS,

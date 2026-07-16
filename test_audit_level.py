@@ -70,6 +70,19 @@ def make_report(tmp_path, level):
             "Physical_Feature_Count":1,"Applied_To_Formal_Result":False,
             "Formal_Change_Ready":False,"Formal_Result_Changed":False,
         }],
+        "RNase_MS2_Evidence_Summary":[{
+            "Candidate_Count":1,"Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
+        "RNase_MS2_Candidate_Evidence":[{
+            "Candidate_Key":"mod|F1|1","Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
+        "RNase_MS2_Peak_Evidence":[{
+            "Physical_Observed_Peak_Key":"S1|peak=1",
+            "Applied_To_Formal_Result":False,
+            "Formal_Change_Ready":False,"Formal_Result_Changed":False,
+        }],
         "PT_Cross_Run_Runs":[{"Run_ID":"r1","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Summary":[{"Cross_Run_Candidate_Key":"k","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "PT_Cross_Run_Pairs":[{"Pair_Key":"p","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
@@ -171,6 +184,21 @@ def test_dinucleotide_evidence_sheets_follow_audit_level(tmp_path):
     assert new_sheets & names["audit"] == {"P1_SAP_Dinuc_Evidence_Summary"}
     assert new_sheets <= names["full"]
 
+
+
+def test_rnase_ms2_evidence_sheets_follow_audit_level(tmp_path):
+    names = {
+        level: set(load_workbook(make_report(tmp_path, level), read_only=True).sheetnames)
+        for level in AUDIT_LEVELS
+    }
+    new_sheets = {
+        "RNase_MS2_Evidence_Summary",
+        "RNase_MS2_Candidate_Evidence",
+        "RNase_MS2_Peak_Evidence",
+    }
+    assert not (new_sheets & names["standard"])
+    assert new_sheets & names["audit"] == {"RNase_MS2_Evidence_Summary"}
+    assert new_sheets <= names["full"]
 
 
 def test_cross_run_excel_sheets_follow_audit_level(tmp_path):

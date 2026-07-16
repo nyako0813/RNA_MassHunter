@@ -49,6 +49,9 @@ from rna_masshunter.ms2_ambiguous_peak_audit import (
     build_ambiguous_peak_audit, build_ambiguity_summary, build_ambiguity_diagnostics,
 )
 from rna_masshunter.ms2_identity_evidence import build_ms2_modification_identity
+from rna_masshunter.rnase_ms2_evidence_synthesis import (
+    build_rnase_ms2_evidence_synthesis,
+)
 from rna_masshunter.ms2_unmatched_audit import build_unmatched_ion_summary
 from rna_masshunter.ms2_zero_intensity_audit import (
     build_zero_intensity_audit, update_top50_affected as update_zero_top50_affected,
@@ -467,6 +470,27 @@ def main(argv: list[str] | None = None) -> None:
             unmatched_diagnostics[0].update(zero_diagnostics[0])
             unmatched_diagnostics[0].update(effective_diagnostics[0])
             optional_results["MS2_Unmatched_Ion_Diagnostics"] = unmatched_diagnostics
+
+            synthesis_started = time.perf_counter()
+            rnase_ms2_synthesis = build_rnase_ms2_evidence_synthesis(
+                ranking_rows=ranking_rows,
+                ambiguity_groups=optional_results.get("Modification_Ambiguity_Groups", []),
+                modified_precursors=optional_results.get("MS2_Modified_Precursor_Candidates", []),
+                modified_theoretical_ions=optional_results.get("MS2_Modified_Theoretical_Ions", []),
+                modified_ion_matches=optional_results.get("MS2_Modified_Ion_Matches", []),
+                localization_rows=optional_results.get("MS2_Modification_Localization_Evidence", []),
+                identity_rows=identity_rows,
+                identity_peak_assignments=identity_assignment_rows,
+                ambiguous_clusters=optional_results.get("MS2_Ambiguous_Peak_Clusters", []),
+                ambiguous_peak_details=optional_results.get("MS2_Ambiguous_Peak_Detail", []),
+                effective_ambiguity_rows=optional_results.get("MS2_Effective_Ambiguity", []),
+                effective_ambiguity_details=optional_results.get("MS2_Effective_Ambig_Detail", []),
+            )
+            optional_results.update(rnase_ms2_synthesis.sheets)
+            audit_status_rows.append(audit_status_row(
+                "RNase MS2 evidence synthesis", "MS2", audit_policy, True, True, True,
+                time.perf_counter() - synthesis_started, 0.0,
+            ))
         _record_workflow_step(workflow_rows, analysis_mode, "modification_evidence_ranking", "executed", _as_bool(config.modification_evidence_ranking.get("enabled"), True), True, output_sheets="Modification_Evidence_Summary; Modification_Evidence_Ranking; Modification_Ambiguity_Groups", notes=f"ranked={len(ranking_rows)}")
         optional_results["Biological_Context_Priorities"] = biological_context_priority_rows(config)
         optional_results["Context_Supported_Candidates"] = [
@@ -759,7 +783,8 @@ def main(argv: list[str] | None = None) -> None:
 
     audit_specs = (
         ("MS2_ambiguous_peak", "MS2"), ("MS2_zero_intensity", "MS2"),
-        ("MS2_effective_ambiguity", "MS2"), ("MS1_match_truncation", "MS1"),
+        ("MS2_effective_ambiguity", "MS2"),
+        ("RNase MS2 evidence synthesis", "MS2"), ("MS1_match_truncation", "MS1"),
         ("MS1_selection_strategy", "MS1"), ("MS1_top50_physical_peak", "MS1"),
         ("MS1_cross_fragment", "MS1"),
         ("Composite modification constraints", "Modification"),
