@@ -13,6 +13,7 @@ from rna_masshunter.composite_ms2_propagation import generate_composite_theoreti
 from rna_masshunter.rnase_ms2_composite_evidence_synthesis import build_rnase_ms2_composite_evidence_synthesis
 from rna_masshunter.composite_structure_provenance import build_composite_structure_provenance
 from rna_masshunter.rnase_ms2_standard_composite_crosswalk import build_rnase_ms2_standard_composite_crosswalk
+from rna_masshunter.rnase_ms2_consensus_synthesis import build_rnase_ms2_consensus_synthesis
 from rna_masshunter.legacy_composite_comparison import compare_legacy_composite
 from rna_masshunter.modification_constraints import load_transformations
 from rna_masshunter.sample_structure_schema import load_sample_structure_hypotheses
@@ -134,6 +135,10 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
         list(standard_candidate_rows), component_provenance.position_rows,
         component_provenance.bond_rows, theoretical_fragments,
     )
+    consensus_synthesis = build_rnase_ms2_consensus_synthesis(
+        list(standard_candidate_rows), evidence_synthesis.evidence_rows,
+        standard_composite_crosswalk.crosswalk_rows,
+    )
     matched_blocked = sum(r.get("Observed_mz") not in ("", None) for r in blocked)
     summary = [{
         "Schema_Version": loaded.schema_version, "Enabled": loaded.enabled,
@@ -151,6 +156,7 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
         "Composite_Shadow_Score": scores, "Composite_Obs_Summary": summary,
         "RNase_MS2_Composite_Summary": evidence_synthesis.summary_rows,
         "RNase_MS2_Standard_Composite_Summary": standard_composite_crosswalk.summary_rows,
+        "RNase_MS2_Consensus_Summary": consensus_synthesis.summary_rows,
     }
     if audit_level == "full":
         sheets.update({"Composite_Fragment_Masses": fragment_rows, "Composite_MS1_Matches": ms1_rows,
@@ -161,6 +167,7 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
             "Composite_Structure_Position_Map": component_provenance.position_rows,
             "Composite_Structure_Bond_Map": component_provenance.bond_rows,
             "RNase_MS2_Standard_Composite_Crosswalk": standard_composite_crosswalk.crosswalk_rows,
+            "RNase_MS2_Consensus_Evidence": consensus_synthesis.evidence_rows,
             "Blocked_Cleavage_Matches": blocked})
         if invalid: sheets["Composite_Obs_Invalid"] = invalid
     return CompositeObservationResult(sheets, tuple(structures), tuple(invalid))
