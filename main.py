@@ -667,6 +667,7 @@ def main(argv: list[str] | None = None) -> None:
             phase1_sheets=composite_audit.sheets, formal_ms1_matches=shadow_legacy_matches,
             formal_ranking=ranking_rows, audit_level=audit_policy.level,
             legacy_modifications=modifications,
+            standard_candidate_rows=optional_results.get("RNase_MS2_Candidate_Evidence", []),
         )
         composite_observation_seconds = time.perf_counter() - composite_observation_started
         _, composite_observation_peak_bytes = tracemalloc.get_traced_memory()

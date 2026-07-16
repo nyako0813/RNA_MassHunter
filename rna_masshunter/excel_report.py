@@ -149,6 +149,10 @@ from rna_masshunter.rnase_ms2_evidence_synthesis import (
     CANDIDATE_EVIDENCE_COLUMNS as RNASE_MS2_CANDIDATE_EVIDENCE_COLUMNS,
     PEAK_EVIDENCE_COLUMNS as RNASE_MS2_PEAK_EVIDENCE_COLUMNS,
 )
+from rna_masshunter.rnase_ms2_standard_composite_crosswalk import (
+    SUMMARY_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
+    CROSSWALK_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
+)
 from rna_masshunter.rnase_ms2_composite_evidence_synthesis import (
     SUMMARY_COLUMNS as RNASE_MS2_COMPOSITE_SUMMARY_COLUMNS,
     EVIDENCE_COLUMNS as RNASE_MS2_COMPOSITE_EVIDENCE_COLUMNS,
@@ -661,6 +665,8 @@ SHEET_DESCRIPTIONS = {
     "RNase_MS2_Composite_Summary": "Run-level complete-structure RNase MS/MS evidence synthesis; shadow-only.",
     "RNase_MS2_Composite_Evidence": "Complete-structure candidate RNase MS/MS evidence synthesis; shadow-only.",
     "RNase_MS2_Composite_Peak_Eviden": "Excel alias for complete-structure physical-peak RNase MS/MS evidence; shadow-only.",
+    "RNase_MS2_Standard_Composite_Su": "Excel alias for standard-to-composite RNase MS/MS crosswalk summary; shadow-only.",
+    "RNase_MS2_Standard_Composite_Cr": "Excel alias for standard-to-composite RNase MS/MS crosswalk detail; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -1428,6 +1434,8 @@ def write_excel_report(
         "RNase_MS2_Composite_Summary": RNASE_MS2_COMPOSITE_SUMMARY_COLUMNS,
         "RNase_MS2_Composite_Evidence": RNASE_MS2_COMPOSITE_EVIDENCE_COLUMNS,
         "RNase_MS2_Composite_Peak_Evidence": RNASE_MS2_COMPOSITE_PEAK_EVIDENCE_COLUMNS,
+        "RNase_MS2_Standard_Composite_Summary": RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
+        "RNase_MS2_Standard_Composite_Crosswalk": RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
         "MS2_Unmatched_Ion_Audit": MS2_UNMATCHED_ION_AUDIT_COLUMNS,
         "MS2_Unmatched_Ion_Summary": MS2_UNMATCHED_ION_SUMMARY_COLUMNS,
         "MS2_Unmatched_Ion_Diagnostics": MS2_UNMATCHED_ION_DIAGNOSTIC_COLUMNS + MS2_AMBIGUOUS_DIAGNOSTIC_COLUMNS + MS2_ZERO_INTENSITY_DIAGNOSTIC_COLUMNS + MS2_EFFECTIVE_AMBIGUITY_DIAGNOSTIC_COLUMNS + MS1_TRUNCATION_DIAGNOSTIC_COLUMNS + MS1_SELECTION_DIAGNOSTIC_COLUMNS + MS1_TOP50_DEDUP_DIAGNOSTIC_COLUMNS + MS1_CROSSFRAG_DIAGNOSTIC_COLUMNS + AUDIT_LEVEL_DIAGNOSTIC_COLUMNS + COMPOSITE_DIAGNOSTIC_COLUMNS,

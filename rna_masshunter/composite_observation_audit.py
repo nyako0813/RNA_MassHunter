@@ -12,6 +12,7 @@ from rna_masshunter.composite_ms2_matcher import match_composite_ms2
 from rna_masshunter.composite_ms2_propagation import generate_composite_theoretical_ions
 from rna_masshunter.rnase_ms2_composite_evidence_synthesis import build_rnase_ms2_composite_evidence_synthesis
 from rna_masshunter.composite_structure_provenance import build_composite_structure_provenance
+from rna_masshunter.rnase_ms2_standard_composite_crosswalk import build_rnase_ms2_standard_composite_crosswalk
 from rna_masshunter.legacy_composite_comparison import compare_legacy_composite
 from rna_masshunter.modification_constraints import load_transformations
 from rna_masshunter.sample_structure_schema import load_sample_structure_hypotheses
@@ -77,7 +78,9 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     base_masses: dict, phase1_sheets: dict[str, Any], formal_ms1_matches: list[Any],
     formal_ranking: list[dict[str, Any]], *, audit_level: str = "full",
     fixture_path: str | Path | None = None,
-    legacy_modifications: list[Any] | tuple[Any, ...] = ()) -> CompositeObservationResult:
+    legacy_modifications: list[Any] | tuple[Any, ...] = (),
+    standard_candidate_rows: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+    ) -> CompositeObservationResult:
     root = Path(project_root)
     transforms = load_transformations(root / "data/modification_transforms_v2.yaml")
     backbone_transform = load_backbone_transformations(root / "data/backbone_modifications.yaml")[0]
@@ -127,6 +130,10 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
     component_provenance = build_composite_structure_provenance(
         structures, legacy_modifications,
     )
+    standard_composite_crosswalk = build_rnase_ms2_standard_composite_crosswalk(
+        list(standard_candidate_rows), component_provenance.position_rows,
+        component_provenance.bond_rows, theoretical_fragments,
+    )
     matched_blocked = sum(r.get("Observed_mz") not in ("", None) for r in blocked)
     summary = [{
         "Schema_Version": loaded.schema_version, "Enabled": loaded.enabled,
@@ -143,6 +150,7 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
         "Composite_Support_Summary": support, "Legacy_Composite_Compare": comparison,
         "Composite_Shadow_Score": scores, "Composite_Obs_Summary": summary,
         "RNase_MS2_Composite_Summary": evidence_synthesis.summary_rows,
+        "RNase_MS2_Standard_Composite_Summary": standard_composite_crosswalk.summary_rows,
     }
     if audit_level == "full":
         sheets.update({"Composite_Fragment_Masses": fragment_rows, "Composite_MS1_Matches": ms1_rows,
@@ -152,6 +160,7 @@ def build_composite_observation_audit(project_root: str | Path, sequence: str,
             "RNase_MS2_Composite_Peak_Evidence": evidence_synthesis.peak_rows,
             "Composite_Structure_Position_Map": component_provenance.position_rows,
             "Composite_Structure_Bond_Map": component_provenance.bond_rows,
+            "RNase_MS2_Standard_Composite_Crosswalk": standard_composite_crosswalk.crosswalk_rows,
             "Blocked_Cleavage_Matches": blocked})
         if invalid: sheets["Composite_Obs_Invalid"] = invalid
     return CompositeObservationResult(sheets, tuple(structures), tuple(invalid))
