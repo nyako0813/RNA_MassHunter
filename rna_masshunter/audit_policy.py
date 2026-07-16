@@ -88,6 +88,7 @@ FORMAL_OPTIONAL_SHEETS = {
 AUDIT_SUMMARY_SHEETS = {
     "Audit_Status", "MS2_Unmatched_Ion_Summary", "MS2_Ambiguity_Summary",
     "RNase_MS2_Evidence_Summary",
+    "RNase_MS2_Composite_Summary",
     "MS2_Zero_Intensity_Summary", "MS2_Effective_Ambig_Summary",
     "MS1_Truncation_Summary", "MS1_Selection_Summary", "MS1_Top50_Dedup_Summary",
     "MS1_CrossFrag_Summary", "Competition_Dry_Run_Summary",
@@ -110,6 +111,7 @@ AUDIT_GROUP_SHEETS = {
     "Assignment_Ambiguous_Candidates", "Preassignment_Comparison",
     "MS2_Ambiguous_Peak_Clusters", "MS2_Zero_Intensity_Spectra",
     "MS2_Effective_Ambiguity", "RNase_MS2_Candidate_Evidence",
+    "RNase_MS2_Composite_Evidence",
     "MS1_Truncation_Audit", "MS1_Selection_Strategy",
     "P1_SAP_Dinuc_Evidence", "P1_SAP_Dinuc_Group_Evidence",
     "MS1_Top50_Shadow", "MS1_CrossFrag_Ambiguity",
@@ -117,6 +119,7 @@ AUDIT_GROUP_SHEETS = {
 AUDIT_DETAIL_SHEETS = {
     "MS2_Unmatched_Ion_Audit", "MS2_Ambiguous_Peak_Detail", "MS2_Zero_Intensity_Detail",
     "RNase_MS2_Peak_Evidence",
+    "RNase_MS2_Composite_Peak_Eviden",
     "MS2_Effective_Ambig_Detail", "MS1_Truncation_Detail", "MS1_Selection_Detail",
     "MS1_Peak_Dedup_Detail", "MS1_CrossFrag_Detail",
     "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
