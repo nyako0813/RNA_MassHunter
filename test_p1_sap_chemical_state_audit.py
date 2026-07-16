@@ -132,6 +132,7 @@ def test_p1_audit_runs_pt_chemistry_and_never_localizes():
     assert all(x["Sequence_Position_Localized"] is False and x["Original_Bond_Localized"] is False for rows in result.sheets.values() for x in rows if "Sequence_Position_Localized" in x)
     assert result.summary_payload["sap_reaction_model"]["PT_removal_unknown"] is True
     assert result.summary_payload["sap_reaction_model"]["complete_reaction_asserted"] is False
+    assert set(result.summary_payload["feature_quality"])=={"summary","features","isotope_audit"}
 
 def test_all_rows_keep_formal_false_flags():
     result=build_p1_sap_chemical_state_audit(ROOT,"AG",[Peak(100,100,1,"s")],cfg(),[],audit_level="full")

@@ -155,6 +155,13 @@ from rna_masshunter.p1_sap_chemical_state_audit import (
     SUMMARY_COLUMNS as P1_SAP_SUMMARY_COLUMNS,
     TERMINAL_COLUMNS as P1_SAP_TERMINAL_COLUMNS,
 )
+from rna_masshunter.p1_sap_feature_quality import (
+    P1_SAP_SPECTRUM_PEAK_COLUMNS,
+    P1_SAP_REFINED_FEATURE_COLUMNS,
+    P1_SAP_FEATURE_QUALITY_COLUMNS,
+    P1_SAP_ISOTOPE_AUDIT_COLUMNS,
+    P1_SAP_QUALITY_SUMMARY_COLUMNS,
+)
 
 
 AUDIT_TOP_SHADOW_COLUMNS = list(dict.fromkeys(
@@ -1339,6 +1346,11 @@ def write_excel_report(
         "P1_SAP_Competition": P1_SAP_COMPETITION_COLUMNS,
         "Cross_Enzyme_Chemistry": P1_SAP_CROSS_ENZYME_COLUMNS,
         "P1_SAP_MS2_Provenance": P1_SAP_MS2_PROVENANCE_COLUMNS,
+        "P1_SAP_Spectrum_Peaks": P1_SAP_SPECTRUM_PEAK_COLUMNS,
+        "P1_SAP_Refined_Features": P1_SAP_REFINED_FEATURE_COLUMNS,
+        "P1_SAP_Feature_Quality": P1_SAP_FEATURE_QUALITY_COLUMNS,
+        "P1_SAP_Isotope_Audit": P1_SAP_ISOTOPE_AUDIT_COLUMNS,
+        "P1_SAP_Quality_Summary": P1_SAP_QUALITY_SUMMARY_COLUMNS,
         "MS2_Summary": MS2_SUMMARY_COLUMNS,
         "MS2_Spectra": MS2_SPECTRA_COLUMNS,
         "MS2_Parent_Candidates": MS2_PARENT_CANDIDATE_COLUMNS,

@@ -753,7 +753,7 @@ def main(argv: list[str] | None = None) -> None:
         ))
         _record_workflow_step(
             workflow_rows, analysis_mode, "p1_sap_chemical_state_shadow", "executed", True, True,
-            output_sheets="P1_SAP_Chemical_State; P1_SAP_PT_Family; P1_SAP_Terminal_Audit; P1_SAP_Features; Cross_Enzyme_Chemistry",
+            output_sheets="P1_SAP_Chemical_State; P1_SAP_PT_Family; P1_SAP_Terminal_Audit; P1_SAP_Feature_Quality; P1_SAP_Quality_Summary; P1_SAP_Features; Cross_Enzyme_Chemistry",
             notes=f"candidates={p1_sap_audit.metrics.get('Candidate_Count', 0)}; independent_features={p1_sap_audit.metrics.get('Independent_Feature_Count', 0)}",
         )
 

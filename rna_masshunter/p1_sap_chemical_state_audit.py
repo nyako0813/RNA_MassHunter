@@ -23,6 +23,7 @@ from rna_masshunter.elemental_composition import ElementalComposition
 from rna_masshunter.enzymes import normalize_enzyme_name
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.modification_constraints import load_transformations
+from rna_masshunter.p1_sap_feature_quality import build_p1_sap_feature_quality
 from rna_masshunter.mzml_diagnostics import _rt_minutes
 from rna_masshunter.mzml_reader import iter_spectra
 
@@ -427,8 +428,6 @@ def match_and_group_features(candidates: list[dict[str, Any]], peaks: list[Any],
         features.extend(_group_candidate_points(candidate,points,max_rt_gap))
     _assign_physical_features(features)
     competition=_competition_and_isotopes(features,raw,{x["Chemical_State_ID"]:x for x in candidates})
-    for feature in features:
-        feature.pop("_point_ids",None);feature.pop("_scan_ids",None)
     return features,competition,raw_counts
 
 
@@ -570,8 +569,12 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
             candidate["Not_Observable_Reason"]="" if candidate["Observable"] else "outside_acquisition_range"
             candidate["Search_Enabled"]=candidate["Search_Enabled"] and candidate["Observable"]
     tolerance=float((getattr(config,"p1_annotation",{}) or {}).get("mz_tolerance_ppm") or (getattr(config,"instrument",{}) or {}).get("ms1_tolerance_ppm",10) or 10)
+    raw_peaks=[_raw_peak(p,i) for i,p in enumerate(peaks)]
     features,competition,raw_counts=match_and_group_features(candidates,peaks,tolerance_ppm=tolerance)
+    quality_results=build_p1_sap_feature_quality(candidates, features, raw_peaks, config, tolerance)
     _update_candidates(candidates,features,raw_counts);families=_family_rows(family_specs,candidates,features);terminal=_terminal_rows(family_specs,candidates,features);cross=_cross_enzyme_rows(candidates)
+    for feature in features:
+        feature.pop("_point_ids",None); feature.pop("_scan_ids",None)
     ms2=compatible_ms2_provenance(mzml_path,candidates,20.0) if audit_level=="full" and mzml_path else []
     pt_features=[x for x in features if x["Chemical_Family"] in {"PHOSPHOROTHIOATE","P1_RESISTANT_PT_OLIGOMER"}]
     supported_pt_features=[x for x in pt_features if x.get("Feature_Eligible_For_Support",False)]
@@ -598,7 +601,12 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
         "PT_Chemical_State_Final_Interpretation":final,"Position_Localization_Disabled":True,"Bond_Localization_Disabled":True,
         "Audit_Runtime":runtime,"Maximum_RSS_MiB":maximum_rss_mib,"Tracemalloc_Peak_MiB":peak_bytes/(1024*1024),
         "Feature_Detail_Row_Count":len(features) if audit_level=="full" else 0,**FALSE_FLAGS}
-    sheets={"P1_SAP_Chemical_State":candidates,"P1_SAP_PT_Family":families,"P1_SAP_Terminal_Audit":terminal,"P1_SAP_Chemistry_Summary":[summary]}
+    sheets={"P1_SAP_Chemical_State":candidates,"P1_SAP_PT_Family":families,"P1_SAP_Terminal_Audit":terminal,"P1_SAP_Chemistry_Summary":[summary],
+        "P1_SAP_Spectrum_Peaks":quality_results["spectrum_peaks"],
+        "P1_SAP_Refined_Features":quality_results["refined_features"],
+        "P1_SAP_Feature_Quality":quality_results["quality_rows"],
+        "P1_SAP_Isotope_Audit":quality_results["isotope_rows"],
+        "P1_SAP_Quality_Summary":[quality_results["summary_row"]]}
     if audit_level=="full":sheets.update({"P1_SAP_Features":features,"P1_SAP_Competition":competition,"Cross_Enzyme_Chemistry":cross,"P1_SAP_MS2_Provenance":ms2})
     metrics=dict(summary)
     payload={"experiment_treatment":["Nuclease P1 digestion","SAP alkaline phosphatase","SCIEX ZenoTOF positive profile"],
@@ -609,6 +617,7 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
         "feature_family_counts":{k:summary[k] for k in summary if k.endswith("Feature_Count")},
         "PT_like_features":[{k:x.get(k) for k in FEATURE_COLUMNS if not k.startswith("Applied_") and not k.startswith("Formal_")} for x in pt_features],
         "terminal_state_audit":terminal,"position_localization_disabled":True,"bond_localization_disabled":True,
+        "feature_quality":{"summary":quality_results["summary_row"],"features":quality_results["quality_rows"],"isotope_audit":quality_results["isotope_rows"]},
         "cross_enzyme_comparison":cross,"formal_flags":FALSE_FLAGS,"performance":{"audit_runtime_seconds":runtime,"tracemalloc_peak_mib":peak_bytes/(1024*1024),"feature_detail_rows":summary["Feature_Detail_Row_Count"]},
         "final_interpretation":final}
     payload["performance"]["maximum_rss_mib"]=maximum_rss_mib
