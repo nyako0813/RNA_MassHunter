@@ -92,6 +92,7 @@ AUDIT_SUMMARY_SHEETS = {
     "RNase_MS2_Standard_Composite_Su",
     "RNase_MS2_Consensus_Summary",
     "SCIEX_Profile_Diagnostics",
+    "SCIEX_Intact_Peak_Diagnostics",
     "MS2_Zero_Intensity_Summary", "MS2_Effective_Ambig_Summary",
     "MS1_Truncation_Summary", "MS1_Selection_Summary", "MS1_Top50_Dedup_Summary",
     "MS1_CrossFrag_Summary", "Competition_Dry_Run_Summary",
@@ -126,6 +127,7 @@ AUDIT_DETAIL_SHEETS = {
     "RNase_MS2_Composite_Peak_Eviden",
     "RNase_MS2_Standard_Composite_Cr",
     "SCIEX_Profile_Input",
+    "SCIEX_Intact_Detected_Peaks",
     "MS2_Effective_Ambig_Detail", "MS1_Truncation_Detail", "MS1_Selection_Detail",
     "MS1_Peak_Dedup_Detail", "MS1_CrossFrag_Detail",
     "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
@@ -139,6 +141,10 @@ AUDIT_DETAIL_SHEETS = {
     "P1_SAP_MS2_Provenance", "P1_SAP_Spectrum_Peaks", "P1_SAP_Refined_Features", "P1_SAP_Isotope_Audit",
     "P1_SAP_Dinuc_Assignments", "P1_SAP_Dinuc_SpecPeaks", "P1_SAP_Dinuc_Features",
     "P1_SAP_Dinuc_Isotopes", "P1_SAP_Dinuc_Competition", "P1_SAP_Dinuc_MS2",
+}
+
+AUDIT_DETAIL_AVAILABLE_AT_AUDIT_LEVEL = {
+    "SCIEX_Intact_Detected_Peaks",
 }
 
 SHEET_REGISTRY = {
@@ -167,7 +173,9 @@ def included_sheet_names(names: Iterable[str], policy: AuditPolicy) -> tuple[lis
         if category is None:
             unknown.append(name)
             if policy.level == "full": included.append(name)
-        elif policy.includes_category(category):
+        elif policy.includes_category(category) or (
+            policy.level == "audit" and name in AUDIT_DETAIL_AVAILABLE_AT_AUDIT_LEVEL
+        ):
             included.append(name)
     return included, sorted(set(unknown))
 

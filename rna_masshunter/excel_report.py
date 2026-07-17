@@ -1,8 +1,13 @@
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from enum import Enum
+import json
+import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
@@ -220,6 +225,76 @@ AUDIT_TOP_SHADOW_COLUMNS = list(dict.fromkeys(
 EXCEL_MAX_ROWS = 1_048_576
 DATA_START_ROW = 3
 EXCEL_DATA_ROW_LIMIT = EXCEL_MAX_ROWS - DATA_START_ROW
+
+
+SCIEX_INTACT_OPTIONAL_RESULT_KEY = "sciex_intact_peak_detection"
+SCIEX_INTACT_DIAGNOSTIC_SHEET = "SCIEX_Intact_Peak_Diagnostics"
+SCIEX_INTACT_PEAK_SHEET = "SCIEX_Intact_Detected_Peaks"
+
+SCIEX_INTACT_DIAGNOSTIC_COLUMNS = [
+    "Source_File", "Source_File_Name", "Profile_Type", "Input_Status",
+    "Eligible_For_Neutral_Mass_Analysis", "Input_Validation_Status",
+    "Detection_Status", "Detection_Method", "Algorithm_Version",
+    "Parsed_Row_Count", "Mass_Min_Da", "Mass_Max_Da", "Mass_Step_Min_Da",
+    "Mass_Step_Median_Da", "Mass_Step_Max_Da", "Mass_Axis_Strictly_Increasing",
+    "Mass_Axis_Uniform", "Duplicate_Mass_Count", "Missing_Value_Count",
+    "Nonfinite_Value_Count", "Negative_Intensity_Count", "Zero_Intensity_Count",
+    "Baseline_Method", "Baseline_Quantile", "Baseline_Window_Points",
+    "Baseline_Window_Da", "Baseline_Edge_Mode", "Baseline_Min", "Baseline_Median",
+    "Baseline_Max", "Baseline_Negative_Residual_Fraction",
+    "Noise_Estimation_Method", "Noise_Window_Points", "Noise_Window_Da",
+    "Estimated_Noise_Global", "Estimated_Noise_Local_Min",
+    "Estimated_Noise_Local_Median", "Estimated_Noise_Local_Max",
+    "Height_Threshold_Method", "Prominence_Threshold_Method",
+    "Strict_Prominence_Threshold_Method", "Positive_Residual_Quantile_Value",
+    "Smoothing_Method", "Smoothing_Window_Points", "Smoothing_Window_Da",
+    "Smoothing_Polyorder", "Minimum_Distance_Points", "Minimum_Distance_Da",
+    "Minimum_Width_Points", "Minimum_Width_Da", "Boundary_Method",
+    "Boundary_Peak_Set_Tier", "Boundary_Recomputed_After_Filtering",
+    "Centroid_Method", "Area_Method", "Detected_Sensitive_Peak_Count",
+    "Detected_Strict_Peak_Count", "Rejected_Height_Count",
+    "Rejected_Prominence_Count", "Rejected_Width_Count",
+    "Suppressed_By_Distance_Count", "Shallow_Valley_Neighbor_Count",
+    "Possible_Shoulder_Count", "Broad_Peak_Width_Threshold_Da",
+    "Broad_Peak_Threshold_Source", "Broad_Peak_Count", "Severe_Broad_Peak_Count",
+    "Edge_Peak_Count", "Centroid_Fallback_Count", "Warning_Count",
+    "Automatic_Parameter_Fallbacks", "Detection_Warnings",
+    "Parameter_Provenance_JSON",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Formal_Score",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Ranking",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Candidate_Filtering",
+]
+
+SCIEX_INTACT_PEAK_COLUMNS = [
+    "Peak_ID", "Source_File", "Detection_Tier", "Sensitive_Threshold_Passed",
+    "Strict_Threshold_Passed", "Molecular_Identity_Assigned", "Apex_Index",
+    "Apex_Mass", "Apex_Intensity_Raw", "Local_Baseline_At_Apex",
+    "Apex_Intensity_Baseline_Corrected", "Detection_Signal_Apex",
+    "Height_Threshold_Local", "Prominence", "Prominence_Threshold_Local",
+    "Strict_Prominence_Threshold_Local", "Local_Noise_Sigma",
+    "Noise_Estimation_Method_Local", "Prominence_Base_Left_Index",
+    "Prominence_Base_Right_Index", "Prominence_Base_Left_Mass",
+    "Prominence_Base_Right_Mass", "Half_Prominence_Left_IP",
+    "Half_Prominence_Right_IP", "Half_Prominence_Width_Points",
+    "Half_Prominence_Width_Da", "FWHM_Points", "FWHM_Da",
+    "Left_Boundary_Index", "Right_Boundary_Index", "Left_Boundary_Mass",
+    "Right_Boundary_Mass", "Boundary_Width_Da", "Boundary_Method",
+    "Boundary_Fallback_Used", "Boundary_Left_Neighbor_Peak_ID",
+    "Boundary_Right_Neighbor_Peak_ID", "Boundary_Peak_Set_Tier",
+    "Boundary_Recomputed_After_Filtering", "Centroid_Mass",
+    "Centroid_Minus_Apex_Da", "Centroid_Fallback_Used", "Centroid_Complete",
+    "Peak_Area_Raw", "Peak_Area_Baseline_Corrected", "Peak_Area_Complete",
+    "Area_Unit", "Plateau_Start_Index", "Plateau_End_Index",
+    "Plateau_Size_Points", "Plateau_Width_Da", "Plateau_Center_Mass",
+    "Neighbor_Peak_ID", "Neighbor_Separation_Da", "Shared_Valley_Index",
+    "Shared_Valley_Mass", "Valley_To_Smaller_Apex_Ratio",
+    "Width_To_Separation_Ratio", "Shallow_Valley_Neighbor_Flag",
+    "Shoulder_Diagnostic_Reason", "Possible_Shoulder", "Broad_Peak_Flag",
+    "Severe_Broad_Peak_Flag", "Edge_Peak_Flag", "Noise_Fallback_Used",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Formal_Score",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Ranking",
+    "SCIEX_Intact_Peak_Detection_Applied_To_Candidate_Filtering",
+]
 
 
 INTACT_COLUMNS = [
@@ -679,6 +754,8 @@ SHEET_DESCRIPTIONS = {
     "RNase_MS2_Consensus_Evidence": "Candidate-level final standard/composite RNase MS/MS consensus; shadow-only.",
     "SCIEX_Profile_Diagnostics": "SCIEX profile text header, filename expectation, numeric validity, spacing, and routing diagnostics; shadow-only.",
     "SCIEX_Profile_Input": "Parsed SCIEX profile points with neutral-mass and m/z coordinates kept separate; shadow-only.",
+    "SCIEX_Intact_Peak_Diagnostics": "SCIEX intact neutral-mass peak detection diagnostics and parameter provenance; shadow-only.",
+    "SCIEX_Intact_Detected_Peaks": "Sensitive-tier SCIEX intact neutral-mass peaks with strict flags, boundaries, and areas; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -746,6 +823,153 @@ def _coerce_to_frame(value: Any) -> pd.DataFrame:
     if isinstance(value, dict):
         return pd.DataFrame([value])
     return pd.DataFrame([{"Value": value}])
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        return _json_safe(value.value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _json_safe(value.to_dict())
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_safe(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        normalized = [_json_safe(item) for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True, default=str),
+        )
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _excel_safe_cell(value: Any) -> Any:
+    normalized = _json_safe(value)
+    if normalized is None:
+        return ""
+    if isinstance(normalized, (list, dict)):
+        return json.dumps(
+            normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+    return normalized
+
+
+def _record_to_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return dict(value.to_dict())
+    if is_dataclass(value):
+        return asdict(value)
+    return dict(value)
+
+
+def _record_rows(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if isinstance(value, pd.DataFrame):
+        return [dict(row) for row in value.to_dict("records")]
+    if isinstance(value, (list, tuple)):
+        return [_record_to_dict(item) for item in value]
+    return [_record_to_dict(value)]
+
+
+def _sciex_intact_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+
+    wrapper = value if isinstance(value, Mapping) else {}
+    result = wrapper.get("result") if "result" in wrapper else value
+    source_file = wrapper.get("source_file", "")
+    source_file_name = wrapper.get("source_file_name", "")
+
+    if isinstance(result, Mapping) and any(
+        key in result for key in ("diagnostics", "peaks", "parameter_provenance", "warnings")
+    ):
+        diagnostics_value = result.get("diagnostics")
+        peaks_value = result.get("peaks")
+        provenance_value = result.get("parameter_provenance")
+        warnings_value = result.get("warnings")
+    else:
+        diagnostics_value = (
+            result.diagnostics_row() if hasattr(result, "diagnostics_row") else getattr(result, "diagnostics", None)
+        )
+        peaks_value = result.peak_rows() if hasattr(result, "peak_rows") else getattr(result, "peaks", None)
+        provenance_value = (
+            result.provenance_rows()
+            if hasattr(result, "provenance_rows")
+            else getattr(result, "parameter_provenance", None)
+        )
+        warnings_value = getattr(result, "warnings", None)
+
+    diagnostics_rows = _record_rows(diagnostics_value)
+    peak_rows = _record_rows(peaks_value)
+    provenance_rows = _record_rows(provenance_value)
+    provenance_json = _excel_safe_cell(provenance_rows) if provenance_rows else ""
+    warnings_cell = _excel_safe_cell(warnings_value) if warnings_value else ""
+    source_text = _excel_safe_cell(source_file) if source_file else ""
+    source_name_text = _excel_safe_cell(source_file_name) if source_file_name else ""
+    if source_text and not source_name_text:
+        source_name_text = Path(str(source_text)).name
+
+    formal_columns = (
+        "SCIEX_Intact_Peak_Detection_Applied_To_Formal_Score",
+        "SCIEX_Intact_Peak_Detection_Applied_To_Ranking",
+        "SCIEX_Intact_Peak_Detection_Applied_To_Candidate_Filtering",
+    )
+    safe_diagnostics = []
+    for source_row in diagnostics_rows:
+        row = dict(source_row)
+        if source_text:
+            row["Source_File"] = source_text
+        if source_name_text:
+            row["Source_File_Name"] = source_name_text
+        elif row.get("Source_File") and not row.get("Source_File_Name"):
+            row["Source_File_Name"] = Path(str(row["Source_File"])).name
+        row["Parameter_Provenance_JSON"] = provenance_json
+        row["Detection_Warnings"] = warnings_cell
+        for column in formal_columns:
+            row[column] = False
+        safe_diagnostics.append({key: _excel_safe_cell(item) for key, item in row.items()})
+
+    safe_peaks = []
+    for source_row in peak_rows:
+        row = dict(source_row)
+        if source_text:
+            row["Source_File"] = source_text
+        row["Molecular_Identity_Assigned"] = False
+        for column in formal_columns:
+            row[column] = False
+        safe_peaks.append({key: _excel_safe_cell(item) for key, item in row.items()})
+
+    sheets: dict[str, pd.DataFrame] = {}
+    if diagnostics_rows:
+        sheets[SCIEX_INTACT_DIAGNOSTIC_SHEET] = pd.DataFrame(
+            safe_diagnostics, columns=SCIEX_INTACT_DIAGNOSTIC_COLUMNS
+        )
+        sheets[SCIEX_INTACT_PEAK_SHEET] = pd.DataFrame(
+            safe_peaks, columns=SCIEX_INTACT_PEAK_COLUMNS
+        )
+    elif peak_rows:
+        sheets[SCIEX_INTACT_PEAK_SHEET] = pd.DataFrame(
+            safe_peaks, columns=SCIEX_INTACT_PEAK_COLUMNS
+        )
+    return sheets
 
 
 def _analysis_mode(config) -> str:
@@ -1522,8 +1746,14 @@ def write_excel_report(
         "Assignment_Ambiguous_Candidates": ASSIGNMENT_AMBIGUOUS_COLUMNS,
         "Preassignment_Comparison": PREASSIGNMENT_COMPARISON_COLUMNS,
     }
+    data_sheets.update(
+        _sciex_intact_excel_sheets(optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY))
+    )
     for sheet_name, value in optional_results.items():
-        if sheet_name in {"Index", "Run_summary", "Warnings", "Workflow_Summary"}:
+        if sheet_name in {
+            "Index", "Run_summary", "Warnings", "Workflow_Summary",
+            SCIEX_INTACT_OPTIONAL_RESULT_KEY,
+        }:
             continue
         frame = _coerce_to_frame(value)
         columns = optional_columns.get(sheet_name)
