@@ -163,6 +163,18 @@ python main.py --config path/to/alternate.yaml
 
 Relative config paths are resolved from the current working directory; absolute paths are also accepted. Reports are written to `output/`, logs to `logs/`, and cache/checkpoint files to `.cache/`.
 
+An optional SCIEX text profile can be routed to the shadow audit with:
+
+```yaml
+sciex_profile:
+  enabled: false
+  path: null
+  intact_peak_detection:
+    enabled: true
+```
+
+`Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. SCIEX intact peak sheets are hidden at the `standard` audit level and included at `audit`/`full`. These results do not affect formal scores, ranking, or candidate filtering.
+
 ## Current Features
 
 - Reads `config.yaml`.

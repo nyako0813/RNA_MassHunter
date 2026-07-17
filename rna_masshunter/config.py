@@ -15,6 +15,11 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
     "sequence": {"name": "target_tRNA", "type": "RNA", "sequence": "", "anticodon": "", "wobble_position": 34},
     "experiment": {"condition_name": "wild_type"},
     "instrument": {"polarity": "negative", "ms1_tolerance_ppm": 10, "ms2_tolerance_da": 0.02},
+    "sciex_profile": {
+        "enabled": False,
+        "path": None,
+        "intact_peak_detection": {"enabled": True},
+    },
     "reconstruction": {
         "enabled": True,
         "rt_min": None,
@@ -349,7 +354,8 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
             if warnings is not None:
                 add_warning(warnings, "WARNING", "config", f"Config section '{section}' was not a mapping; defaults were used.")
         missing = sorted(set(defaults) - set(current))
-        if missing and warnings is not None:
+        optional_section_absent = section == "sciex_profile" and section not in data
+        if missing and warnings is not None and not optional_section_absent:
             add_warning(warnings, "WARNING", "config", f"Config section '{section}' missing keys filled by defaults.", missing)
         merged[section] = {**defaults, **current}
     merged["raw"] = data
@@ -382,6 +388,18 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
     polarity = str(config.instrument.get("polarity", "")).lower()
     if polarity not in {"negative", "positive"} and warnings is not None:
         add_warning(warnings, "ERROR", "config", "instrument.polarity must be 'negative' or 'positive'.", polarity)
+
+    sciex_profile = config.sciex_profile or {}
+    if _as_bool(sciex_profile.get("enabled"), False):
+        profile_path = sciex_profile.get("path")
+        if profile_path is None:
+            raise ValueError("sciex_profile.path is required when sciex_profile.enabled=true")
+        if isinstance(profile_path, str) and not profile_path.strip():
+            raise ValueError("sciex_profile.path must not be empty when sciex_profile.enabled=true")
+        detection = sciex_profile.get("intact_peak_detection")
+        if not isinstance(detection, dict):
+            raise ValueError("sciex_profile.intact_peak_detection must be a mapping")
+
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:
         add_warning(warnings, "WARNING", "config", "input.mzml_path and input.raw_path are empty; sample config mode.")
     if not config.sequence.get("sequence") and warnings is not None:
@@ -441,12 +459,16 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
 
 def resolve_paths(config: RunConfig, project_root: str | Path) -> RunConfig:
     root = Path(project_root)
-    for section_name in ("project", "input"):
+    for section_name in ("project", "input", "sciex_profile"):
         section = getattr(config, section_name)
         for key, value in list(section.items()):
             if not value or not isinstance(value, str):
                 continue
-            if key.endswith("_dir") or key.endswith("_path"):
+            if (
+                key.endswith("_dir")
+                or key.endswith("_path")
+                or (section_name == "sciex_profile" and key == "path")
+            ):
                 path = Path(value)
                 if not path.is_absolute():
                     section[key] = str(root / path)

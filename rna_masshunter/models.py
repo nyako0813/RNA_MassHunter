@@ -11,6 +11,7 @@ class RunConfig:
     sequence: dict[str, Any] = field(default_factory=dict)
     experiment: dict[str, Any] = field(default_factory=dict)
     instrument: dict[str, Any] = field(default_factory=dict)
+    sciex_profile: dict[str, Any] = field(default_factory=dict)
     reconstruction: dict[str, Any] = field(default_factory=dict)
     digestion: dict[str, Any] = field(default_factory=dict)
     alkaline_phosphatase: dict[str, Any] = field(default_factory=dict)

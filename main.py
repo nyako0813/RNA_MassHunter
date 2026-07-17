@@ -16,7 +16,12 @@ from rna_masshunter.biological_context import biological_context_priority_rows
 from rna_masshunter.biological_position_prior import evaluate_biological_position_priors, load_position_prior_rules
 from rna_masshunter.conversion import prepare_input_file
 from rna_masshunter.digestion import digest_sequence
-from rna_masshunter.excel_report import write_excel_report
+from rna_masshunter.excel_report import (
+    SCIEX_INTACT_DIAGNOSTIC_SHEET,
+    SCIEX_INTACT_OPTIONAL_RESULT_KEY,
+    SCIEX_INTACT_PEAK_SHEET,
+    write_excel_report,
+)
 from rna_masshunter.evidence_ranking import build_ambiguity_groups, build_modification_evidence_ranking
 from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
@@ -74,6 +79,8 @@ from rna_masshunter.p1_sap_chemical_state_audit import (
 from rna_masshunter.peak_filtering import classify_peak_tiers
 from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
+from rna_masshunter.sciex_intact_peak_detection import detect_sciex_intact_peaks
+from rna_masshunter.sciex_profile_parser import parse_sciex_profile
 from rna_masshunter.startup_check import run_startup_check
 from rna_masshunter.warnings_manager import add_warning
 
@@ -109,6 +116,64 @@ def _record_workflow_step(
             "Notes": notes,
         }
     )
+
+
+def build_sciex_profile_optional_results(
+    config,
+    audit_policy: AuditPolicy,
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    if not _as_bool(settings.get("enabled"), False):
+        return {}
+
+    configured_path = settings.get("path")
+    if configured_path is None:
+        raise ValueError("sciex_profile.path is required when sciex_profile.enabled=true")
+    if isinstance(configured_path, str) and not configured_path.strip():
+        raise ValueError("sciex_profile.path must not be empty when sciex_profile.enabled=true")
+    profile_path = Path(configured_path).expanduser()
+    if not profile_path.exists():
+        raise FileNotFoundError(f"SCIEX profile file not found: {profile_path}")
+    if not profile_path.is_file():
+        raise IsADirectoryError(f"SCIEX profile path is not a file: {profile_path}")
+
+    parsed = parse_sciex_profile(profile_path)
+    optional_results: dict[str, object] = dict(parsed.sheets(audit_policy.level))
+    detection_settings = settings.get("intact_peak_detection") or {}
+    detection_enabled = _as_bool(detection_settings.get("enabled"), True)
+    if not detection_enabled or not parsed.neutral_mass_analysis_eligible:
+        return optional_results
+
+    masses = [row["Neutral_Mass"] for row in parsed.input_rows]
+    intensities = [row["Intensity"] for row in parsed.input_rows]
+    try:
+        detection_result = detect_sciex_intact_peaks(
+            masses,
+            intensities,
+            profile_type=parsed.profile_type,
+            input_status=parsed.input_status,
+            eligible_for_neutral_mass_analysis=parsed.neutral_mass_analysis_eligible,
+        )
+    except Exception as exc:
+        context = {"path": str(profile_path), "error": f"{type(exc).__name__}: {exc}"}
+        add_warning(
+            warnings,
+            "ERROR",
+            "sciex_intact_peak_detection",
+            "SCIEX intact peak detection failed; parser diagnostics were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX intact peak detection failed for %s: %s", profile_path, exc)
+        return optional_results
+
+    optional_results[SCIEX_INTACT_OPTIONAL_RESULT_KEY] = {
+        "result": detection_result,
+        "source_file": profile_path,
+    }
+    return optional_results
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -317,6 +382,29 @@ def main(argv: list[str] | None = None) -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "disabled_by_config", False, False, "modification_search.enabled=false")
 
     optional_results = {"Workflow_Summary": workflow_rows}
+    sciex_enabled = _as_bool((config.sciex_profile or {}).get("enabled"), False)
+    if sciex_enabled:
+        sciex_optional_results = build_sciex_profile_optional_results(
+            config, audit_policy, warnings, logger=logger,
+        )
+        optional_results.update(sciex_optional_results)
+        detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
+        output_sheets = [
+            name for name in sciex_optional_results
+            if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
+        ]
+        if detector_executed and audit_policy.level != "standard":
+            output_sheets.extend((SCIEX_INTACT_DIAGNOSTIC_SHEET, SCIEX_INTACT_PEAK_SHEET))
+        _record_workflow_step(
+            workflow_rows,
+            analysis_mode,
+            "SCIEX_profile_shadow_audit",
+            "executed" if detector_executed else "parser_only",
+            True,
+            True,
+            output_sheets="; ".join(output_sheets),
+            notes="neutral-mass detector executed" if detector_executed else "detector not eligible or disabled",
+        )
     ms2_spectra_for_shadow = []
     if intact_engine_artifacts.get("rt_envelope_diagnostics") is not None:
         optional_results["RT_Envelope_Diagnostics"] = intact_engine_artifacts.get("rt_envelope_diagnostics", [])
