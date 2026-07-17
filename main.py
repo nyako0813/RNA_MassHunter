@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import math
 import time
 import tracemalloc
 
@@ -83,6 +84,14 @@ from rna_masshunter.peak_filtering import classify_peak_tiers
 from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
 from rna_masshunter.sciex_intact_peak_detection import detect_sciex_intact_peaks
+from rna_masshunter.sciex_delta_mass_cluster_audit import (
+    AUDIT_RESULT_KEY as SCIEX_DELTA_CLUSTER_RESULT_KEY,
+    CLUSTER_SHEET as SCIEX_DELTA_CLUSTER_SHEET,
+    ERROR_CODE as SCIEX_DELTA_CLUSTER_ERROR_CODE,
+    RELATION_SHEET as SCIEX_DELTA_RELATION_SHEET,
+    SUMMARY_SHEET as SCIEX_DELTA_CLUSTER_SUMMARY_SHEET,
+    audit_sciex_delta_mass_clusters,
+)
 from rna_masshunter.sciex_intact_mass_comparison import compare_sciex_intact_masses
 from rna_masshunter.sciex_input_identity_audit import (
     AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
@@ -289,6 +298,69 @@ def build_sciex_intact_mass_comparison_optional_results(
             logger.error("SCIEX intact mass comparison failed: %s", exc)
         return {}
     return {SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY: result}
+
+def build_sciex_delta_mass_cluster_optional_results(
+    config,
+    sciex_optional_results: dict[str, object],
+    comparison_optional_results: dict[str, object],
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    if not _as_bool(settings.get("enabled"), False):
+        return {}
+    cluster_settings = settings.get("delta_mass_cluster_audit") or {}
+    if not _as_bool(cluster_settings.get("enabled"), True):
+        return {}
+    detector_wrapper = sciex_optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY)
+    if not isinstance(detector_wrapper, dict):
+        return {}
+    detection_result = detector_wrapper.get("result")
+    if detection_result is None:
+        return {}
+    diagnostics = detection_result.diagnostics_row()
+    if diagnostics.get("Detection_Status") != "DETECTION_COMPLETED":
+        return {}
+    if diagnostics.get("Profile_Type") == "MZ_PROFILE":
+        return {}
+    if not detection_result.peak_rows():
+        return {}
+    comparison_result = comparison_optional_results.get(
+        SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY
+    )
+    if comparison_result is None:
+        return {}
+    summaries = (
+        comparison_result.summaries()
+        if hasattr(comparison_result, "summaries") else []
+    )
+    details = comparison_result.details() if hasattr(comparison_result, "details") else []
+    theoretical_mass = summaries[0].get("Theoretical_Unmodified_Mass") if summaries else None
+    if (
+        isinstance(theoretical_mass, bool)
+        or not isinstance(theoretical_mass, (int, float))
+        or not math.isfinite(float(theoretical_mass))
+        or theoretical_mass <= 0
+        or not details
+    ):
+        return {}
+    try:
+        result = audit_sciex_delta_mass_clusters(comparison_result, cluster_settings)
+    except Exception as exc:
+        context = {
+            "Warning_Code": SCIEX_DELTA_CLUSTER_ERROR_CODE,
+            "path": str(detector_wrapper.get("source_file") or ""),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        add_warning(
+            warnings, "ERROR", "sciex_delta_mass_cluster_audit",
+            "SCIEX delta-mass cluster audit failed; parser, detector, identity, comparison, and formal results were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX delta-mass cluster audit failed: %s", exc)
+        return {}
+    return {SCIEX_DELTA_CLUSTER_RESULT_KEY: result}
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
@@ -512,8 +584,14 @@ def main(argv: list[str] | None = None) -> None:
             logger=logger, input_identity_audit=identity_audit_result,
         )
         optional_results.update(comparison_optional_results)
+        delta_cluster_optional_results = build_sciex_delta_mass_cluster_optional_results(
+            config, sciex_optional_results, comparison_optional_results, warnings,
+            logger=logger,
+        )
+        optional_results.update(delta_cluster_optional_results)
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
         comparison_executed = SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY in comparison_optional_results
+        delta_cluster_executed = SCIEX_DELTA_CLUSTER_RESULT_KEY in delta_cluster_optional_results
         output_sheets = [
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
@@ -525,6 +603,12 @@ def main(argv: list[str] | None = None) -> None:
             output_sheets.extend((SCIEX_INTACT_DIAGNOSTIC_SHEET, SCIEX_INTACT_PEAK_SHEET))
         if comparison_executed and audit_policy.level != "standard":
             output_sheets.extend((SCIEX_MASS_COMPARISON_SUMMARY_SHEET, SCIEX_MASS_COMPARISON_DETAIL_SHEET))
+        if delta_cluster_executed and audit_policy.level != "standard":
+            output_sheets.extend((
+                SCIEX_DELTA_CLUSTER_SUMMARY_SHEET,
+                SCIEX_DELTA_CLUSTER_SHEET,
+                SCIEX_DELTA_RELATION_SHEET,
+            ))
         _record_workflow_step(
             workflow_rows,
             analysis_mode,

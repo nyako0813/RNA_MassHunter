@@ -175,11 +175,23 @@ sciex_profile:
     enabled: true
     strict_tolerance_da: 1.0
     broad_tolerance_da: 5.0
+  delta_mass_cluster_audit:
+    enabled: true
+    cluster_tolerance_da: 0.5
+    duplicate_apex_tolerance_da: 0.25
+    isotope_spacing_da: 1.003355
+    isotope_spacing_tolerance_da: 0.15
+    integer_spacing_tolerance_da: 0.15
+    minimum_cluster_size: 2
+    max_pair_spacing_da: 200.0
+    max_pair_rows: 20000
 ```
 
 `Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. When detection completes with at least one peak, the optional intact-mass comparison records proximity to the unmodified theoretical RNA mass and, when available, the nearest existing reconstructed intact mass. It does not perform modification lookup, chemical assignment, or molecular identity assignment. SCIEX parser, peak, and comparison sheets are hidden at the `standard` audit level and included at `audit`/`full`. The summary sheet uses the Excel-safe alias `SCIEX_Intact_Mass_Comp_Summary` because the descriptive name exceeds Excel's 31-character sheet-name limit. These shadow results do not affect formal scores, ranking, or candidate filtering.
 
 When SCIEX routing is enabled, a lightweight input-identity shadow audit also compares conservative tRNA identity tokens from the source filename with the configured sequence name and anticodon. NFKC normalization, case folding, separator handling, known amino-acid three-letter codes, and explicit three-base RNA anticodons are used; generic filename words and replicate/run labels are ignored. A clear conflict adds one warning and marks the mass-comparison summary as biologically uninterpretable without stopping or changing its numerical calculation. `SCIEX_Input_Identity_Audit` is available at `audit` and `full`, hidden at `standard`, and never affects formal scoring, ranking, filtering, or molecular identity assignment.
+
+The optional delta-mass cluster shadow audit groups comparison rows with a deterministic complete-link-style span bound, diagnoses duplicate-like apex proximity, and reports integer, isotope-like, and recurrent numerical spacing candidates. Pair analysis is limited by mass spacing and a deterministic row cap. The labels are numerical diagnostics only: no modification, isotope number, adduct, formula, charge, or molecular identity is assigned. `SCIEX_Delta_Mass_Clusters`, `SCIEX_Delta_Mass_Clust_Summary`, and `SCIEX_Delta_Mass_Relations` are available at `audit` and `full` and hidden at `standard`; identity conflicts disable biological interpretation but do not disable clustering or alter comparison values.
 
 ## Current Features
 

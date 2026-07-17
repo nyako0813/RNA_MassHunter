@@ -166,6 +166,15 @@ from rna_masshunter.sciex_intact_mass_comparison import (
     DETAIL_COLUMNS as SCIEX_MASS_COMPARISON_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as SCIEX_MASS_COMPARISON_SUMMARY_COLUMNS,
 )
+from rna_masshunter.sciex_delta_mass_cluster_audit import (
+    AUDIT_RESULT_KEY as SCIEX_DELTA_CLUSTER_RESULT_KEY,
+    CLUSTER_COLUMNS as SCIEX_DELTA_CLUSTER_COLUMNS,
+    CLUSTER_SHEET as SCIEX_DELTA_CLUSTER_SHEET,
+    RELATION_COLUMNS as SCIEX_DELTA_RELATION_COLUMNS,
+    RELATION_SHEET as SCIEX_DELTA_RELATION_SHEET,
+    SUMMARY_COLUMNS as SCIEX_DELTA_CLUSTER_SUMMARY_COLUMNS,
+    SUMMARY_SHEET as SCIEX_DELTA_CLUSTER_SUMMARY_SHEET,
+)
 from rna_masshunter.sciex_input_identity_audit import (
     AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
     OUTPUT_COLUMNS as SCIEX_IDENTITY_AUDIT_COLUMNS,
@@ -771,6 +780,9 @@ SHEET_DESCRIPTIONS = {
     "SCIEX_Intact_Mass_Comparison": "Detected SCIEX intact peak proximity to unmodified theory and optional reconstructed intact masses; shadow-only, no identity assignment.",
     "SCIEX_Intact_Mass_Comp_Summary": "Run-level SCIEX intact mass-proximity counts and closest/strongest peaks; shadow-only.",
     "SCIEX_Input_Identity_Audit": "SCIEX filename identity tokens compared with configured RNA metadata; shadow-only and non-propagating.",
+    "SCIEX_Delta_Mass_Clusters": "Span-bounded numerical clusters of SCIEX delta masses; shadow-only, no chemical assignment.",
+    "SCIEX_Delta_Mass_Clust_Summary": "Run-level SCIEX delta-mass cluster and pair-spacing diagnostics; shadow-only.",
+    "SCIEX_Delta_Mass_Relations": "Relevant duplicate-like, integer, isotope-like, and recurrent numerical spacing candidates; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -986,6 +998,42 @@ def _sciex_intact_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
         )
     return sheets
 
+
+def _sciex_delta_cluster_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        clusters = value.get("cluster_rows", value.get("clusters", []))
+        summaries = value.get("summary_rows", value.get("summaries", []))
+        relations = value.get("relation_rows", value.get("relations", []))
+    else:
+        clusters = value.clusters() if hasattr(value, "clusters") else getattr(value, "cluster_rows", [])
+        summaries = value.summaries() if hasattr(value, "summaries") else getattr(value, "summary_rows", [])
+        relations = value.relations() if hasattr(value, "relations") else getattr(value, "relation_rows", [])
+    safe_clusters = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in _record_rows(clusters)
+    ]
+    safe_summaries = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in _record_rows(summaries)
+    ]
+    safe_relations = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in _record_rows(relations)
+    ]
+    sheets = {}
+    if safe_summaries:
+        sheets[SCIEX_DELTA_CLUSTER_SUMMARY_SHEET] = pd.DataFrame(
+            safe_summaries, columns=SCIEX_DELTA_CLUSTER_SUMMARY_COLUMNS,
+        )
+        sheets[SCIEX_DELTA_CLUSTER_SHEET] = pd.DataFrame(
+            safe_clusters, columns=SCIEX_DELTA_CLUSTER_COLUMNS,
+        )
+        sheets[SCIEX_DELTA_RELATION_SHEET] = pd.DataFrame(
+            safe_relations, columns=SCIEX_DELTA_RELATION_COLUMNS,
+        )
+    return sheets
 
 def _sciex_identity_audit_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
     if value is None:
@@ -1809,6 +1857,9 @@ def write_excel_report(
         _sciex_identity_audit_excel_sheets(optional_results.get(SCIEX_IDENTITY_AUDIT_RESULT_KEY))
     )
     data_sheets.update(
+        _sciex_delta_cluster_excel_sheets(optional_results.get(SCIEX_DELTA_CLUSTER_RESULT_KEY))
+    )
+    data_sheets.update(
         _sciex_mass_comparison_excel_sheets(optional_results.get(SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY))
     )
     for sheet_name, value in optional_results.items():
@@ -1816,6 +1867,7 @@ def write_excel_report(
             "Index", "Run_summary", "Warnings", "Workflow_Summary",
             SCIEX_INTACT_OPTIONAL_RESULT_KEY,
             SCIEX_IDENTITY_AUDIT_RESULT_KEY,
+            SCIEX_DELTA_CLUSTER_RESULT_KEY,
             SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
         }:
             continue

@@ -124,6 +124,17 @@ def test_config_defaults_are_backward_compatible_and_unknown_keys_are_retained(t
             "strict_tolerance_da": 1.0,
             "broad_tolerance_da": 5.0,
         },
+        "delta_mass_cluster_audit": {
+            "enabled": True,
+            "cluster_tolerance_da": 0.5,
+            "duplicate_apex_tolerance_da": 0.25,
+            "isotope_spacing_da": 1.003355,
+            "isotope_spacing_tolerance_da": 0.15,
+            "integer_spacing_tolerance_da": 0.15,
+            "minimum_cluster_size": 2,
+            "max_pair_spacing_da": 200.0,
+            "max_pair_rows": 20000,
+        },
     }
 
     config_path.write_text(

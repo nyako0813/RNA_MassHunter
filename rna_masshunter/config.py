@@ -4,6 +4,7 @@ from typing import Any
 import yaml
 
 from rna_masshunter.models import RunConfig
+from rna_masshunter.sciex_delta_mass_cluster_audit import DeltaMassClusterParameters
 from rna_masshunter.warnings_manager import add_warning
 
 
@@ -23,6 +24,17 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "enabled": True,
             "strict_tolerance_da": 1.0,
             "broad_tolerance_da": 5.0,
+        },
+        "delta_mass_cluster_audit": {
+            "enabled": True,
+            "cluster_tolerance_da": 0.5,
+            "duplicate_apex_tolerance_da": 0.25,
+            "isotope_spacing_da": 1.003355,
+            "isotope_spacing_tolerance_da": 0.15,
+            "integer_spacing_tolerance_da": 0.15,
+            "minimum_cluster_size": 2,
+            "max_pair_spacing_da": 200.0,
+            "max_pair_rows": 20000,
         },
     },
     "reconstruction": {
@@ -362,7 +374,10 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
         optional_section_absent = section == "sciex_profile" and section not in data
         reported_missing = [
             key for key in missing
-            if not (section == "sciex_profile" and key == "intact_mass_comparison")
+            if not (
+                section == "sciex_profile"
+                and key in {"intact_mass_comparison", "delta_mass_cluster_audit"}
+            )
         ]
         if reported_missing and warnings is not None and not optional_section_absent:
             add_warning(warnings, "WARNING", "config", f"Config section '{section}' missing keys filled by defaults.", reported_missing)
@@ -420,6 +435,20 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
                 raise ValueError("sciex_profile.intact_mass_comparison.strict_tolerance_da must be positive")
             if isinstance(broad, bool) or not isinstance(broad, (int, float)) or not float("-inf") < broad < float("inf") or broad < strict:
                 raise ValueError("sciex_profile.intact_mass_comparison.broad_tolerance_da must be >= strict_tolerance_da")
+
+        cluster_audit = sciex_profile.get(
+            "delta_mass_cluster_audit",
+            DEFAULT_CONFIG["sciex_profile"]["delta_mass_cluster_audit"],
+        )
+        if not isinstance(cluster_audit, dict):
+            raise ValueError("sciex_profile.delta_mass_cluster_audit must be a mapping")
+        if _as_bool(cluster_audit.get("enabled"), True):
+            try:
+                DeltaMassClusterParameters.from_mapping(cluster_audit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid sciex_profile.delta_mass_cluster_audit: {exc}"
+                ) from exc
 
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:
         add_warning(warnings, "WARNING", "config", "input.mzml_path and input.raw_path are empty; sample config mode.")

@@ -95,6 +95,7 @@ AUDIT_SUMMARY_SHEETS = {
     "SCIEX_Intact_Peak_Diagnostics",
     "SCIEX_Intact_Mass_Comp_Summary",
     "SCIEX_Input_Identity_Audit",
+    "SCIEX_Delta_Mass_Clust_Summary",
     "MS2_Zero_Intensity_Summary", "MS2_Effective_Ambig_Summary",
     "MS1_Truncation_Summary", "MS1_Selection_Summary", "MS1_Top50_Dedup_Summary",
     "MS1_CrossFrag_Summary", "Competition_Dry_Run_Summary",
@@ -131,6 +132,8 @@ AUDIT_DETAIL_SHEETS = {
     "SCIEX_Profile_Input",
     "SCIEX_Intact_Detected_Peaks",
     "SCIEX_Intact_Mass_Comparison",
+    "SCIEX_Delta_Mass_Clusters",
+    "SCIEX_Delta_Mass_Relations",
     "MS2_Effective_Ambig_Detail", "MS1_Truncation_Detail", "MS1_Selection_Detail",
     "MS1_Peak_Dedup_Detail", "MS1_CrossFrag_Detail",
     "Composite_Mod_Candidates", "Composite_Mod_Invalid", "Backbone_Mod_Candidates",
@@ -149,6 +152,8 @@ AUDIT_DETAIL_SHEETS = {
 AUDIT_DETAIL_AVAILABLE_AT_AUDIT_LEVEL = {
     "SCIEX_Intact_Detected_Peaks",
     "SCIEX_Intact_Mass_Comparison",
+    "SCIEX_Delta_Mass_Clusters",
+    "SCIEX_Delta_Mass_Relations",
 }
 
 SHEET_REGISTRY = {
