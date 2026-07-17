@@ -5,6 +5,7 @@ import yaml
 
 from rna_masshunter.models import RunConfig
 from rna_masshunter.sciex_delta_mass_cluster_audit import DeltaMassClusterParameters
+from rna_masshunter.sciex_spacing_resolution_audit import SpacingResolutionParameters
 from rna_masshunter.warnings_manager import add_warning
 
 
@@ -35,6 +36,13 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "minimum_cluster_size": 2,
             "max_pair_spacing_da": 200.0,
             "max_pair_rows": 20000,
+        },
+        "spacing_resolution_audit": {
+            "enabled": True,
+            "minimum_spacing_sample_count": 20,
+            "quantization_tolerance_da": 0.02,
+            "distinguishability_margin_factor": 2.0,
+            "maximum_spacing_multiple": 10,
         },
     },
     "reconstruction": {
@@ -376,7 +384,7 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
             key for key in missing
             if not (
                 section == "sciex_profile"
-                and key in {"intact_mass_comparison", "delta_mass_cluster_audit"}
+                and key in {"intact_mass_comparison", "delta_mass_cluster_audit", "spacing_resolution_audit"}
             )
         ]
         if reported_missing and warnings is not None and not optional_section_absent:
@@ -448,6 +456,20 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
             except (TypeError, ValueError) as exc:
                 raise ValueError(
                     f"Invalid sciex_profile.delta_mass_cluster_audit: {exc}"
+                ) from exc
+
+        resolution_audit = sciex_profile.get(
+            "spacing_resolution_audit",
+            DEFAULT_CONFIG["sciex_profile"]["spacing_resolution_audit"],
+        )
+        if not isinstance(resolution_audit, dict):
+            raise ValueError("sciex_profile.spacing_resolution_audit must be a mapping")
+        if _as_bool(resolution_audit.get("enabled"), True):
+            try:
+                SpacingResolutionParameters.from_mapping(resolution_audit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid sciex_profile.spacing_resolution_audit: {exc}"
                 ) from exc
 
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:

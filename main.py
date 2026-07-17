@@ -92,6 +92,15 @@ from rna_masshunter.sciex_delta_mass_cluster_audit import (
     SUMMARY_SHEET as SCIEX_DELTA_CLUSTER_SUMMARY_SHEET,
     audit_sciex_delta_mass_clusters,
 )
+from rna_masshunter.sciex_spacing_resolution_audit import (
+    AUDIT_RESULT_KEY as SCIEX_SPACING_RESOLUTION_RESULT_KEY,
+    DETAIL_SHEET as SCIEX_SPACING_RESOLUTION_DETAIL_SHEET,
+    ERROR_CODE as SCIEX_SPACING_RESOLUTION_ERROR_CODE,
+    SUMMARY_SHEET as SCIEX_SPACING_RESOLUTION_SUMMARY_SHEET,
+    WARNING_CODE as SCIEX_SPACING_RESOLUTION_WARNING_CODE,
+    annotate_cluster_summary,
+    audit_sciex_spacing_resolution,
+)
 from rna_masshunter.sciex_intact_mass_comparison import compare_sciex_intact_masses
 from rna_masshunter.sciex_input_identity_audit import (
     AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
@@ -191,6 +200,7 @@ def build_sciex_profile_optional_results(
 
     optional_results[SCIEX_INTACT_OPTIONAL_RESULT_KEY] = {
         "result": detection_result,
+        "parsed_result": parsed,
         "source_file": profile_path,
     }
     return optional_results
@@ -361,6 +371,99 @@ def build_sciex_delta_mass_cluster_optional_results(
             logger.error("SCIEX delta-mass cluster audit failed: %s", exc)
         return {}
     return {SCIEX_DELTA_CLUSTER_RESULT_KEY: result}
+
+
+def build_sciex_spacing_resolution_optional_results(
+    config,
+    sciex_optional_results: dict[str, object],
+    delta_cluster_optional_results: dict[str, object],
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    if not _as_bool(settings.get("enabled"), False):
+        return {}
+    resolution_settings = settings.get("spacing_resolution_audit") or {}
+    if not _as_bool(resolution_settings.get("enabled"), True):
+        return {}
+    cluster_settings = settings.get("delta_mass_cluster_audit") or {}
+    if not _as_bool(cluster_settings.get("enabled"), True):
+        return {}
+    detector_wrapper = sciex_optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY)
+    if not isinstance(detector_wrapper, dict):
+        return {}
+    detection_result = detector_wrapper.get("result")
+    parsed_result = detector_wrapper.get("parsed_result")
+    cluster_result = delta_cluster_optional_results.get(SCIEX_DELTA_CLUSTER_RESULT_KEY)
+    if detection_result is None or parsed_result is None or cluster_result is None:
+        return {}
+    diagnostics = detection_result.diagnostics_row()
+    if diagnostics.get("Detection_Status") != "DETECTION_COMPLETED":
+        return {}
+    if diagnostics.get("Profile_Type") == "MZ_PROFILE":
+        return {}
+    peak_rows = detection_result.peak_rows()
+    if len(peak_rows) < 2:
+        return {}
+    input_masses = [
+        row.get("Neutral_Mass") for row in getattr(parsed_result, "input_rows", ())
+    ]
+    apex_masses = [row.get("Apex_Mass") for row in peak_rows]
+    finite_input_masses = [
+        float(value) for value in input_masses
+        if not isinstance(value, bool) and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+    ]
+    finite_apex_masses = [
+        float(value) for value in apex_masses
+        if not isinstance(value, bool) and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+    ]
+    if len(set(finite_input_masses)) < 2 or len(set(finite_apex_masses)) < 2:
+        return {}
+    try:
+        result = audit_sciex_spacing_resolution(
+            finite_input_masses,
+            finite_apex_masses,
+            cluster_result,
+            cluster_settings,
+            resolution_settings,
+            source_file=str(detector_wrapper.get("source_file") or ""),
+        )
+    except Exception as exc:
+        source_path = str(detector_wrapper.get("source_file") or "")
+        context = {
+            "Warning_Code": SCIEX_SPACING_RESOLUTION_ERROR_CODE,
+            "path": source_path,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        add_warning(
+            warnings, "ERROR", "sciex_spacing_resolution_audit",
+            "SCIEX spacing-resolution audit failed; existing detector, comparison, cluster, relation, and formal results were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX spacing-resolution audit failed: %s", exc)
+        return {}
+
+    summary = result.summaries()[0]
+    if summary.get("Warning_Code") == SCIEX_SPACING_RESOLUTION_WARNING_CODE:
+        source_path = str(detector_wrapper.get("source_file") or "")
+        duplicate = any(
+            warning.get("Source") == "sciex_spacing_resolution_audit"
+            and isinstance(warning.get("Context"), dict)
+            and warning["Context"].get("Warning_Code") == SCIEX_SPACING_RESOLUTION_WARNING_CODE
+            and warning["Context"].get("path") == source_path
+            for warning in warnings
+        )
+        if not duplicate:
+            add_warning(
+                warnings, "WARNING", "sciex_spacing_resolution_audit",
+                summary.get("Warning_Message") or "SCIEX spacing classes are not resolution-distinguishable.",
+                {"Warning_Code": SCIEX_SPACING_RESOLUTION_WARNING_CODE, "path": source_path},
+            )
+    return {SCIEX_SPACING_RESOLUTION_RESULT_KEY: result}
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
@@ -589,9 +692,21 @@ def main(argv: list[str] | None = None) -> None:
             logger=logger,
         )
         optional_results.update(delta_cluster_optional_results)
+        spacing_resolution_optional_results = build_sciex_spacing_resolution_optional_results(
+            config, sciex_optional_results, delta_cluster_optional_results, warnings,
+            logger=logger,
+        )
+        if spacing_resolution_optional_results:
+            spacing_result = spacing_resolution_optional_results[SCIEX_SPACING_RESOLUTION_RESULT_KEY]
+            cluster_result = delta_cluster_optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY]
+            annotated_cluster_result = annotate_cluster_summary(cluster_result, spacing_result)
+            delta_cluster_optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
+            optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
+            optional_results.update(spacing_resolution_optional_results)
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
         comparison_executed = SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY in comparison_optional_results
         delta_cluster_executed = SCIEX_DELTA_CLUSTER_RESULT_KEY in delta_cluster_optional_results
+        spacing_resolution_executed = SCIEX_SPACING_RESOLUTION_RESULT_KEY in spacing_resolution_optional_results
         output_sheets = [
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
@@ -608,6 +723,11 @@ def main(argv: list[str] | None = None) -> None:
                 SCIEX_DELTA_CLUSTER_SUMMARY_SHEET,
                 SCIEX_DELTA_CLUSTER_SHEET,
                 SCIEX_DELTA_RELATION_SHEET,
+            ))
+        if spacing_resolution_executed and audit_policy.level != "standard":
+            output_sheets.extend((
+                SCIEX_SPACING_RESOLUTION_SUMMARY_SHEET,
+                SCIEX_SPACING_RESOLUTION_DETAIL_SHEET,
             ))
         _record_workflow_step(
             workflow_rows,

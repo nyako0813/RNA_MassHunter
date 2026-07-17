@@ -135,6 +135,13 @@ def test_config_defaults_are_backward_compatible_and_unknown_keys_are_retained(t
             "max_pair_spacing_da": 200.0,
             "max_pair_rows": 20000,
         },
+        "spacing_resolution_audit": {
+            "enabled": True,
+            "minimum_spacing_sample_count": 20,
+            "quantization_tolerance_da": 0.02,
+            "distinguishability_margin_factor": 2.0,
+            "maximum_spacing_multiple": 10,
+        },
     }
 
     config_path.write_text(
