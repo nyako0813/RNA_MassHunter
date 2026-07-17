@@ -119,6 +119,11 @@ def test_config_defaults_are_backward_compatible_and_unknown_keys_are_retained(t
         "enabled": False,
         "path": None,
         "intact_peak_detection": {"enabled": True},
+        "intact_mass_comparison": {
+            "enabled": True,
+            "strict_tolerance_da": 1.0,
+            "broad_tolerance_da": 5.0,
+        },
     }
 
     config_path.write_text(

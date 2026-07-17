@@ -19,6 +19,11 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "enabled": False,
         "path": None,
         "intact_peak_detection": {"enabled": True},
+        "intact_mass_comparison": {
+            "enabled": True,
+            "strict_tolerance_da": 1.0,
+            "broad_tolerance_da": 5.0,
+        },
     },
     "reconstruction": {
         "enabled": True,
@@ -355,8 +360,12 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
                 add_warning(warnings, "WARNING", "config", f"Config section '{section}' was not a mapping; defaults were used.")
         missing = sorted(set(defaults) - set(current))
         optional_section_absent = section == "sciex_profile" and section not in data
-        if missing and warnings is not None and not optional_section_absent:
-            add_warning(warnings, "WARNING", "config", f"Config section '{section}' missing keys filled by defaults.", missing)
+        reported_missing = [
+            key for key in missing
+            if not (section == "sciex_profile" and key == "intact_mass_comparison")
+        ]
+        if reported_missing and warnings is not None and not optional_section_absent:
+            add_warning(warnings, "WARNING", "config", f"Config section '{section}' missing keys filled by defaults.", reported_missing)
         merged[section] = {**defaults, **current}
     merged["raw"] = data
     return merged
@@ -399,6 +408,18 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
         detection = sciex_profile.get("intact_peak_detection")
         if not isinstance(detection, dict):
             raise ValueError("sciex_profile.intact_peak_detection must be a mapping")
+        comparison = sciex_profile.get(
+            "intact_mass_comparison", DEFAULT_CONFIG["sciex_profile"]["intact_mass_comparison"]
+        )
+        if not isinstance(comparison, dict):
+            raise ValueError("sciex_profile.intact_mass_comparison must be a mapping")
+        if _as_bool(comparison.get("enabled"), True):
+            strict = comparison.get("strict_tolerance_da", 1.0)
+            broad = comparison.get("broad_tolerance_da", 5.0)
+            if isinstance(strict, bool) or not isinstance(strict, (int, float)) or not float("-inf") < strict < float("inf") or strict <= 0:
+                raise ValueError("sciex_profile.intact_mass_comparison.strict_tolerance_da must be positive")
+            if isinstance(broad, bool) or not isinstance(broad, (int, float)) or not float("-inf") < broad < float("inf") or broad < strict:
+                raise ValueError("sciex_profile.intact_mass_comparison.broad_tolerance_da must be >= strict_tolerance_da")
 
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:
         add_warning(warnings, "WARNING", "config", "input.mzml_path and input.raw_path are empty; sample config mode.")

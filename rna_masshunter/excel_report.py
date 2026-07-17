@@ -162,6 +162,10 @@ from rna_masshunter.sciex_profile_parser import (
     DIAGNOSTIC_COLUMNS as SCIEX_PROFILE_DIAGNOSTIC_COLUMNS,
     INPUT_COLUMNS as SCIEX_PROFILE_INPUT_COLUMNS,
 )
+from rna_masshunter.sciex_intact_mass_comparison import (
+    DETAIL_COLUMNS as SCIEX_MASS_COMPARISON_DETAIL_COLUMNS,
+    SUMMARY_COLUMNS as SCIEX_MASS_COMPARISON_SUMMARY_COLUMNS,
+)
 from rna_masshunter.rnase_ms2_standard_composite_crosswalk import (
     SUMMARY_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
     CROSSWALK_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
@@ -230,6 +234,9 @@ EXCEL_DATA_ROW_LIMIT = EXCEL_MAX_ROWS - DATA_START_ROW
 SCIEX_INTACT_OPTIONAL_RESULT_KEY = "sciex_intact_peak_detection"
 SCIEX_INTACT_DIAGNOSTIC_SHEET = "SCIEX_Intact_Peak_Diagnostics"
 SCIEX_INTACT_PEAK_SHEET = "SCIEX_Intact_Detected_Peaks"
+SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY = "sciex_intact_mass_comparison"
+SCIEX_MASS_COMPARISON_DETAIL_SHEET = "SCIEX_Intact_Mass_Comparison"
+SCIEX_MASS_COMPARISON_SUMMARY_SHEET = "SCIEX_Intact_Mass_Comp_Summary"
 
 SCIEX_INTACT_DIAGNOSTIC_COLUMNS = [
     "Source_File", "Source_File_Name", "Profile_Type", "Input_Status",
@@ -756,6 +763,8 @@ SHEET_DESCRIPTIONS = {
     "SCIEX_Profile_Input": "Parsed SCIEX profile points with neutral-mass and m/z coordinates kept separate; shadow-only.",
     "SCIEX_Intact_Peak_Diagnostics": "SCIEX intact neutral-mass peak detection diagnostics and parameter provenance; shadow-only.",
     "SCIEX_Intact_Detected_Peaks": "Sensitive-tier SCIEX intact neutral-mass peaks with strict flags, boundaries, and areas; shadow-only.",
+    "SCIEX_Intact_Mass_Comparison": "Detected SCIEX intact peak proximity to unmodified theory and optional reconstructed intact masses; shadow-only, no identity assignment.",
+    "SCIEX_Intact_Mass_Comp_Summary": "Run-level SCIEX intact mass-proximity counts and closest/strongest peaks; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -971,6 +980,24 @@ def _sciex_intact_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
         )
     return sheets
 
+
+def _sciex_mass_comparison_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        details = value.get("detail_rows", value.get("details", []))
+        summaries = value.get("summary_rows", value.get("summaries", []))
+    else:
+        details = value.details() if hasattr(value, "details") else getattr(value, "detail_rows", [])
+        summaries = value.summaries() if hasattr(value, "summaries") else getattr(value, "summary_rows", [])
+    safe_details = [{key: _excel_safe_cell(item) for key, item in row.items()} for row in _record_rows(details)]
+    safe_summaries = [{key: _excel_safe_cell(item) for key, item in row.items()} for row in _record_rows(summaries)]
+    sheets = {}
+    if safe_summaries:
+        sheets[SCIEX_MASS_COMPARISON_SUMMARY_SHEET] = pd.DataFrame(safe_summaries, columns=SCIEX_MASS_COMPARISON_SUMMARY_COLUMNS)
+    if safe_details:
+        sheets[SCIEX_MASS_COMPARISON_DETAIL_SHEET] = pd.DataFrame(safe_details, columns=SCIEX_MASS_COMPARISON_DETAIL_COLUMNS)
+    return sheets
 
 def _analysis_mode(config) -> str:
     workflow_mode = str((getattr(config, "analysis", {}) or {}).get("mode") or "full")
@@ -1516,6 +1543,7 @@ def write_excel_report(
         "sequence": config.sequence,
         "experiment": config.experiment,
         "instrument": config.instrument,
+        "sciex_profile": getattr(config, "sciex_profile", {}),
         "reconstruction": config.reconstruction,
         "digestion": config.digestion,
         "alkaline_phosphatase": config.alkaline_phosphatase,
@@ -1749,10 +1777,14 @@ def write_excel_report(
     data_sheets.update(
         _sciex_intact_excel_sheets(optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY))
     )
+    data_sheets.update(
+        _sciex_mass_comparison_excel_sheets(optional_results.get(SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY))
+    )
     for sheet_name, value in optional_results.items():
         if sheet_name in {
             "Index", "Run_summary", "Warnings", "Workflow_Summary",
             SCIEX_INTACT_OPTIONAL_RESULT_KEY,
+            SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
         }:
             continue
         frame = _coerce_to_frame(value)

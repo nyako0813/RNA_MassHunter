@@ -171,9 +171,13 @@ sciex_profile:
   path: null
   intact_peak_detection:
     enabled: true
+  intact_mass_comparison:
+    enabled: true
+    strict_tolerance_da: 1.0
+    broad_tolerance_da: 5.0
 ```
 
-`Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. SCIEX intact peak sheets are hidden at the `standard` audit level and included at `audit`/`full`. These results do not affect formal scores, ranking, or candidate filtering.
+`Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. When detection completes with at least one peak, the optional intact-mass comparison records proximity to the unmodified theoretical RNA mass and, when available, the nearest existing reconstructed intact mass. It does not perform modification lookup, chemical assignment, or molecular identity assignment. SCIEX parser, peak, and comparison sheets are hidden at the `standard` audit level and included at `audit`/`full`. The summary sheet uses the Excel-safe alias `SCIEX_Intact_Mass_Comp_Summary` because the descriptive name exceeds Excel's 31-character sheet-name limit. These shadow results do not affect formal scores, ranking, or candidate filtering.
 
 ## Current Features
 

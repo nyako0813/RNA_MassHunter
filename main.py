@@ -20,6 +20,9 @@ from rna_masshunter.excel_report import (
     SCIEX_INTACT_DIAGNOSTIC_SHEET,
     SCIEX_INTACT_OPTIONAL_RESULT_KEY,
     SCIEX_INTACT_PEAK_SHEET,
+    SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
+    SCIEX_MASS_COMPARISON_DETAIL_SHEET,
+    SCIEX_MASS_COMPARISON_SUMMARY_SHEET,
     write_excel_report,
 )
 from rna_masshunter.evidence_ranking import build_ambiguity_groups, build_modification_evidence_ranking
@@ -80,6 +83,7 @@ from rna_masshunter.peak_filtering import classify_peak_tiers
 from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
 from rna_masshunter.sciex_intact_peak_detection import detect_sciex_intact_peaks
+from rna_masshunter.sciex_intact_mass_comparison import compare_sciex_intact_masses
 from rna_masshunter.sciex_profile_parser import parse_sciex_profile
 from rna_masshunter.startup_check import run_startup_check
 from rna_masshunter.warnings_manager import add_warning
@@ -175,6 +179,50 @@ def build_sciex_profile_optional_results(
     }
     return optional_results
 
+
+def build_sciex_intact_mass_comparison_optional_results(
+    config,
+    sciex_optional_results: dict[str, object],
+    theoretical_mass,
+    intact_results,
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    comparison_settings = settings.get("intact_mass_comparison") or {}
+    if not _as_bool(comparison_settings.get("enabled"), True):
+        return {}
+    detector_wrapper = sciex_optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY)
+    if not isinstance(detector_wrapper, dict):
+        return {}
+    detection_result = detector_wrapper.get("result")
+    if detection_result is None:
+        return {}
+    diagnostics = detection_result.diagnostics_row()
+    if diagnostics.get("Detection_Status") != "DETECTION_COMPLETED":
+        return {}
+    if not detection_result.peak_rows():
+        return {}
+    try:
+        result = compare_sciex_intact_masses(
+            detection_result,
+            theoretical_mass,
+            intact_results,
+            source_file=str(detector_wrapper.get("source_file") or ""),
+            strict_tolerance_da=comparison_settings.get("strict_tolerance_da", 1.0),
+            broad_tolerance_da=comparison_settings.get("broad_tolerance_da", 5.0),
+        )
+    except Exception as exc:
+        context = {"error": f"{type(exc).__name__}: {exc}"}
+        add_warning(
+            warnings, "ERROR", "sciex_intact_mass_comparison",
+            "SCIEX intact mass comparison failed; parser and peak detection results were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX intact mass comparison failed: %s", exc)
+        return {}
+    return {SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY: result}
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
@@ -388,13 +436,20 @@ def main(argv: list[str] | None = None) -> None:
             config, audit_policy, warnings, logger=logger,
         )
         optional_results.update(sciex_optional_results)
+        comparison_optional_results = build_sciex_intact_mass_comparison_optional_results(
+            config, sciex_optional_results, theoretical_mass, intact_results, warnings, logger=logger,
+        )
+        optional_results.update(comparison_optional_results)
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
+        comparison_executed = SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY in comparison_optional_results
         output_sheets = [
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
         ]
         if detector_executed and audit_policy.level != "standard":
             output_sheets.extend((SCIEX_INTACT_DIAGNOSTIC_SHEET, SCIEX_INTACT_PEAK_SHEET))
+        if comparison_executed and audit_policy.level != "standard":
+            output_sheets.extend((SCIEX_MASS_COMPARISON_SUMMARY_SHEET, SCIEX_MASS_COMPARISON_DETAIL_SHEET))
         _record_workflow_step(
             workflow_rows,
             analysis_mode,
