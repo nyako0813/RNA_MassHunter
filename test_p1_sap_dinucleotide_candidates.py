@@ -1,7 +1,9 @@
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 import ast
 import json
+import shutil
 
 import pytest
 
@@ -18,6 +20,11 @@ from rna_masshunter.p1_sap_dinucleotide_interpretation import (
 
 ROOT = Path(__file__).resolve().parent
 FIXED_SEQUENCE = "GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA"
+ISOLATED_DATA_FILES = (
+    "modification_transforms_v2.yaml",
+    "nucleoside_slots.yaml",
+    "modification_position_priors.yaml",
+)
 FIXED_ORGANISM = {
     "group": "archaea",
     "species": "Methanosarcina acetivorans",
@@ -56,14 +63,56 @@ def fixed_config(*, polarity="positive"):
     return config
 
 
-@pytest.fixture(scope="module")
-def fixed_positive_result():
-    return generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="positive"))
+def copy_isolated_candidate_data(project_root):
+    data_root = project_root / "data"
+    data_root.mkdir(parents=True)
+    for filename in ISOLATED_DATA_FILES:
+        shutil.copyfile(ROOT / "data" / filename, data_root / filename)
+    return project_root
 
 
 @pytest.fixture(scope="module")
-def fixed_negative_result():
-    return generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="negative"))
+def isolated_project_root(tmp_path_factory):
+    project_root = copy_isolated_candidate_data(tmp_path_factory.mktemp("dinucleotide_generic_project"))
+    assert not (project_root / "data/modification_position_hypotheses.yaml").exists()
+    return project_root
+
+
+@pytest.fixture(scope="module")
+def repository_root_with_local_hypothesis(tmp_path_factory):
+    project_root = copy_isolated_candidate_data(tmp_path_factory.mktemp("dinucleotide_local_project"))
+    hypothesis = {
+        "schema_version": 1,
+        "targets": [{
+            "target_id": "test_local_m22G10",
+            "sequence_sha256": sha256(FIXED_SEQUENCE.encode("utf-8")).hexdigest(),
+            "hypotheses": [{
+                "hypothesis_id": "test_m22G10",
+                "hypothesis_type": "nucleoside_modification",
+                "position": 10,
+                "parent_base": "G",
+                "modification_id": "m22G",
+            }],
+        }],
+    }
+    (project_root / "data/modification_position_hypotheses.yaml").write_text(
+        json.dumps(hypothesis), encoding="utf-8"
+    )
+    return project_root
+
+
+@pytest.fixture(scope="module")
+def fixed_positive_result(isolated_project_root):
+    return generate_dinucleotide_candidates(
+        FIXED_SEQUENCE, isolated_project_root, config=fixed_config(polarity="positive")
+    )
+
+
+@pytest.fixture(scope="module")
+def fixed_negative_result(isolated_project_root):
+    return generate_dinucleotide_candidates(
+        FIXED_SEQUENCE, isolated_project_root, config=fixed_config(polarity="negative")
+    )
 
 
 def assignments(result, left=None, right=None, linkage=None):
@@ -224,6 +273,31 @@ def test_fixture_mass_uses_generic_generation_and_preserves_assignments(fixed_po
     assert "10:m22G-PHOSPHOROTHIOATE-11:U" in group["Possible_Position_Assignments"]
 
 
+def test_generic_fixture_is_isolated_when_repository_local_hypothesis_exists(
+    fixed_positive_result, isolated_project_root, repository_root_with_local_hypothesis
+):
+    assert (repository_root_with_local_hypothesis / "data/modification_position_hypotheses.yaml").exists()
+    assert not (isolated_project_root / "data/modification_position_hypotheses.yaml").exists()
+    assert target_group(fixed_positive_result, 634.13269, 634.13272)["Structural_Assignment_Count"] == 90
+
+
+def test_explicit_position_hypothesis_in_isolated_root_reduces_assignments(
+    repository_root_with_local_hypothesis,
+):
+    result = generate_dinucleotide_candidates(
+        FIXED_SEQUENCE,
+        repository_root_with_local_hypothesis,
+        config=fixed_config(polarity="positive"),
+    )
+    assert target_group(result, 634.13269, 634.13272)["Structural_Assignment_Count"] == 85
+
+
+def test_generic_assignment_identity_matches_clean_f314(fixed_positive_result):
+    group = target_group(fixed_positive_result, 634.13269, 634.13272)
+    identity = sha256(group["Possible_Position_Assignments"].encode("utf-8")).hexdigest()
+    assert identity == "c0e77289cb4e75a8443e59a1c994a1be46c3bc760d3e8453b8854991805adcf6"
+
+
 def test_fixed_positive_fixture_reproduces_target_group(fixed_positive_result):
     group = target_group(fixed_positive_result, 634.13269, 634.13272)
     assert group["Final_Elemental_Composition"] == "C21H28N7O12P1S1"
@@ -240,10 +314,14 @@ def test_fixed_negative_fixture_reproduces_polarity_conversion(fixed_positive_re
     assert negative["Theoretical_mz"] == pytest.approx(632.118151074298)
 
 
-def test_fixed_fixture_does_not_depend_on_working_directory_config(tmp_path, monkeypatch):
+def test_fixed_fixture_does_not_depend_on_working_directory_config(
+    isolated_project_root, tmp_path, monkeypatch
+):
     (tmp_path / "config.yaml").write_text("not: the test fixture\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    result = generate_dinucleotide_candidates(FIXED_SEQUENCE, ROOT, config=fixed_config(polarity="positive"))
+    result = generate_dinucleotide_candidates(
+        FIXED_SEQUENCE, isolated_project_root, config=fixed_config(polarity="positive")
+    )
     assert target_group(result, 634.13269, 634.13272)["Structural_Assignment_Count"] == 90
 
 
