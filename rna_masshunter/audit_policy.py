@@ -94,6 +94,7 @@ AUDIT_SUMMARY_SHEETS = {
     "SCIEX_Profile_Diagnostics",
     "SCIEX_Intact_Peak_Diagnostics",
     "SCIEX_Intact_Mass_Comp_Summary",
+    "SCIEX_Input_Identity_Audit",
     "MS2_Zero_Intensity_Summary", "MS2_Effective_Ambig_Summary",
     "MS1_Truncation_Summary", "MS1_Selection_Summary", "MS1_Top50_Dedup_Summary",
     "MS1_CrossFrag_Summary", "Competition_Dry_Run_Summary",

@@ -84,6 +84,13 @@ from rna_masshunter.peak_picking import extract_ms1_peaks
 from rna_masshunter.rule_loader import load_rule_set, validate_rule_set
 from rna_masshunter.sciex_intact_peak_detection import detect_sciex_intact_peaks
 from rna_masshunter.sciex_intact_mass_comparison import compare_sciex_intact_masses
+from rna_masshunter.sciex_input_identity_audit import (
+    AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
+    SHEET_NAME as SCIEX_IDENTITY_AUDIT_SHEET,
+    ERROR_CODE as SCIEX_IDENTITY_AUDIT_ERROR_CODE,
+    WARNING_CODE as SCIEX_IDENTITY_CONFLICT_WARNING_CODE,
+    audit_sciex_input_identity,
+)
 from rna_masshunter.sciex_profile_parser import parse_sciex_profile
 from rna_masshunter.startup_check import run_startup_check
 from rna_masshunter.warnings_manager import add_warning
@@ -180,6 +187,63 @@ def build_sciex_profile_optional_results(
     return optional_results
 
 
+def build_sciex_input_identity_audit_optional_results(
+    config,
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    if not _as_bool(settings.get("enabled"), False):
+        return {}
+    source_path = settings.get("path")
+    sequence_settings = config.sequence or {}
+    if not source_path or not (
+        str(sequence_settings.get("name") or "").strip()
+        or str(sequence_settings.get("sequence") or "").strip()
+    ):
+        return {}
+    try:
+        result = audit_sciex_input_identity(
+            source_path,
+            sequence_name=sequence_settings.get("name"),
+            sequence=sequence_settings.get("sequence"),
+            anticodon=sequence_settings.get("anticodon"),
+            organism_group=(config.organism or {}).get("group"),
+            species=(config.organism or {}).get("species"),
+            condition_name=(config.experiment or {}).get("condition_name"),
+        )
+    except Exception as exc:
+        context = {
+            "Warning_Code": SCIEX_IDENTITY_AUDIT_ERROR_CODE,
+            "path": str(source_path),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        add_warning(
+            warnings, "ERROR", "sciex_input_identity_audit",
+            "SCIEX input identity audit failed; existing SCIEX and formal results were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX input identity audit failed for %s: %s", source_path, exc)
+        return {}
+
+    row = result.row()
+    if row.get("Audit_Status") == "CONFLICT":
+        duplicate = any(
+            warning.get("Source") == "sciex_input_identity_audit"
+            and isinstance(warning.get("Context"), dict)
+            and warning["Context"].get("Warning_Code") == SCIEX_IDENTITY_CONFLICT_WARNING_CODE
+            and warning["Context"].get("path") == str(source_path)
+            for warning in warnings
+        )
+        if not duplicate:
+            add_warning(
+                warnings, "WARNING", "sciex_input_identity_audit", row["Warning_Message"],
+                {"Warning_Code": row["Warning_Code"], "path": str(source_path)},
+            )
+    return {SCIEX_IDENTITY_AUDIT_RESULT_KEY: result}
+
+
 def build_sciex_intact_mass_comparison_optional_results(
     config,
     sciex_optional_results: dict[str, object],
@@ -187,6 +251,7 @@ def build_sciex_intact_mass_comparison_optional_results(
     intact_results,
     warnings: list[dict],
     logger=None,
+    input_identity_audit=None,
 ) -> dict[str, object]:
     settings = config.sciex_profile or {}
     comparison_settings = settings.get("intact_mass_comparison") or {}
@@ -211,6 +276,7 @@ def build_sciex_intact_mass_comparison_optional_results(
             source_file=str(detector_wrapper.get("source_file") or ""),
             strict_tolerance_da=comparison_settings.get("strict_tolerance_da", 1.0),
             broad_tolerance_da=comparison_settings.get("broad_tolerance_da", 5.0),
+            input_identity_audit=input_identity_audit,
         )
     except Exception as exc:
         context = {"error": f"{type(exc).__name__}: {exc}"}
@@ -436,8 +502,14 @@ def main(argv: list[str] | None = None) -> None:
             config, audit_policy, warnings, logger=logger,
         )
         optional_results.update(sciex_optional_results)
+        identity_optional_results = build_sciex_input_identity_audit_optional_results(
+            config, warnings, logger=logger,
+        )
+        optional_results.update(identity_optional_results)
+        identity_audit_result = identity_optional_results.get(SCIEX_IDENTITY_AUDIT_RESULT_KEY)
         comparison_optional_results = build_sciex_intact_mass_comparison_optional_results(
-            config, sciex_optional_results, theoretical_mass, intact_results, warnings, logger=logger,
+            config, sciex_optional_results, theoretical_mass, intact_results, warnings,
+            logger=logger, input_identity_audit=identity_audit_result,
         )
         optional_results.update(comparison_optional_results)
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
@@ -446,6 +518,9 @@ def main(argv: list[str] | None = None) -> None:
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
         ]
+        identity_executed = SCIEX_IDENTITY_AUDIT_RESULT_KEY in identity_optional_results
+        if identity_executed and audit_policy.level != "standard":
+            output_sheets.append(SCIEX_IDENTITY_AUDIT_SHEET)
         if detector_executed and audit_policy.level != "standard":
             output_sheets.extend((SCIEX_INTACT_DIAGNOSTIC_SHEET, SCIEX_INTACT_PEAK_SHEET))
         if comparison_executed and audit_policy.level != "standard":

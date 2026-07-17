@@ -179,6 +179,8 @@ sciex_profile:
 
 `Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. When detection completes with at least one peak, the optional intact-mass comparison records proximity to the unmodified theoretical RNA mass and, when available, the nearest existing reconstructed intact mass. It does not perform modification lookup, chemical assignment, or molecular identity assignment. SCIEX parser, peak, and comparison sheets are hidden at the `standard` audit level and included at `audit`/`full`. The summary sheet uses the Excel-safe alias `SCIEX_Intact_Mass_Comp_Summary` because the descriptive name exceeds Excel's 31-character sheet-name limit. These shadow results do not affect formal scores, ranking, or candidate filtering.
 
+When SCIEX routing is enabled, a lightweight input-identity shadow audit also compares conservative tRNA identity tokens from the source filename with the configured sequence name and anticodon. NFKC normalization, case folding, separator handling, known amino-acid three-letter codes, and explicit three-base RNA anticodons are used; generic filename words and replicate/run labels are ignored. A clear conflict adds one warning and marks the mass-comparison summary as biologically uninterpretable without stopping or changing its numerical calculation. `SCIEX_Input_Identity_Audit` is available at `audit` and `full`, hidden at `standard`, and never affects formal scoring, ranking, filtering, or molecular identity assignment.
+
 ## Current Features
 
 - Reads `config.yaml`.

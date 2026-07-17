@@ -166,6 +166,11 @@ from rna_masshunter.sciex_intact_mass_comparison import (
     DETAIL_COLUMNS as SCIEX_MASS_COMPARISON_DETAIL_COLUMNS,
     SUMMARY_COLUMNS as SCIEX_MASS_COMPARISON_SUMMARY_COLUMNS,
 )
+from rna_masshunter.sciex_input_identity_audit import (
+    AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
+    OUTPUT_COLUMNS as SCIEX_IDENTITY_AUDIT_COLUMNS,
+    SHEET_NAME as SCIEX_IDENTITY_AUDIT_SHEET,
+)
 from rna_masshunter.rnase_ms2_standard_composite_crosswalk import (
     SUMMARY_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
     CROSSWALK_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
@@ -765,6 +770,7 @@ SHEET_DESCRIPTIONS = {
     "SCIEX_Intact_Detected_Peaks": "Sensitive-tier SCIEX intact neutral-mass peaks with strict flags, boundaries, and areas; shadow-only.",
     "SCIEX_Intact_Mass_Comparison": "Detected SCIEX intact peak proximity to unmodified theory and optional reconstructed intact masses; shadow-only, no identity assignment.",
     "SCIEX_Intact_Mass_Comp_Summary": "Run-level SCIEX intact mass-proximity counts and closest/strongest peaks; shadow-only.",
+    "SCIEX_Input_Identity_Audit": "SCIEX filename identity tokens compared with configured RNA metadata; shadow-only and non-propagating.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -979,6 +985,28 @@ def _sciex_intact_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
             safe_peaks, columns=SCIEX_INTACT_PEAK_COLUMNS
         )
     return sheets
+
+
+def _sciex_identity_audit_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+    if hasattr(value, "row"):
+        rows = [value.row()]
+    elif isinstance(value, Mapping) and "values" in value:
+        rows = _record_rows(value.get("values"))
+    else:
+        rows = _record_rows(value)
+    safe_rows = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in rows
+    ]
+    if not safe_rows:
+        return {}
+    return {
+        SCIEX_IDENTITY_AUDIT_SHEET: pd.DataFrame(
+            safe_rows, columns=SCIEX_IDENTITY_AUDIT_COLUMNS,
+        )
+    }
 
 
 def _sciex_mass_comparison_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
@@ -1778,12 +1806,16 @@ def write_excel_report(
         _sciex_intact_excel_sheets(optional_results.get(SCIEX_INTACT_OPTIONAL_RESULT_KEY))
     )
     data_sheets.update(
+        _sciex_identity_audit_excel_sheets(optional_results.get(SCIEX_IDENTITY_AUDIT_RESULT_KEY))
+    )
+    data_sheets.update(
         _sciex_mass_comparison_excel_sheets(optional_results.get(SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY))
     )
     for sheet_name, value in optional_results.items():
         if sheet_name in {
             "Index", "Run_summary", "Warnings", "Workflow_Summary",
             SCIEX_INTACT_OPTIONAL_RESULT_KEY,
+            SCIEX_IDENTITY_AUDIT_RESULT_KEY,
             SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
         }:
             continue

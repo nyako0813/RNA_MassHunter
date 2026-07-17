@@ -38,6 +38,8 @@ SUMMARY_COLUMNS = [
     "Closest_Absolute_Delta_Mass", "Closest_Delta_ppm", "Strongest_Peak_ID",
     "Strongest_Observed_Mass", "Strongest_Apex_Intensity_Raw",
     "Existing_Intact_Result_Available", "Existing_Intact_Mass_Count",
+    "Input_Identity_Audit_Status", "Input_Identity_Conflict",
+    "Input_Identity_Warning_Code", "Biological_Interpretation_Eligible",
     "Algorithm_Version", "Shadow_Only", "Applied_To_Formal_Score", "Applied_To_Ranking",
     "Applied_To_Candidate_Filtering", "Molecular_Identity_Assigned",
     "Modification_Lookup_Performed", "Notes",
@@ -128,6 +130,7 @@ def compare_sciex_intact_masses(
     source_file: str = "",
     strict_tolerance_da: float = 1.0,
     broad_tolerance_da: float = 5.0,
+    input_identity_audit: Any = None,
 ) -> SciexIntactMassComparisonResult:
     """Compare apex masses without modification lookup or identity assignment."""
     strict = float(strict_tolerance_da)
@@ -232,6 +235,12 @@ def compare_sciex_intact_masses(
         summary_status = "NO_THEORETICAL_MASS"
     else:
         summary_status = "COMPARISON_COMPLETED"
+    identity_value = input_identity_audit
+    if hasattr(identity_value, "row"):
+        identity_value = identity_value.row()
+    identity = dict(identity_value) if isinstance(identity_value, Mapping) else {}
+    identity_status = str(identity.get("Audit_Status") or "NOT_RUN")
+    biological_eligible = bool(identity.get("Biological_Interpretation_Eligible", False))
     summary = {
         "Source_File": str(source_file),
         "Parser_Status": str(diagnostics.get("Input_Status") or ""),
@@ -256,6 +265,10 @@ def compare_sciex_intact_masses(
         "Strongest_Apex_Intensity_Raw": strongest.get("Apex_Intensity_Raw") if strongest else None,
         "Existing_Intact_Result_Available": bool(existing_masses),
         "Existing_Intact_Mass_Count": len(existing_masses),
+        "Input_Identity_Audit_Status": identity_status,
+        "Input_Identity_Conflict": bool(identity.get("Identity_Conflict", False)),
+        "Input_Identity_Warning_Code": str(identity.get("Warning_Code") or ""),
+        "Biological_Interpretation_Eligible": biological_eligible,
         "Algorithm_Version": ALGORITHM_VERSION,
         **FORMAL_FALSE,
         "Notes": (
