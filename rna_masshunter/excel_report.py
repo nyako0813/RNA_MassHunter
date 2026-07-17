@@ -182,6 +182,13 @@ from rna_masshunter.sciex_spacing_resolution_audit import (
     SUMMARY_COLUMNS as SCIEX_SPACING_RESOLUTION_SUMMARY_COLUMNS,
     SUMMARY_SHEET as SCIEX_SPACING_RESOLUTION_SUMMARY_SHEET,
 )
+from rna_masshunter.sciex_relation_evidence_quality_audit import (
+    AUDIT_RESULT_KEY as SCIEX_RELATION_EVIDENCE_RESULT_KEY,
+    DETAIL_COLUMNS as SCIEX_RELATION_EVIDENCE_DETAIL_COLUMNS,
+    DETAIL_SHEET as SCIEX_RELATION_EVIDENCE_DETAIL_SHEET,
+    SUMMARY_COLUMNS as SCIEX_RELATION_EVIDENCE_SUMMARY_COLUMNS,
+    SUMMARY_SHEET as SCIEX_RELATION_EVIDENCE_SUMMARY_SHEET,
+)
 from rna_masshunter.sciex_input_identity_audit import (
     AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
     OUTPUT_COLUMNS as SCIEX_IDENTITY_AUDIT_COLUMNS,
@@ -792,6 +799,8 @@ SHEET_DESCRIPTIONS = {
     "SCIEX_Delta_Mass_Relations": "Relevant duplicate-like, integer, isotope-like, and recurrent numerical spacing candidates; shadow-only.",
     "SCIEX_Spacing_Resolution": "Run-level SCIEX mass-grid and integer/isotope spacing distinguishability audit; shadow-only.",
     "SCIEX_Spacing_Resolution_Detail": "Per-multiple target-window overlap and grid-resolution diagnostics; shadow-only.",
+    "SCIEX_Relation_Evidence": "Relation-level numerical fit, resolution, recurrence, and interpretation-gate diagnostics; shadow-only.",
+    "SCIEX_Relation_Evidence_Summary": "Run-level SCIEX relation evidence-tier and interpretation-block summary; shadow-only.",
     "MS2_Identity_Peak_Assignments": "Candidate-match assignments annotated with candidate-crossing physical observed peak sharing.",
     "MS2_Unmatched_Ion_Audit": "Shadow reason audit for unmatched modified theoretical ions; formal matching is unchanged.",
     "MS2_Unmatched_Ion_Summary": "Candidate-level shadow summary of unmatched modified theoretical ion reasons.",
@@ -1069,6 +1078,35 @@ def _sciex_spacing_resolution_excel_sheets(value: Any) -> dict[str, pd.DataFrame
         ),
         SCIEX_SPACING_RESOLUTION_DETAIL_SHEET: pd.DataFrame(
             safe_details, columns=SCIEX_SPACING_RESOLUTION_DETAIL_COLUMNS,
+        ),
+    }
+
+
+def _sciex_relation_evidence_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        details = value.get("detail_rows", value.get("details", []))
+        summaries = value.get("summary_rows", value.get("summaries", []))
+    else:
+        details = value.details() if hasattr(value, "details") else getattr(value, "detail_rows", [])
+        summaries = value.summaries() if hasattr(value, "summaries") else getattr(value, "summary_rows", [])
+    safe_details = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in _record_rows(details)
+    ]
+    safe_summaries = [
+        {key: _excel_safe_cell(item) for key, item in row.items()}
+        for row in _record_rows(summaries)
+    ]
+    if not safe_summaries:
+        return {}
+    return {
+        SCIEX_RELATION_EVIDENCE_DETAIL_SHEET: pd.DataFrame(
+            safe_details, columns=SCIEX_RELATION_EVIDENCE_DETAIL_COLUMNS,
+        ),
+        SCIEX_RELATION_EVIDENCE_SUMMARY_SHEET: pd.DataFrame(
+            safe_summaries, columns=SCIEX_RELATION_EVIDENCE_SUMMARY_COLUMNS,
         ),
     }
 
@@ -1901,6 +1939,9 @@ def write_excel_report(
         _sciex_spacing_resolution_excel_sheets(optional_results.get(SCIEX_SPACING_RESOLUTION_RESULT_KEY))
     )
     data_sheets.update(
+        _sciex_relation_evidence_excel_sheets(optional_results.get(SCIEX_RELATION_EVIDENCE_RESULT_KEY))
+    )
+    data_sheets.update(
         _sciex_mass_comparison_excel_sheets(optional_results.get(SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY))
     )
     for sheet_name, value in optional_results.items():
@@ -1910,6 +1951,7 @@ def write_excel_report(
             SCIEX_IDENTITY_AUDIT_RESULT_KEY,
             SCIEX_DELTA_CLUSTER_RESULT_KEY,
             SCIEX_SPACING_RESOLUTION_RESULT_KEY,
+            SCIEX_RELATION_EVIDENCE_RESULT_KEY,
             SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
         }:
             continue

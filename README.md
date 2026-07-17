@@ -191,6 +191,12 @@ sciex_profile:
     quantization_tolerance_da: 0.02
     distinguishability_margin_factor: 2.0
     maximum_spacing_multiple: 10
+  relation_evidence_quality_audit:
+    enabled: true
+    high_error_fraction_threshold: 0.25
+    low_error_fraction_threshold: 0.75
+    minimum_recurrent_support_pairs: 2
+    minimum_interpretable_resolution_margin: 2.0
 ```
 
 `Mass`/`Intensity` profiles are eligible for intact neutral-mass peak detection. `Mass/Charge`/`Intensity` profiles remain m/z data and produce parser diagnostics only; no charge-1 conversion is assumed. When detection completes with at least one peak, the optional intact-mass comparison records proximity to the unmodified theoretical RNA mass and, when available, the nearest existing reconstructed intact mass. It does not perform modification lookup, chemical assignment, or molecular identity assignment. SCIEX parser, peak, and comparison sheets are hidden at the `standard` audit level and included at `audit`/`full`. The summary sheet uses the Excel-safe alias `SCIEX_Intact_Mass_Comp_Summary` because the descriptive name exceeds Excel's 31-character sheet-name limit. These shadow results do not affect formal scores, ranking, or candidate filtering.
@@ -200,6 +206,8 @@ When SCIEX routing is enabled, a lightweight input-identity shadow audit also co
 The optional delta-mass cluster shadow audit groups comparison rows with a deterministic complete-link-style span bound, diagnoses duplicate-like apex proximity, and reports integer, isotope-like, and recurrent numerical spacing candidates. Pair analysis is limited by mass spacing and a deterministic row cap. The labels are numerical diagnostics only: no modification, isotope number, adduct, formula, charge, or molecular identity is assigned. `SCIEX_Delta_Mass_Clusters`, `SCIEX_Delta_Mass_Clust_Summary`, and `SCIEX_Delta_Mass_Relations` are available at `audit` and `full` and hidden at `standard`; identity conflicts disable biological interpretation but do not disable clustering or alter comparison values.
 
 The optional spacing-resolution shadow audit independently estimates the neutral-mass input grid and detected-apex quantization, then compares the configured integer/isotope-like tolerance windows with the theoretical 1.000000 versus 1.003355 Da separation. It annotates interpretation eligibility without changing detector, comparison, cluster, or relation rows. `SCIEX_Spacing_Resolution` and `SCIEX_Spacing_Resolution_Detail` are available at `audit` and `full` and hidden at `standard`. The isotope spacing and integer/isotope tolerances are reused from `delta_mass_cluster_audit`; no chemical or isotope assignment is made.
+
+The optional relation evidence-quality shadow audit assigns numerical-fit, recurrence, resolution, identity, biological, and chemical-interpretation flags to a derived row for every exported SCIEX relation. It reuses the exported relation set and existing spacing-resolution metadata without sorting, truncating, deleting, or changing relation flags. Evidence tiers remain diagnostic: Tier 4, isotope assignment, chemical interpretation, and formal propagation are disabled by default. `SCIEX_Relation_Evidence` and `SCIEX_Relation_Evidence_Summary` are available at `audit` and `full` and hidden at `standard`.
 
 ## Current Features
 

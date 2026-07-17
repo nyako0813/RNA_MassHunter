@@ -6,6 +6,7 @@ import yaml
 from rna_masshunter.models import RunConfig
 from rna_masshunter.sciex_delta_mass_cluster_audit import DeltaMassClusterParameters
 from rna_masshunter.sciex_spacing_resolution_audit import SpacingResolutionParameters
+from rna_masshunter.sciex_relation_evidence_quality_audit import RelationEvidenceQualityParameters
 from rna_masshunter.warnings_manager import add_warning
 
 
@@ -43,6 +44,13 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "quantization_tolerance_da": 0.02,
             "distinguishability_margin_factor": 2.0,
             "maximum_spacing_multiple": 10,
+        },
+        "relation_evidence_quality_audit": {
+            "enabled": True,
+            "high_error_fraction_threshold": 0.25,
+            "low_error_fraction_threshold": 0.75,
+            "minimum_recurrent_support_pairs": 2,
+            "minimum_interpretable_resolution_margin": 2.0,
         },
     },
     "reconstruction": {
@@ -384,7 +392,7 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
             key for key in missing
             if not (
                 section == "sciex_profile"
-                and key in {"intact_mass_comparison", "delta_mass_cluster_audit", "spacing_resolution_audit"}
+                and key in {"intact_mass_comparison", "delta_mass_cluster_audit", "spacing_resolution_audit", "relation_evidence_quality_audit"}
             )
         ]
         if reported_missing and warnings is not None and not optional_section_absent:
@@ -470,6 +478,20 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
             except (TypeError, ValueError) as exc:
                 raise ValueError(
                     f"Invalid sciex_profile.spacing_resolution_audit: {exc}"
+                ) from exc
+
+        evidence_audit = sciex_profile.get(
+            "relation_evidence_quality_audit",
+            DEFAULT_CONFIG["sciex_profile"]["relation_evidence_quality_audit"],
+        )
+        if not isinstance(evidence_audit, dict):
+            raise ValueError("sciex_profile.relation_evidence_quality_audit must be a mapping")
+        if _as_bool(evidence_audit.get("enabled"), True):
+            try:
+                RelationEvidenceQualityParameters.from_mapping(evidence_audit)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid sciex_profile.relation_evidence_quality_audit: {exc}"
                 ) from exc
 
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:

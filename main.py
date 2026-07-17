@@ -101,6 +101,15 @@ from rna_masshunter.sciex_spacing_resolution_audit import (
     annotate_cluster_summary,
     audit_sciex_spacing_resolution,
 )
+from rna_masshunter.sciex_relation_evidence_quality_audit import (
+    AUDIT_RESULT_KEY as SCIEX_RELATION_EVIDENCE_RESULT_KEY,
+    DETAIL_SHEET as SCIEX_RELATION_EVIDENCE_DETAIL_SHEET,
+    ERROR_CODE as SCIEX_RELATION_EVIDENCE_ERROR_CODE,
+    SUMMARY_SHEET as SCIEX_RELATION_EVIDENCE_SUMMARY_SHEET,
+    annotate_cluster_summary as annotate_relation_evidence_cluster_summary,
+    annotate_resolution_summary as annotate_relation_evidence_resolution_summary,
+    audit_sciex_relation_evidence_quality,
+)
 from rna_masshunter.sciex_intact_mass_comparison import compare_sciex_intact_masses
 from rna_masshunter.sciex_input_identity_audit import (
     AUDIT_RESULT_KEY as SCIEX_IDENTITY_AUDIT_RESULT_KEY,
@@ -465,6 +474,60 @@ def build_sciex_spacing_resolution_optional_results(
     return {SCIEX_SPACING_RESOLUTION_RESULT_KEY: result}
 
 
+def build_sciex_relation_evidence_optional_results(
+    config,
+    delta_cluster_optional_results: dict[str, object],
+    spacing_resolution_optional_results: dict[str, object],
+    warnings: list[dict],
+    logger=None,
+) -> dict[str, object]:
+    settings = config.sciex_profile or {}
+    if not _as_bool(settings.get("enabled"), False):
+        return {}
+    evidence_settings = settings.get("relation_evidence_quality_audit") or {}
+    if not _as_bool(evidence_settings.get("enabled"), True):
+        return {}
+    cluster_result = delta_cluster_optional_results.get(SCIEX_DELTA_CLUSTER_RESULT_KEY)
+    resolution_result = spacing_resolution_optional_results.get(
+        SCIEX_SPACING_RESOLUTION_RESULT_KEY
+    )
+    if cluster_result is None or resolution_result is None:
+        return {}
+    relation_rows = (
+        cluster_result.relations() if hasattr(cluster_result, "relations") else []
+    )
+    if not relation_rows:
+        return {}
+    try:
+        result = audit_sciex_relation_evidence_quality(
+            cluster_result,
+            resolution_result,
+            settings.get("delta_mass_cluster_audit") or {},
+            evidence_settings,
+        )
+    except Exception as exc:
+        source_path = ""
+        summaries = (
+            cluster_result.summaries() if hasattr(cluster_result, "summaries") else []
+        )
+        if summaries:
+            source_path = str(summaries[0].get("SCIEX_Source_File") or "")
+        context = {
+            "Warning_Code": SCIEX_RELATION_EVIDENCE_ERROR_CODE,
+            "path": source_path,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        add_warning(
+            warnings, "ERROR", "sciex_relation_evidence_quality_audit",
+            "SCIEX relation evidence-quality audit failed; existing SCIEX and formal results were retained.",
+            context,
+        )
+        if logger is not None:
+            logger.error("SCIEX relation evidence-quality audit failed: %s", exc)
+        return {}
+    return {SCIEX_RELATION_EVIDENCE_RESULT_KEY: result}
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
     parser.add_argument(
@@ -703,10 +766,30 @@ def main(argv: list[str] | None = None) -> None:
             delta_cluster_optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
             optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
             optional_results.update(spacing_resolution_optional_results)
+        relation_evidence_optional_results = build_sciex_relation_evidence_optional_results(
+            config, delta_cluster_optional_results, spacing_resolution_optional_results,
+            warnings, logger=logger,
+        )
+        if relation_evidence_optional_results:
+            evidence_result = relation_evidence_optional_results[SCIEX_RELATION_EVIDENCE_RESULT_KEY]
+            cluster_result = delta_cluster_optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY]
+            resolution_result = spacing_resolution_optional_results[SCIEX_SPACING_RESOLUTION_RESULT_KEY]
+            annotated_cluster_result = annotate_relation_evidence_cluster_summary(
+                cluster_result, evidence_result,
+            )
+            annotated_resolution_result = annotate_relation_evidence_resolution_summary(
+                resolution_result, evidence_result,
+            )
+            delta_cluster_optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
+            spacing_resolution_optional_results[SCIEX_SPACING_RESOLUTION_RESULT_KEY] = annotated_resolution_result
+            optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
+            optional_results[SCIEX_SPACING_RESOLUTION_RESULT_KEY] = annotated_resolution_result
+            optional_results.update(relation_evidence_optional_results)
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
         comparison_executed = SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY in comparison_optional_results
         delta_cluster_executed = SCIEX_DELTA_CLUSTER_RESULT_KEY in delta_cluster_optional_results
         spacing_resolution_executed = SCIEX_SPACING_RESOLUTION_RESULT_KEY in spacing_resolution_optional_results
+        relation_evidence_executed = SCIEX_RELATION_EVIDENCE_RESULT_KEY in relation_evidence_optional_results
         output_sheets = [
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
@@ -728,6 +811,11 @@ def main(argv: list[str] | None = None) -> None:
             output_sheets.extend((
                 SCIEX_SPACING_RESOLUTION_SUMMARY_SHEET,
                 SCIEX_SPACING_RESOLUTION_DETAIL_SHEET,
+            ))
+        if relation_evidence_executed and audit_policy.level != "standard":
+            output_sheets.extend((
+                SCIEX_RELATION_EVIDENCE_DETAIL_SHEET,
+                SCIEX_RELATION_EVIDENCE_SUMMARY_SHEET,
             ))
         _record_workflow_step(
             workflow_rows,

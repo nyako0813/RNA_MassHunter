@@ -142,6 +142,13 @@ def test_config_defaults_are_backward_compatible_and_unknown_keys_are_retained(t
             "distinguishability_margin_factor": 2.0,
             "maximum_spacing_multiple": 10,
         },
+        "relation_evidence_quality_audit": {
+            "enabled": True,
+            "high_error_fraction_threshold": 0.25,
+            "low_error_fraction_threshold": 0.75,
+            "minimum_recurrent_support_pairs": 2,
+            "minimum_interpretable_resolution_margin": 2.0,
+        },
     }
 
     config_path.write_text(
