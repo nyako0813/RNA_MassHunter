@@ -5,21 +5,25 @@ rna_identities:
     rna_type: TRNA
     amino_acid: Leu
     anticodon: UAA
-    anticodon_orientation: UNCONFIRMED
+    anticodon_orientation: FIVE_TO_THREE
+    wobble_sequence_index_1based: 37
+    anticodon_start_index_1based: 37
+    anticodon_end_index_1based: 39
     organism: null
     strain: null
     gene_or_locus: null
-    sequence: null
-    sequence_source: null
-    sequence_status: UNKNOWN
-    sequence_orientation: UNKNOWN
-    sequence_alphabet: UNKNOWN
+    sequence: GCGAGGGUUGCCCAGCCAGGCCAAAGGCGCCAGACUUAAGAUCUGGUAUCGAAGGAUUUCGUGGGUUCGAAUCCCACCCCUCGCA
+    sequence_source: USER_PROVIDED
+    sequence_status: CONFIRMED
+    sequence_orientation: FIVE_TO_THREE
+    sequence_alphabet: RNA
     sequence_sha256: null
     sequence_length: null
     ends_with_cca: null
-    cca_status: UNKNOWN
+    cca_status: CONFIRMED_ABSENT
     intron_status: UNKNOWN
     mature_rna_status: UNKNOWN
+    sequence_notes: Provided sequence does not include terminal CCA; sample-level mature CCA state remains unconfirmed.
   - rna_identity_id: TRNA_GLU_UUC
     display_name: tRNA Glu-UUC
     rna_type: TRNA
@@ -45,21 +49,25 @@ rna_identities:
     rna_type: TRNA
     amino_acid: Leu
     anticodon: UAG
-    anticodon_orientation: UNCONFIRMED
+    anticodon_orientation: FIVE_TO_THREE
+    wobble_sequence_index_1based: 37
+    anticodon_start_index_1based: 37
+    anticodon_end_index_1based: 39
     organism: null
     strain: null
     gene_or_locus: null
-    sequence: null
-    sequence_source: null
-    sequence_status: UNKNOWN
-    sequence_orientation: UNKNOWN
-    sequence_alphabet: UNKNOWN
+    sequence: GCGAGGGUUGCCCAGCUAGGUCAAAGGCGAUGGGCUUAGGACCCAUUUUCGUAGGAAUUCGUGCGUUCGAAUCGCACCCCUCGCA
+    sequence_source: USER_PROVIDED
+    sequence_status: CONFIRMED
+    sequence_orientation: FIVE_TO_THREE
+    sequence_alphabet: RNA
     sequence_sha256: null
     sequence_length: null
     ends_with_cca: null
-    cca_status: UNKNOWN
+    cca_status: CONFIRMED_ABSENT
     intron_status: UNKNOWN
     mature_rna_status: UNKNOWN
+    sequence_notes: Provided sequence does not include terminal CCA; sample-level mature CCA state remains unconfirmed.
 samples:
   - sample_id: LEU_UAA_WT
     display_name: Leu-UAA WT

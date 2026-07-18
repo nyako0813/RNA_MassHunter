@@ -27,6 +27,7 @@ from rna_masshunter.sciex_sample_manifest import (
     filter_measurements_by_experiment_type,
     get_measurement,
     get_measurements_for_sample,
+    get_rna_identity,
     get_paired_measurements,
     get_samples_for_rna_identity,
     load_sciex_sample_manifest,
@@ -38,6 +39,9 @@ from rna_masshunter.sciex_sample_manifest import (
 
 ROOT = Path(__file__).parent
 MANIFEST_PATH = ROOT / "data" / "sciex_sample_manifest.yaml"
+LEU_UAA_SEQUENCE = "GCGAGGGUUGCCCAGCCAGGCCAAAGGCGCCAGACUUAAGAUCUGGUAUCGAAGGAUUUCGUGGGUUCGAAUCCCACCCCUCGCA"
+LEU_UAG_SEQUENCE = "GCGAGGGUUGCCCAGCUAGGUCAAAGGCGAUGGGCUUAGGACCCAUUUUCGUAGGAAUUCGUGCGUUCGAAUCGCACCCCUCGCA"
+
 EXPECTED_MEASUREMENTS = {
     "LEU_UAA_WT_FULL": ("LEU_UAA_WT", "leu_uaa_full", "12Old UAA.mzML"),
     "LEU_UAA_WT_T1": ("LEU_UAA_WT", "leu_uaa_t1", "03_LeuUAA_T1.mzML"),
@@ -67,6 +71,11 @@ def write_payload(tmp_path: Path, payload: dict) -> Path:
 def confirmed_identity(payload: dict, sequence: str = "ac gu cca") -> dict:
     raw = payload["rna_identities"][0]
     raw.update({
+        "anticodon": "ACG",
+        "anticodon_orientation": "FIVE_TO_THREE",
+        "wobble_sequence_index_1based": 1,
+        "anticodon_start_index_1based": 1,
+        "anticodon_end_index_1based": 3,
         "sequence": sequence,
         "sequence_source": "curated reference accession TEST:1",
         "sequence_status": "CONFIRMED",
@@ -246,9 +255,10 @@ def test_confirmed_canonical_sequence_is_normalized_and_derived(tmp_path, payloa
 
 
 def test_unknown_sequence_is_allowed_without_derived_values(manifest):
-    assert all(item.sequence is None for item in manifest.rna_identities)
-    assert all(item.sequence_sha256 is None for item in manifest.rna_identities)
-    assert all(item.sequence_length is None and item.ends_with_cca is None for item in manifest.rna_identities)
+    identity = get_rna_identity(manifest, "TRNA_GLU_UUC")
+    assert identity.sequence is None
+    assert identity.sequence_sha256 is None
+    assert identity.sequence_length is None and identity.ends_with_cca is None
 
 
 @pytest.mark.parametrize("sequence", ["ACGX", "ACGT", "ACG-", ""])
@@ -299,7 +309,6 @@ def test_cca_contradictions_are_rejected(tmp_path, payload, sequence, ends_with_
         ("sequence_source", None),
         ("sequence_orientation", "UNKNOWN"),
         ("sequence_alphabet", "UNKNOWN"),
-        ("mature_rna_status", "UNKNOWN"),
         ("cca_status", "LIKELY_PRESENT"),
     ],
 )
@@ -310,8 +319,10 @@ def test_confirmed_sequence_requires_provenance_and_explicit_state(tmp_path, pay
         load_sciex_sample_manifest(write_payload(tmp_path, payload))
 
 
-def test_current_anticodon_orientation_is_not_inferred(manifest):
-    assert all(item.anticodon_orientation is AnticodonOrientation.UNCONFIRMED for item in manifest.rna_identities)
+def test_current_anticodon_orientations_reflect_only_supplied_information(manifest):
+    assert get_rna_identity(manifest, "TRNA_LEU_UAA").anticodon_orientation is AnticodonOrientation.FIVE_TO_THREE
+    assert get_rna_identity(manifest, "TRNA_LEU_UAG").anticodon_orientation is AnticodonOrientation.FIVE_TO_THREE
+    assert get_rna_identity(manifest, "TRNA_GLU_UUC").anticodon_orientation is AnticodonOrientation.UNCONFIRMED
 
 
 def test_terminal_states_remain_unknown_and_digest_does_not_reuse_them(manifest):
@@ -379,11 +390,11 @@ def test_source_filename_and_optional_hash_are_preserved(manifest):
     assert measurement.source_file_sha256 is None
 
 
-def test_filename_does_not_confirm_identity(manifest):
+def test_filename_does_not_confirm_sample_identity(manifest):
     metadata = resolve_measurement_identity(manifest, "LEU_UAG_WT_FULL")
     assert metadata.expected_source_file_name == "11Old UAG.mzML"
     assert metadata.identity_status is IdentityStatus.UNCONFIRMED
-    assert metadata.expected_sequence_sha256 is None
+    assert metadata.expected_sequence_sha256 == sha256(LEU_UAG_SEQUENCE.encode("ascii")).hexdigest()
 
 
 def test_tracked_yaml_contains_no_absolute_windows_or_wsl_paths():
@@ -486,3 +497,159 @@ def test_manifest_module_has_no_config_or_import_time_load_reference():
     source = (ROOT / "rna_masshunter" / "sciex_sample_manifest.py").read_text(encoding="utf-8")
     assert "config.yaml" not in source
     assert "rna_masshunter.config" not in source
+
+
+@pytest.mark.parametrize(
+    ("rna_identity_id", "sequence", "anticodon", "expected_hash"),
+    [
+        (
+            "TRNA_LEU_UAA",
+            LEU_UAA_SEQUENCE,
+            "UAA",
+            "71664e8092c4c48c9c31fbebd57ec9db5958f4ba29bfcf424ffc5a8fce26e72d",
+        ),
+        (
+            "TRNA_LEU_UAG",
+            LEU_UAG_SEQUENCE,
+            "UAG",
+            "bb309562720cf5b7795103d75325791af4b9c27eaf03c4320cd48912e50d0dd6",
+        ),
+    ],
+)
+def test_user_provided_leu_sequences_are_registered_exactly(
+    manifest, rna_identity_id, sequence, anticodon, expected_hash
+):
+    identity = get_rna_identity(manifest, rna_identity_id)
+    assert identity.sequence == sequence
+    assert identity.sequence_length == 85
+    assert set(identity.sequence) <= set("ACGU")
+    assert identity.sequence[36] == "U"
+    assert identity.sequence[36:39] == anticodon
+    assert identity.anticodon == anticodon
+    assert identity.anticodon_orientation is AnticodonOrientation.FIVE_TO_THREE
+    assert identity.wobble_sequence_index_1based == 37
+    assert identity.anticodon_start_index_1based == 37
+    assert identity.anticodon_end_index_1based == 39
+    assert identity.sequence_sha256 == expected_hash
+    assert identity.sequence_source == "USER_PROVIDED"
+    assert identity.sequence_status is SequenceStatus.CONFIRMED
+    assert identity.ends_with_cca is False
+    assert identity.sequence[-3:] == "GCA"
+    assert identity.cca_status is CCAStatus.CONFIRMED_ABSENT
+    assert identity.mature_rna_status.value == "UNKNOWN"
+    assert identity.intron_status.value == "UNKNOWN"
+    assert "sample-level mature CCA state remains unconfirmed" in identity.sequence_notes
+
+
+def test_leu_sequences_and_hashes_are_distinct(manifest):
+    uaa = get_rna_identity(manifest, "TRNA_LEU_UAA")
+    uag = get_rna_identity(manifest, "TRNA_LEU_UAG")
+    assert uaa.sequence != uag.sequence
+    assert uaa.anticodon != uag.anticodon
+    assert uaa.sequence_sha256 != uag.sequence_sha256
+
+
+@pytest.mark.parametrize(
+    ("rna_identity_id", "full_id", "digest_id"),
+    [
+        ("TRNA_LEU_UAA", "LEU_UAA_WT_FULL", "LEU_UAA_WT_T1"),
+        ("TRNA_LEU_UAG", "LEU_UAG_WT_FULL", "LEU_UAG_WT_T1"),
+    ],
+)
+def test_full_and_digest_resolve_to_same_registered_sequence(
+    manifest, rna_identity_id, full_id, digest_id
+):
+    identity = get_rna_identity(manifest, rna_identity_id)
+    full = resolve_measurement_identity(manifest, full_id)
+    digest = resolve_measurement_identity(manifest, digest_id)
+    assert full.rna_identity_id == digest.rna_identity_id == rna_identity_id
+    assert full.expected_sequence_sha256 == digest.expected_sequence_sha256 == identity.sequence_sha256
+
+
+def test_measurement_filename_change_does_not_select_sequence(tmp_path, payload):
+    expected = load_sciex_sample_manifest(write_payload(tmp_path, deepcopy(payload)))
+    expected_hash = get_rna_identity(expected, "TRNA_LEU_UAA").sequence_sha256
+    payload["measurements"][0]["source_file_name"] = "unrelated-name.mzML"
+    changed = load_sciex_sample_manifest(write_payload(tmp_path, payload))
+    assert get_rna_identity(changed, "TRNA_LEU_UAA").sequence_sha256 == expected_hash
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"wobble_sequence_index_1based": 0}, "positive 1-based"),
+        (
+            {
+                "wobble_sequence_index_1based": 84,
+                "anticodon_start_index_1based": 84,
+                "anticodon_end_index_1based": 86,
+            },
+            "exceeds sequence length",
+        ),
+        ({"anticodon": "UA"}, "three canonical RNA bases"),
+        ({"anticodon": "UAG"}, "does not match"),
+        ({"anticodon_end_index_1based": 40}, "span must contain exactly three"),
+        ({"wobble_sequence_index_1based": 36}, "must equal anticodon_start"),
+    ],
+)
+def test_anticodon_sequence_index_validation_rejects_inconsistency(
+    tmp_path, payload, updates, message
+):
+    before = deepcopy(payload)
+    payload["rna_identities"][0].update(updates)
+    with pytest.raises(ManifestValidationError, match=message):
+        load_sciex_sample_manifest(write_payload(tmp_path, payload))
+    assert before["rna_identities"][2] == payload["rna_identities"][2]
+
+
+def test_registered_sequence_requires_all_explicit_1_based_indexes(tmp_path, payload):
+    payload["rna_identities"][0]["anticodon_start_index_1based"] = None
+    with pytest.raises(ManifestValidationError, match="requires wobble and anticodon 1-based indexes"):
+        load_sciex_sample_manifest(write_payload(tmp_path, payload))
+
+
+def test_unknown_sequence_rejects_orphan_sequence_indexes(tmp_path, payload):
+    payload["rna_identities"][1]["wobble_sequence_index_1based"] = 37
+    with pytest.raises(ManifestValidationError, match="sequence indexes require a registered sequence"):
+        load_sciex_sample_manifest(write_payload(tmp_path, payload))
+
+
+def test_confirmed_user_sequence_does_not_confirm_mature_processing_state(manifest):
+    for rna_identity_id in ("TRNA_LEU_UAA", "TRNA_LEU_UAG"):
+        identity = get_rna_identity(manifest, rna_identity_id)
+        assert identity.sequence_status is SequenceStatus.CONFIRMED
+        assert identity.mature_rna_status.value == "UNKNOWN"
+        assert identity.intron_status.value == "UNKNOWN"
+
+
+def test_provided_sequences_are_serialized_without_cca_or_other_editing(payload, manifest):
+    for index, expected in ((0, LEU_UAA_SEQUENCE), (2, LEU_UAG_SEQUENCE)):
+        assert payload["rna_identities"][index]["sequence"] == expected
+        loaded = manifest.rna_identities[index].sequence
+        assert loaded == expected
+        assert len(loaded) == 85
+        assert loaded[-3:] == "GCA"
+        assert not loaded.endswith("CCA")
+
+
+def test_glu_uuc_identity_remains_unknown_and_unmodified(manifest):
+    identity = get_rna_identity(manifest, "TRNA_GLU_UUC")
+    assert identity.display_name == "tRNA Glu-UUC"
+    assert identity.anticodon == "UUC"
+    assert identity.anticodon_orientation is AnticodonOrientation.UNCONFIRMED
+    assert identity.sequence is None
+    assert identity.sequence_source is None
+    assert identity.sequence_status is SequenceStatus.UNKNOWN
+    assert identity.wobble_sequence_index_1based is None
+    assert identity.anticodon_start_index_1based is None
+    assert identity.anticodon_end_index_1based is None
+    assert identity.sequence_notes is None
+
+
+def test_sequence_registration_does_not_change_measurements_or_formal_flags(manifest):
+    assert len(manifest.measurements) == 6
+    assert {item.measurement_id for item in manifest.measurements} == set(EXPECTED_MEASUREMENTS)
+    assert SAMPLE_MANIFEST_APPLIED_TO_FORMAL_SCORE is False
+    assert SAMPLE_MANIFEST_APPLIED_TO_RANKING is False
+    assert SAMPLE_MANIFEST_APPLIED_TO_CANDIDATE_FILTERING is False
+    assert SAMPLE_MANIFEST_APPLIED_TO_FINAL_CONSENSUS is False

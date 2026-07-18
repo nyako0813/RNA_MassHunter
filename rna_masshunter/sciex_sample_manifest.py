@@ -135,6 +135,9 @@ class RNAIdentity:
     amino_acid: str
     anticodon: str
     anticodon_orientation: AnticodonOrientation
+    wobble_sequence_index_1based: int | None
+    anticodon_start_index_1based: int | None
+    anticodon_end_index_1based: int | None
     organism: str | None
     strain: str | None
     gene_or_locus: str | None
@@ -149,6 +152,7 @@ class RNAIdentity:
     cca_status: CCAStatus
     intron_status: IntronStatus
     mature_rna_status: MatureRNAStatus
+    sequence_notes: str | None
 
 
 @dataclass(frozen=True)
@@ -227,10 +231,12 @@ class ObservedMetadataValidation:
 _EnumT = TypeVar("_EnumT", bound=Enum)
 _IDENTITY_FIELDS = frozenset({
     "rna_identity_id", "display_name", "rna_type", "amino_acid", "anticodon",
-    "anticodon_orientation", "organism", "strain", "gene_or_locus", "sequence",
+    "anticodon_orientation", "wobble_sequence_index_1based",
+    "anticodon_start_index_1based", "anticodon_end_index_1based",
+    "organism", "strain", "gene_or_locus", "sequence",
     "sequence_source", "sequence_status", "sequence_orientation", "sequence_alphabet",
     "sequence_sha256", "sequence_length", "ends_with_cca", "cca_status", "intron_status",
-    "mature_rna_status",
+    "mature_rna_status", "sequence_notes",
 })
 _SAMPLE_FIELDS = frozenset({
     "sample_id", "display_name", "rna_identity_id", "condition", "biological_source",
@@ -314,6 +320,17 @@ def _optional_sha256(raw: Mapping[str, Any], field: str, location: str) -> str |
     return normalized
 
 
+def _optional_sequence_index(raw: Mapping[str, Any], field: str, location: str) -> int | None:
+    value = raw.get(field)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ManifestValidationError(
+            f"{location}.{field}: expected a positive 1-based integer or null"
+        )
+    return value
+
+
 def _normalize_sequence(value: Any, location: str) -> str:
     if not isinstance(value, str):
         raise ManifestValidationError(f"{location}.sequence: expected text or null")
@@ -352,8 +369,8 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
             raise ManifestValidationError(f"{location}: CONFIRMED sequence requires FIVE_TO_THREE orientation")
         if alphabet is not SequenceAlphabet.RNA:
             raise ManifestValidationError(f"{location}: CONFIRMED sequence requires RNA alphabet")
-        if mature_status is MatureRNAStatus.UNKNOWN:
-            raise ManifestValidationError(f"{location}: CONFIRMED sequence requires mature/genomic status")
+        # Confirmation applies to the supplied sequence string and provenance only.
+        # It does not imply a mature/genomic processing-state determination.
         if cca_status not in {CCAStatus.CONFIRMED_PRESENT, CCAStatus.CONFIRMED_ABSENT}:
             raise ManifestValidationError(f"{location}: CONFIRMED sequence requires confirmed CCA status")
 
@@ -381,6 +398,31 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
     anticodon = _required_text(raw, "anticodon", location).upper()
     if len(anticodon) != 3 or any(base not in "ACGU" for base in anticodon):
         raise ManifestValidationError(f"{location}.anticodon: expected three canonical RNA bases")
+    wobble_index = _optional_sequence_index(raw, "wobble_sequence_index_1based", location)
+    anticodon_start = _optional_sequence_index(raw, "anticodon_start_index_1based", location)
+    anticodon_end = _optional_sequence_index(raw, "anticodon_end_index_1based", location)
+    indexes = (wobble_index, anticodon_start, anticodon_end)
+    if sequence is None and any(value is not None for value in indexes):
+        raise ManifestValidationError(f"{location}: sequence indexes require a registered sequence")
+    if sequence is not None:
+        if any(value is None for value in indexes):
+            raise ManifestValidationError(
+                f"{location}: registered sequence requires wobble and anticodon 1-based indexes"
+            )
+        assert wobble_index is not None and anticodon_start is not None and anticodon_end is not None
+        if wobble_index != anticodon_start:
+            raise ManifestValidationError(
+                f"{location}: wobble_sequence_index_1based must equal anticodon_start_index_1based"
+            )
+        if anticodon_end != anticodon_start + 2:
+            raise ManifestValidationError(f"{location}: anticodon span must contain exactly three positions")
+        if anticodon_end > len(sequence):
+            raise ManifestValidationError(f"{location}: anticodon span exceeds sequence length")
+        observed_anticodon = sequence[anticodon_start - 1:anticodon_end]
+        if observed_anticodon != anticodon:
+            raise ManifestValidationError(
+                f"{location}: sequence anticodon {observed_anticodon!r} does not match {anticodon!r}"
+            )
     return RNAIdentity(
         rna_identity_id=_required_text(raw, "rna_identity_id", location),
         display_name=_required_text(raw, "display_name", location),
@@ -388,6 +430,9 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
         amino_acid=_required_text(raw, "amino_acid", location),
         anticodon=anticodon,
         anticodon_orientation=_enum(raw, "anticodon_orientation", AnticodonOrientation, location),
+        wobble_sequence_index_1based=wobble_index,
+        anticodon_start_index_1based=anticodon_start,
+        anticodon_end_index_1based=anticodon_end,
         organism=_optional_text(raw, "organism", location),
         strain=_optional_text(raw, "strain", location),
         gene_or_locus=_optional_text(raw, "gene_or_locus", location),
@@ -402,6 +447,7 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
         cca_status=cca_status,
         intron_status=_enum(raw, "intron_status", IntronStatus, location),
         mature_rna_status=mature_status,
+        sequence_notes=_optional_text(raw, "sequence_notes", location),
     )
 
 
