@@ -1,0 +1,205 @@
+schema_version: 1
+rna_identities:
+  - rna_identity_id: TRNA_LEU_UAA
+    display_name: tRNA Leu-UAA
+    rna_type: TRNA
+    amino_acid: Leu
+    anticodon: UAA
+    anticodon_orientation: UNCONFIRMED
+    organism: null
+    strain: null
+    gene_or_locus: null
+    sequence: null
+    sequence_source: null
+    sequence_status: UNKNOWN
+    sequence_orientation: UNKNOWN
+    sequence_alphabet: UNKNOWN
+    sequence_sha256: null
+    sequence_length: null
+    ends_with_cca: null
+    cca_status: UNKNOWN
+    intron_status: UNKNOWN
+    mature_rna_status: UNKNOWN
+  - rna_identity_id: TRNA_GLU_UUC
+    display_name: tRNA Glu-UUC
+    rna_type: TRNA
+    amino_acid: Glu
+    anticodon: UUC
+    anticodon_orientation: UNCONFIRMED
+    organism: null
+    strain: null
+    gene_or_locus: null
+    sequence: null
+    sequence_source: null
+    sequence_status: UNKNOWN
+    sequence_orientation: UNKNOWN
+    sequence_alphabet: UNKNOWN
+    sequence_sha256: null
+    sequence_length: null
+    ends_with_cca: null
+    cca_status: UNKNOWN
+    intron_status: UNKNOWN
+    mature_rna_status: UNKNOWN
+  - rna_identity_id: TRNA_LEU_UAG
+    display_name: tRNA Leu-UAG
+    rna_type: TRNA
+    amino_acid: Leu
+    anticodon: UAG
+    anticodon_orientation: UNCONFIRMED
+    organism: null
+    strain: null
+    gene_or_locus: null
+    sequence: null
+    sequence_source: null
+    sequence_status: UNKNOWN
+    sequence_orientation: UNKNOWN
+    sequence_alphabet: UNKNOWN
+    sequence_sha256: null
+    sequence_length: null
+    ends_with_cca: null
+    cca_status: UNKNOWN
+    intron_status: UNKNOWN
+    mature_rna_status: UNKNOWN
+samples:
+  - sample_id: LEU_UAA_WT
+    display_name: Leu-UAA WT
+    rna_identity_id: TRNA_LEU_UAA
+    condition: WT
+    biological_source: null
+    purification_method: null
+    native_or_transcript: UNKNOWN
+    sample_notes: null
+    identity_status: UNCONFIRMED
+  - sample_id: GLU_UUC_WT
+    display_name: Glu-UUC WT
+    rna_identity_id: TRNA_GLU_UUC
+    condition: WT
+    biological_source: null
+    purification_method: null
+    native_or_transcript: UNKNOWN
+    sample_notes: null
+    identity_status: UNCONFIRMED
+  - sample_id: LEU_UAG_WT
+    display_name: Leu-UAG WT
+    rna_identity_id: TRNA_LEU_UAG
+    condition: WT
+    biological_source: null
+    purification_method: null
+    native_or_transcript: UNKNOWN
+    sample_notes: null
+    identity_status: UNCONFIRMED
+measurements:
+  - measurement_id: LEU_UAA_WT_FULL
+    sample_id: LEU_UAA_WT
+    experiment_type: FULL_LENGTH
+    input_role: PRIMARY
+    input_alias: leu_uaa_full
+    source_file_name: 12Old UAA.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: NONE
+    phosphatase_treatment: NONE
+    expected_analyte_level: INTACT_RNA
+    sequence_required: true
+    terminal_state_required: true
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Terminal states are not confirmed.
+  - measurement_id: LEU_UAA_WT_T1
+    sample_id: LEU_UAA_WT
+    experiment_type: RNASE_T1_DIGEST
+    input_role: SUPPORTING
+    input_alias: leu_uaa_t1
+    source_file_name: 03_LeuUAA_T1.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: RNASE_T1
+    phosphatase_treatment: NONE
+    expected_analyte_level: OLIGONUCLEOTIDE
+    sequence_required: true
+    terminal_state_required: false
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Intact-RNA terminal states do not apply to this digest measurement.
+  - measurement_id: GLU_UUC_WT_FULL
+    sample_id: GLU_UUC_WT
+    experiment_type: FULL_LENGTH
+    input_role: PRIMARY
+    input_alias: glu_uuc_full
+    source_file_name: 01kenki.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: NONE
+    phosphatase_treatment: NONE
+    expected_analyte_level: INTACT_RNA
+    sequence_required: true
+    terminal_state_required: true
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Terminal states are not confirmed.
+  - measurement_id: GLU_UUC_WT_P1_AP
+    sample_id: GLU_UUC_WT
+    experiment_type: NUCLEASE_P1_AP_DIGEST
+    input_role: SUPPORTING
+    input_alias: glu_uuc_p1_ap
+    source_file_name: Nsd01.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: NUCLEASE_P1
+    phosphatase_treatment: ALKALINE_PHOSPHATASE
+    expected_analyte_level: NUCLEOSIDE
+    sequence_required: false
+    terminal_state_required: false
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Intact-RNA terminal states do not apply to this digest measurement.
+  - measurement_id: LEU_UAG_WT_FULL
+    sample_id: LEU_UAG_WT
+    experiment_type: FULL_LENGTH
+    input_role: PRIMARY
+    input_alias: leu_uag_full
+    source_file_name: 11Old UAG.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: NONE
+    phosphatase_treatment: NONE
+    expected_analyte_level: INTACT_RNA
+    sequence_required: true
+    terminal_state_required: true
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Terminal states are not confirmed.
+  - measurement_id: LEU_UAG_WT_T1
+    sample_id: LEU_UAG_WT
+    experiment_type: RNASE_T1_DIGEST
+    input_role: SUPPORTING
+    input_alias: leu_uag_t1
+    source_file_name: 04_LeuUAG_T1.mzML
+    source_file_path_hint: null
+    source_file_sha256: null
+    profile_type: MZML
+    digestion_enzyme: RNASE_T1
+    phosphatase_treatment: NONE
+    expected_analyte_level: OLIGONUCLEOTIDE
+    sequence_required: true
+    terminal_state_required: false
+    five_prime_state: null
+    three_prime_state: null
+    terminal_state_status: UNKNOWN
+    enabled: true
+    notes: Intact-RNA terminal states do not apply to this digest measurement.
