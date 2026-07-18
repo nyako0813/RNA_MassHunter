@@ -184,12 +184,16 @@ class Detection:
         return {"Detection_Status": "DETECTION_COMPLETED", "Input_Status": "SUPPORTED_INPUT"}
 
 
-def test_comparison_summary_reflects_conflict_without_changing_numeric_result():
+def test_comparison_conflict_returns_diagnostic_summary_without_numeric_matching():
     identity = audit("LeuUAA.txt", "tRNA-Glu-UUC", "UUC")
-    baseline = compare_sciex_intact_masses(Detection(), 100.5).summaries()[0]
-    linked = compare_sciex_intact_masses(Detection(), 100.5, input_identity_audit=identity).summaries()[0]
-    for key in ("Closest_Observed_Mass", "Closest_Delta_Mass", "Closest_Delta_ppm"):
-        assert linked[key] == baseline[key]
+    result = compare_sciex_intact_masses(Detection(), 100.5, input_identity_audit=identity)
+    linked = result.summaries()[0]
+    assert result.details() == []
+    assert linked["Comparison_Status"] == "IDENTITY_CONFLICT"
+    assert linked["Comparison_Eligible"] is False
+    assert linked["Closest_Observed_Mass"] is None
+    assert linked["Closest_Delta_Mass"] is None
+    assert linked["Closest_Delta_ppm"] is None
     assert linked["Input_Identity_Audit_Status"] == "CONFLICT"
     assert linked["Input_Identity_Conflict"] is True
     assert linked["Input_Identity_Warning_Code"] == WARNING_CODE
