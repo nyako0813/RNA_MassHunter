@@ -13,6 +13,12 @@ from typing import Any, Mapping, TypeVar
 
 import yaml
 
+from rna_masshunter.cca_tail_state import (
+    CCATailState,
+    CCATailStatus,
+    RegisteredSequenceCCAMode,
+)
+
 SCHEMA_VERSION = 1
 SAMPLE_MANIFEST_APPLIED_TO_FORMAL_SCORE = False
 SAMPLE_MANIFEST_APPLIED_TO_RANKING = False
@@ -146,6 +152,8 @@ class RNAIdentity:
     sequence_status: SequenceStatus
     sequence_orientation: SequenceOrientation
     sequence_alphabet: SequenceAlphabet
+    registered_sequence_cca_mode: RegisteredSequenceCCAMode
+    registered_cca_tail_state: CCATailState | None
     sequence_sha256: str | None
     sequence_length: int | None
     ends_with_cca: bool | None
@@ -166,6 +174,8 @@ class BiologicalSample:
     native_or_transcript: NativeOrTranscript
     sample_notes: str | None
     identity_status: IdentityStatus
+    sample_cca_tail_state: CCATailState | None
+    sample_cca_tail_status: CCATailStatus
 
 
 @dataclass(frozen=True)
@@ -235,12 +245,14 @@ _IDENTITY_FIELDS = frozenset({
     "anticodon_start_index_1based", "anticodon_end_index_1based",
     "organism", "strain", "gene_or_locus", "sequence",
     "sequence_source", "sequence_status", "sequence_orientation", "sequence_alphabet",
+    "registered_sequence_cca_mode", "registered_cca_tail_state",
     "sequence_sha256", "sequence_length", "ends_with_cca", "cca_status", "intron_status",
     "mature_rna_status", "sequence_notes",
 })
 _SAMPLE_FIELDS = frozenset({
     "sample_id", "display_name", "rna_identity_id", "condition", "biological_source",
     "purification_method", "native_or_transcript", "sample_notes", "identity_status",
+    "sample_cca_tail_state", "sample_cca_tail_status",
 })
 _MEASUREMENT_FIELDS = frozenset({
     "measurement_id", "sample_id", "experiment_type", "input_role", "input_alias",
@@ -303,6 +315,17 @@ def _enum(raw: Mapping[str, Any], field: str, enum_type: type[_EnumT], location:
         ) from exc
 
 
+def _optional_enum(
+    raw: Mapping[str, Any],
+    field: str,
+    enum_type: type[_EnumT],
+    location: str,
+) -> _EnumT | None:
+    if raw.get(field) is None:
+        return None
+    return _enum(raw, field, enum_type, location)
+
+
 def _boolean(raw: Mapping[str, Any], field: str, location: str) -> bool:
     value = raw.get(field)
     if not isinstance(value, bool):
@@ -359,6 +382,12 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
 
     orientation = _enum(raw, "sequence_orientation", SequenceOrientation, location)
     alphabet = _enum(raw, "sequence_alphabet", SequenceAlphabet, location)
+    registered_cca_mode = _enum(
+        raw, "registered_sequence_cca_mode", RegisteredSequenceCCAMode, location
+    )
+    registered_tail_state = _optional_enum(
+        raw, "registered_cca_tail_state", CCATailState, location
+    )
     sequence_source = _optional_text(raw, "sequence_source", location)
     cca_status = _enum(raw, "cca_status", CCAStatus, location)
     mature_status = _enum(raw, "mature_rna_status", MatureRNAStatus, location)
@@ -373,6 +402,26 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
         # It does not imply a mature/genomic processing-state determination.
         if cca_status not in {CCAStatus.CONFIRMED_PRESENT, CCAStatus.CONFIRMED_ABSENT}:
             raise ManifestValidationError(f"{location}: CONFIRMED sequence requires confirmed CCA status")
+
+    if registered_cca_mode is RegisteredSequenceCCAMode.UNKNOWN:
+        if registered_tail_state is not None:
+            raise ManifestValidationError(
+                f"{location}: UNKNOWN registered CCA mode requires null registered tail state"
+            )
+    elif registered_cca_mode is RegisteredSequenceCCAMode.EXCLUDES_CCA:
+        if registered_tail_state is not CCATailState.NONE:
+            raise ManifestValidationError(
+                f"{location}: EXCLUDES_CCA requires registered tail state NONE"
+            )
+    else:
+        if registered_tail_state is not CCATailState.CCA:
+            raise ManifestValidationError(
+                f"{location}: INCLUDES_COMPLETE_CCA requires registered tail state CCA"
+            )
+        if sequence is None or not sequence.endswith("CCA"):
+            raise ManifestValidationError(
+                f"{location}: INCLUDES_COMPLETE_CCA requires sequence ending in CCA"
+            )
 
     computed_hash = sha256(sequence.encode("ascii")).hexdigest() if sequence is not None else None
     computed_length = len(sequence) if sequence is not None else None
@@ -441,6 +490,8 @@ def _parse_identity(raw_value: Any, index: int) -> RNAIdentity:
         sequence_status=status,
         sequence_orientation=orientation,
         sequence_alphabet=alphabet,
+        registered_sequence_cca_mode=registered_cca_mode,
+        registered_cca_tail_state=registered_tail_state,
         sequence_sha256=computed_hash,
         sequence_length=computed_length,
         ends_with_cca=computed_cca,
@@ -455,6 +506,16 @@ def _parse_sample(raw_value: Any, index: int) -> BiologicalSample:
     location = f"samples[{index}]"
     raw = _mapping(raw_value, location)
     _strict_fields(raw, _SAMPLE_FIELDS, location)
+    sample_cca_state = _optional_enum(raw, "sample_cca_tail_state", CCATailState, location)
+    sample_cca_status = _enum(raw, "sample_cca_tail_status", CCATailStatus, location)
+    if sample_cca_status is CCATailStatus.UNKNOWN and sample_cca_state is not None:
+        raise ManifestValidationError(
+            f"{location}: UNKNOWN sample CCA status requires null sample tail state"
+        )
+    if sample_cca_status is CCATailStatus.CONFIRMED and sample_cca_state is None:
+        raise ManifestValidationError(
+            f"{location}: CONFIRMED sample CCA status requires a sample tail state"
+        )
     return BiologicalSample(
         sample_id=_required_text(raw, "sample_id", location),
         display_name=_required_text(raw, "display_name", location),
@@ -465,6 +526,8 @@ def _parse_sample(raw_value: Any, index: int) -> BiologicalSample:
         native_or_transcript=_enum(raw, "native_or_transcript", NativeOrTranscript, location),
         sample_notes=_optional_text(raw, "sample_notes", location),
         identity_status=_enum(raw, "identity_status", IdentityStatus, location),
+        sample_cca_tail_state=sample_cca_state,
+        sample_cca_tail_status=sample_cca_status,
     )
 
 

@@ -254,8 +254,23 @@ def test_confirmed_canonical_sequence_is_normalized_and_derived(tmp_path, payloa
     assert identity.sequence_status is SequenceStatus.CONFIRMED
 
 
-def test_unknown_sequence_is_allowed_without_derived_values(manifest):
-    identity = get_rna_identity(manifest, "TRNA_GLU_UUC")
+def test_unknown_sequence_is_allowed_without_derived_values(tmp_path, payload):
+    raw = payload["rna_identities"][1]
+    raw.update({
+        "wobble_sequence_index_1based": None,
+        "anticodon_start_index_1based": None,
+        "anticodon_end_index_1based": None,
+        "sequence": None,
+        "sequence_source": None,
+        "sequence_status": "UNKNOWN",
+        "sequence_orientation": "UNKNOWN",
+        "sequence_alphabet": "UNKNOWN",
+        "registered_sequence_cca_mode": "UNKNOWN",
+        "registered_cca_tail_state": None,
+        "cca_status": "UNKNOWN",
+        "sequence_notes": None,
+    })
+    identity = load_sciex_sample_manifest(write_payload(tmp_path, payload)).rna_identities[1]
     assert identity.sequence is None
     assert identity.sequence_sha256 is None
     assert identity.sequence_length is None and identity.ends_with_cca is None
@@ -609,7 +624,19 @@ def test_registered_sequence_requires_all_explicit_1_based_indexes(tmp_path, pay
 
 
 def test_unknown_sequence_rejects_orphan_sequence_indexes(tmp_path, payload):
-    payload["rna_identities"][1]["wobble_sequence_index_1based"] = 37
+    raw = payload["rna_identities"][1]
+    raw.update({
+        "sequence": None,
+        "sequence_source": None,
+        "sequence_status": "UNKNOWN",
+        "sequence_orientation": "UNKNOWN",
+        "sequence_alphabet": "UNKNOWN",
+        "registered_sequence_cca_mode": "UNKNOWN",
+        "registered_cca_tail_state": None,
+        "cca_status": "UNKNOWN",
+        "anticodon_start_index_1based": None,
+        "anticodon_end_index_1based": None,
+    })
     with pytest.raises(ManifestValidationError, match="sequence indexes require a registered sequence"):
         load_sciex_sample_manifest(write_payload(tmp_path, payload))
 
@@ -632,18 +659,20 @@ def test_provided_sequences_are_serialized_without_cca_or_other_editing(payload,
         assert not loaded.endswith("CCA")
 
 
-def test_glu_uuc_identity_remains_unknown_and_unmodified(manifest):
+def test_glu_uuc_identity_uses_confirmed_existing_config_sequence(manifest):
     identity = get_rna_identity(manifest, "TRNA_GLU_UUC")
+    expected = "GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA"
     assert identity.display_name == "tRNA Glu-UUC"
     assert identity.anticodon == "UUC"
     assert identity.anticodon_orientation is AnticodonOrientation.UNCONFIRMED
-    assert identity.sequence is None
-    assert identity.sequence_source is None
-    assert identity.sequence_status is SequenceStatus.UNKNOWN
-    assert identity.wobble_sequence_index_1based is None
-    assert identity.anticodon_start_index_1based is None
-    assert identity.anticodon_end_index_1based is None
-    assert identity.sequence_notes is None
+    assert identity.sequence == expected
+    assert identity.sequence_source == "USER_PROVIDED_AND_EXISTING_CONFIG_CONFIRMED"
+    assert identity.sequence_status is SequenceStatus.CONFIRMED
+    assert identity.wobble_sequence_index_1based == 37
+    assert identity.anticodon_start_index_1based == 37
+    assert identity.anticodon_end_index_1based == 39
+    assert identity.sequence[36:39] == "UUC"
+    assert identity.ends_with_cca is True
 
 
 def test_sequence_registration_does_not_change_measurements_or_formal_flags(manifest):
@@ -653,3 +682,46 @@ def test_sequence_registration_does_not_change_measurements_or_formal_flags(mani
     assert SAMPLE_MANIFEST_APPLIED_TO_RANKING is False
     assert SAMPLE_MANIFEST_APPLIED_TO_CANDIDATE_FILTERING is False
     assert SAMPLE_MANIFEST_APPLIED_TO_FINAL_CONSENSUS is False
+
+
+@pytest.mark.parametrize(
+    ("identity_index", "updates", "message"),
+    [
+        (0, {"registered_cca_tail_state": "CCA"}, "EXCLUDES_CCA requires"),
+        (
+            1,
+            {"sequence": "GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACC"},
+            "requires sequence ending in CCA",
+        ),
+        (
+            2,
+            {"registered_sequence_cca_mode": "UNKNOWN", "registered_cca_tail_state": "NONE"},
+            "UNKNOWN registered CCA mode requires null",
+        ),
+    ],
+)
+def test_registered_cca_mode_and_state_inconsistency_is_rejected(
+    tmp_path, payload, identity_index, updates, message
+):
+    payload["rna_identities"][identity_index].update(updates)
+    with pytest.raises(ManifestValidationError, match=message):
+        load_sciex_sample_manifest(write_payload(tmp_path, payload))
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        (
+            {"sample_cca_tail_state": "CCA", "sample_cca_tail_status": "UNKNOWN"},
+            "UNKNOWN sample CCA status requires null",
+        ),
+        (
+            {"sample_cca_tail_state": None, "sample_cca_tail_status": "CONFIRMED"},
+            "CONFIRMED sample CCA status requires",
+        ),
+    ],
+)
+def test_sample_cca_state_remains_separate_and_explicit(tmp_path, payload, updates, message):
+    payload["samples"][0].update(updates)
+    with pytest.raises(ManifestValidationError, match=message):
+        load_sciex_sample_manifest(write_payload(tmp_path, payload))

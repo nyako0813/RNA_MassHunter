@@ -17,6 +17,8 @@ rna_identities:
     sequence_status: CONFIRMED
     sequence_orientation: FIVE_TO_THREE
     sequence_alphabet: RNA
+    registered_sequence_cca_mode: EXCLUDES_CCA
+    registered_cca_tail_state: NONE
     sequence_sha256: null
     sequence_length: null
     ends_with_cca: null
@@ -30,20 +32,26 @@ rna_identities:
     amino_acid: Glu
     anticodon: UUC
     anticodon_orientation: UNCONFIRMED
+    wobble_sequence_index_1based: 37
+    anticodon_start_index_1based: 37
+    anticodon_end_index_1based: 39
     organism: null
     strain: null
     gene_or_locus: null
-    sequence: null
-    sequence_source: null
-    sequence_status: UNKNOWN
-    sequence_orientation: UNKNOWN
-    sequence_alphabet: UNKNOWN
+    sequence: GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA
+    sequence_source: USER_PROVIDED_AND_EXISTING_CONFIG_CONFIRMED
+    sequence_status: CONFIRMED
+    sequence_orientation: FIVE_TO_THREE
+    sequence_alphabet: RNA
+    registered_sequence_cca_mode: INCLUDES_COMPLETE_CCA
+    registered_cca_tail_state: CCA
     sequence_sha256: null
     sequence_length: null
     ends_with_cca: null
-    cca_status: UNKNOWN
+    cca_status: CONFIRMED_PRESENT
     intron_status: UNKNOWN
     mature_rna_status: UNKNOWN
+    sequence_notes: Registered sequence includes a complete CCA tail; sample-level CCA state remains unconfirmed.
   - rna_identity_id: TRNA_LEU_UAG
     display_name: tRNA Leu-UAG
     rna_type: TRNA
@@ -61,6 +69,8 @@ rna_identities:
     sequence_status: CONFIRMED
     sequence_orientation: FIVE_TO_THREE
     sequence_alphabet: RNA
+    registered_sequence_cca_mode: EXCLUDES_CCA
+    registered_cca_tail_state: NONE
     sequence_sha256: null
     sequence_length: null
     ends_with_cca: null
@@ -78,6 +88,8 @@ samples:
     native_or_transcript: UNKNOWN
     sample_notes: null
     identity_status: UNCONFIRMED
+    sample_cca_tail_state: null
+    sample_cca_tail_status: UNKNOWN
   - sample_id: GLU_UUC_WT
     display_name: Glu-UUC WT
     rna_identity_id: TRNA_GLU_UUC
@@ -87,6 +99,8 @@ samples:
     native_or_transcript: UNKNOWN
     sample_notes: null
     identity_status: UNCONFIRMED
+    sample_cca_tail_state: null
+    sample_cca_tail_status: UNKNOWN
   - sample_id: LEU_UAG_WT
     display_name: Leu-UAG WT
     rna_identity_id: TRNA_LEU_UAG
@@ -96,6 +110,8 @@ samples:
     native_or_transcript: UNKNOWN
     sample_notes: null
     identity_status: UNCONFIRMED
+    sample_cca_tail_state: null
+    sample_cca_tail_status: UNKNOWN
 measurements:
   - measurement_id: LEU_UAA_WT_FULL
     sample_id: LEU_UAA_WT
