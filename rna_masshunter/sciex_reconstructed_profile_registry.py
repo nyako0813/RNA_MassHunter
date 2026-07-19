@@ -9,12 +9,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
+from math import isfinite
 from pathlib import Path
 from statistics import median
 from typing import Any, Iterable
 
 from openpyxl import load_workbook
 
+from rna_masshunter.intact_rna_average_mass import (
+    ComparisonReferenceRole,
+    TheoreticalMassDefinition,
+)
 from rna_masshunter.intact_rna_candidate_generation import (
     IntactRnaTheoreticalCandidate,
     generate_candidates_for_measurement,
@@ -66,6 +71,14 @@ class UnknownMassMetadata(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class ObservedMassScale(str, Enum):
+    AVERAGE = "AVERAGE"
+
+
+class ObservedOutputSpecies(str, Enum):
+    UNKNOWN = "UNKNOWN"
+
+
 class ProfileSourceStatus(str, Enum):
     REGISTERED = "REGISTERED"
 
@@ -108,6 +121,9 @@ class ReconstructedProfileSource:
     eligible_for_intact_candidate_generation: bool
     eligible_for_intact_mass_comparison: bool
     eligibility_reason: str
+    observed_mass_scale: ObservedMassScale | None = None
+    observed_output_species: ObservedOutputSpecies | None = None
+    observed_output_species_confirmed: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +202,36 @@ class ProfileShadowComparisonRow:
     applied_to_ranking: bool
     applied_to_candidate_filtering: bool
     applied_to_final_consensus: bool
+    theoretical_reference_mode: str
+    theoretical_mass_definition: str
+    theoretical_output_species: str
+    observed_mass_scale: str
+    observed_output_species: str
+    observed_output_species_confirmed: bool
+    comparison_role: str
+    candidate_role: str
+    native_modifications_expected: bool
+    modification_mass_not_yet_applied: bool
+    biological_unmodified_state_assigned: bool
+    target_rna_identity_confirmed_by_mass: bool
+    co_captured_rna_excluded: bool
+
+
+@dataclass(frozen=True)
+class ReferenceModeCounts:
+    theoretical_reference_mode: str
+    retained_row_count: int
+    strict_count: int
+    exploratory_count: int
+    nearest_no_match_count: int
+
+
+@dataclass(frozen=True)
+class OutputSpeciesInference:
+    best_supported_output_species: str
+    best_supported_output_species_margin: float
+    output_species_inference_ambiguous: bool
+    output_species_assigned: bool = False
 
 
 @dataclass(frozen=True)
@@ -197,6 +243,8 @@ class ProfileShadowComparisonResult:
     detail_rows: tuple[ProfileShadowComparisonRow, ...]
     strict_tolerance_da: float
     exploratory_tolerance_da: float
+    mode_counts: tuple[ReferenceModeCounts, ...] = ()
+    output_species_inference: OutputSpeciesInference | None = None
 
 
 @dataclass(frozen=True)
@@ -222,6 +270,7 @@ _DEFAULT_SOURCES = (
         UnknownMassMetadata.UNKNOWN, UnknownMassMetadata.UNKNOWN, None, None,
         ProfileSourceStatus.REGISTERED, ProfileSourceProvenanceStatus.USER_PROVIDED,
         True, True, "FULL_LENGTH_NEUTRAL_RECONSTRUCTED_PROFILE",
+        ObservedMassScale.AVERAGE, ObservedOutputSpecies.UNKNOWN, False,
     ),
     ReconstructedProfileSource(
         "LEU_UAA_WT_T1_MZ", "LEU_UAA_WT_T1", "LEU_UAA_WT", "TRNA_LEU_UAA",
@@ -240,6 +289,7 @@ _DEFAULT_SOURCES = (
         UnknownMassMetadata.UNKNOWN, UnknownMassMetadata.UNKNOWN, None, None,
         ProfileSourceStatus.REGISTERED, ProfileSourceProvenanceStatus.USER_PROVIDED,
         True, True, "FULL_LENGTH_NEUTRAL_RECONSTRUCTED_PROFILE",
+        ObservedMassScale.AVERAGE, ObservedOutputSpecies.UNKNOWN, False,
     ),
     ReconstructedProfileSource(
         "LEU_UAG_WT_T1_MZ", "LEU_UAG_WT_T1", "LEU_UAG_WT", "TRNA_LEU_UAG",
@@ -258,6 +308,7 @@ _DEFAULT_SOURCES = (
         UnknownMassMetadata.UNKNOWN, UnknownMassMetadata.UNKNOWN, None, None,
         ProfileSourceStatus.REGISTERED, ProfileSourceProvenanceStatus.USER_PROVIDED,
         True, True, "FULL_LENGTH_NEUTRAL_RECONSTRUCTED_PROFILE",
+        ObservedMassScale.AVERAGE, ObservedOutputSpecies.UNKNOWN, False,
     ),
     ReconstructedProfileSource(
         "GLU_UUC_WT_P1_AP_MZML", "GLU_UUC_WT_P1_AP", "GLU_UUC_WT", "TRNA_GLU_UUC",
@@ -320,6 +371,19 @@ def _validate_source_shape(source: ReconstructedProfileSource) -> None:
         raise ProfileRegistryValidationError("comparison eligibility conflicts with experiment/profile metadata")
     if not expected_eligible and not source.eligibility_reason:
         raise ProfileRegistryValidationError("ineligible source requires eligibility_reason")
+    if expected_eligible:
+        if source.observed_mass_scale is not ObservedMassScale.AVERAGE:
+            raise ProfileRegistryValidationError("full neutral profile requires AVERAGE observed scale")
+        if source.observed_output_species is not ObservedOutputSpecies.UNKNOWN:
+            raise ProfileRegistryValidationError("observed output species must remain UNKNOWN")
+        if source.observed_output_species_confirmed is not False:
+            raise ProfileRegistryValidationError("observed output species must remain unconfirmed")
+    elif any(value is not None for value in (
+        source.observed_mass_scale,
+        source.observed_output_species,
+        source.observed_output_species_confirmed,
+    )):
+        raise ProfileRegistryValidationError("digest source must not carry intact mass metadata")
 
 
 def resolve_profile_source(
@@ -527,6 +591,98 @@ def _retained_comparison_rows(
     return [min(eligible, key=lambda row: row["Absolute_Delta_Mass"])] if eligible else []
 
 
+def _candidate_mass_references(
+    candidate: IntactRnaTheoreticalCandidate,
+) -> tuple[tuple[TheoreticalMassDefinition, float, ComparisonReferenceRole, str], ...]:
+    return (
+        (
+            TheoreticalMassDefinition.AVERAGE_NEUTRAL_M,
+            candidate.theoretical_average_neutral_molecular_mass_m,
+            ComparisonReferenceRole.PRIMARY_CANDIDATE_NEUTRAL_M,
+            "M",
+        ),
+        (
+            TheoreticalMassDefinition.AVERAGE_M_PLUS_H,
+            candidate.theoretical_average_m_plus_h,
+            ComparisonReferenceRole.OUTPUT_SPECIES_DIAGNOSTIC_M_PLUS_H,
+            "M_PLUS_H",
+        ),
+        (
+            TheoreticalMassDefinition.AVERAGE_M_MINUS_H,
+            candidate.theoretical_average_m_minus_h,
+            ComparisonReferenceRole.OUTPUT_SPECIES_DIAGNOSTIC_M_MINUS_H,
+            "M_MINUS_H",
+        ),
+        (
+            TheoreticalMassDefinition.MONOISOTOPIC_NEUTRAL_M,
+            candidate.theoretical_monoisotopic_neutral_mass,
+            ComparisonReferenceRole.MONOISOTOPIC_DIAGNOSTIC_ONLY,
+            "M",
+        ),
+    )
+
+
+def _mode_counts(rows: list[ProfileShadowComparisonRow]) -> tuple[ReferenceModeCounts, ...]:
+    result = []
+    modes = (
+        TheoreticalMassDefinition.AVERAGE_NEUTRAL_M,
+        TheoreticalMassDefinition.AVERAGE_M_PLUS_H,
+        TheoreticalMassDefinition.AVERAGE_M_MINUS_H,
+        TheoreticalMassDefinition.MONOISOTOPIC_NEUTRAL_M,
+    )
+    for mode in modes:
+        selected = [row for row in rows if row.theoretical_reference_mode == mode.value]
+        result.append(ReferenceModeCounts(
+            mode.value,
+            len(selected),
+            sum(row.match_tolerance_class == "STRICT" for row in selected),
+            sum(row.match_tolerance_class == "EXPLORATORY" for row in selected),
+            sum(row.match_tolerance_class == "NO_MATCH" for row in selected),
+        ))
+    return tuple(result)
+
+
+def _infer_output_species(
+    rows: list[ProfileShadowComparisonRow],
+    counts: tuple[ReferenceModeCounts, ...],
+) -> OutputSpeciesInference:
+    diagnostic_modes = (
+        TheoreticalMassDefinition.AVERAGE_NEUTRAL_M,
+        TheoreticalMassDefinition.AVERAGE_M_PLUS_H,
+        TheoreticalMassDefinition.AVERAGE_M_MINUS_H,
+    )
+    by_count = {item.theoretical_reference_mode: item for item in counts}
+    ranked = []
+    for order, mode in enumerate(diagnostic_modes):
+        mode_rows = [row for row in rows if row.theoretical_reference_mode == mode.value]
+        nearest_by_candidate = {}
+        for row in mode_rows:
+            current = nearest_by_candidate.get(row.candidate_id)
+            if current is None or row.absolute_apex_delta_da < current:
+                nearest_by_candidate[row.candidate_id] = row.absolute_apex_delta_da
+        nearest_median = median(nearest_by_candidate.values()) if nearest_by_candidate else float("inf")
+        item = by_count[mode.value]
+        ranked.append((mode, item, nearest_median, order))
+    ranked.sort(key=lambda value: (-value[1].strict_count, -value[1].exploratory_count, value[2], value[3]))
+    best, second = ranked[0], ranked[1]
+    species = {
+        TheoreticalMassDefinition.AVERAGE_NEUTRAL_M: "M",
+        TheoreticalMassDefinition.AVERAGE_M_PLUS_H: "M_PLUS_H",
+        TheoreticalMassDefinition.AVERAGE_M_MINUS_H: "M_MINUS_H",
+    }[best[0]]
+    if best[1].strict_count != second[1].strict_count:
+        margin = float(best[1].strict_count - second[1].strict_count)
+    elif best[1].exploratory_count != second[1].exploratory_count:
+        margin = float(best[1].exploratory_count - second[1].exploratory_count)
+    else:
+        margin = float(second[2] - best[2])
+    if not isfinite(margin):
+        margin = 0.0
+    # Native modifications are expected and are not modeled here.  Even a clear
+    # shadow-count leader therefore cannot resolve the SCIEX output convention.
+    return OutputSpeciesInference(species, float(margin), True, False)
+
+
 def compare_loaded_profile_shadow(
     loaded: LoadedProfileSource,
     routing: ProfileCandidateRoutingResult,
@@ -535,7 +691,7 @@ def compare_loaded_profile_shadow(
     strict_tolerance_da: float = 1.0,
     exploratory_tolerance_da: float = 5.0,
 ) -> ProfileShadowComparisonResult:
-    """Run read-only peak detection and bounded mass-only shadow comparison."""
+    """Compare every detected peak in four independently bounded reference modes."""
     if loaded.profile_source_id != routing.profile_source.profile_source_id:
         raise ProfileRegistryValidationError("loaded source and routing source conflict")
     if routing.status is ProfileRoutingStatus.SKIPPED:
@@ -548,6 +704,13 @@ def compare_loaded_profile_shadow(
             ShadowComparisonStatus.SKIPPED, "PROFILE_NOT_NEUTRAL_MASS", None, (), (),
             strict_tolerance_da, exploratory_tolerance_da,
         )
+    source = routing.profile_source
+    if (
+        source.observed_mass_scale is not ObservedMassScale.AVERAGE
+        or source.observed_output_species is not ObservedOutputSpecies.UNKNOWN
+        or source.observed_output_species_confirmed is not False
+    ):
+        raise ProfileRegistryValidationError("full profile observed mass metadata is invalid")
     detection = detect_sciex_intact_peaks(
         loaded.coordinates,
         loaded.intensities,
@@ -556,45 +719,81 @@ def compare_loaded_profile_shadow(
         eligible_for_neutral_mass_analysis=True,
         parameters=peak_parameters,
     )
-    rows = []
+    rows: list[ProfileShadowComparisonRow] = []
     for candidate in routing.candidates:
-        comparison = compare_sciex_intact_masses(
-            _ComparisonDetectionView(detection),
-            candidate.theoretical_mass,
-            source_file=str(loaded.runtime_path),
-            strict_tolerance_da=strict_tolerance_da,
-            exploratory_tolerance_da=exploratory_tolerance_da,
-            identity_status="CONFIRMED",
-            sequence_source="MANIFEST_PROFILE_ROUTING",
-            terminal_state_confirmed=False,
-        )
-        for row in _retained_comparison_rows(comparison.details()):
-            centroid = row.get("Centroid_Mass")
-            rows.append(ProfileShadowComparisonRow(
-                routing.profile_source.profile_source_id,
-                routing.profile_source.measurement_id,
-                routing.rna_identity_id,
-                candidate.candidate_id,
-                str(row.get("Peak_ID") or ""),
-                float(row["Apex_Mass"]),
-                float(centroid) if centroid is not None else None,
-                candidate.theoretical_mass,
-                float(row["Apex_Delta_Da"]),
-                abs(float(row["Apex_Delta_Da"])),
-                float(row["Centroid_Delta_Da"]) if row.get("Centroid_Delta_Da") is not None else None,
-                str(row["Match_Tolerance_Class"]),
-                "UNKNOWN", "MONOISOTOPIC_NEUTRAL", "UNKNOWN", False,
-                True, True, False, False, False, False, False, False, False,
-                False, False, False, False,
-            ))
+        for mode, theoretical_mass, role, output_species in _candidate_mass_references(candidate):
+            comparison = compare_sciex_intact_masses(
+                _ComparisonDetectionView(detection),
+                theoretical_mass,
+                source_file=str(loaded.runtime_path),
+                strict_tolerance_da=strict_tolerance_da,
+                exploratory_tolerance_da=exploratory_tolerance_da,
+                identity_status="CONFIRMED",
+                sequence_source="MANIFEST_PROFILE_ROUTING",
+                terminal_state_confirmed=False,
+            )
+            for row in _retained_comparison_rows(comparison.details()):
+                centroid = row.get("Centroid_Mass")
+                apex_delta = float(row["Apex_Delta_Da"])
+                rows.append(ProfileShadowComparisonRow(
+                    profile_source_id=source.profile_source_id,
+                    measurement_id=source.measurement_id,
+                    rna_identity_id=routing.rna_identity_id,
+                    candidate_id=candidate.candidate_id,
+                    peak_id=str(row.get("Peak_ID") or ""),
+                    apex_mass=float(row["Apex_Mass"]),
+                    centroid_mass=float(centroid) if centroid is not None else None,
+                    theoretical_mass=theoretical_mass,
+                    apex_delta_da=apex_delta,
+                    absolute_apex_delta_da=abs(apex_delta),
+                    centroid_delta_da=(
+                        float(row["Centroid_Delta_Da"])
+                        if row.get("Centroid_Delta_Da") is not None else None
+                    ),
+                    match_tolerance_class=str(row["Match_Tolerance_Class"]),
+                    observed_mass_type="UNKNOWN",
+                    theoretical_mass_type="MONOISOTOPIC_NEUTRAL",
+                    mass_definition_compatibility="UNKNOWN",
+                    calibration_applied=False,
+                    mass_match_only=True,
+                    unmodified_candidate=True,
+                    cca_state_confirmed=False,
+                    terminal_state_confirmed=False,
+                    structure_identity_assigned=False,
+                    position_assigned=False,
+                    modification_assigned=False,
+                    biological_cause_assigned=False,
+                    rnase_t_assigned=False,
+                    applied_to_formal_score=False,
+                    applied_to_ranking=False,
+                    applied_to_candidate_filtering=False,
+                    applied_to_final_consensus=False,
+                    theoretical_reference_mode=mode.value,
+                    theoretical_mass_definition=mode.value,
+                    theoretical_output_species=output_species,
+                    observed_mass_scale=source.observed_mass_scale.value,
+                    observed_output_species=source.observed_output_species.value,
+                    observed_output_species_confirmed=False,
+                    comparison_role=role.value,
+                    candidate_role=candidate.candidate_role.value,
+                    native_modifications_expected=True,
+                    modification_mass_not_yet_applied=True,
+                    biological_unmodified_state_assigned=False,
+                    target_rna_identity_confirmed_by_mass=False,
+                    co_captured_rna_excluded=False,
+                ))
+    counts = _mode_counts(rows)
+    inference = _infer_output_species(rows, counts)
     return ProfileShadowComparisonResult(
         ShadowComparisonStatus.COMPLETED,
-        "MASS_ONLY_SHADOW_COMPARISON",
+        "AVERAGE_OUTPUT_SPECIES_SHADOW_DIAGNOSTIC",
         detection,
         routing.candidates,
         tuple(rows),
         strict_tolerance_da,
         exploratory_tolerance_da,
+        counts,
+        inference,
     )
 
 

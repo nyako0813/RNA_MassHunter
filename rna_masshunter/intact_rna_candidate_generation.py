@@ -17,13 +17,16 @@ from rna_masshunter.cca_tail_state import (
     RegisteredSequenceCCAMode,
     generate_cca_tail_variants,
 )
+from rna_masshunter.intact_rna_average_mass import (
+    TheoreticalMassDefinition,
+    calculate_intact_rna_average_mass,
+)
 from rna_masshunter.intact_rna_mass import (
     CcaPolicy,
     FivePrimeState,
     IntactRnaMassParameters,
     RnaTopology,
     ThreePrimeState,
-    calculate_intact_rna_mass,
 )
 from rna_masshunter.sciex_sample_manifest import (
     AnalyteLevel,
@@ -47,6 +50,10 @@ class CandidateGenerationError(ValueError):
 
 class CandidateCategory(str, Enum):
     UNMODIFIED_INTACT_RNA_CCA_TERMINAL_STATE = "UNMODIFIED_INTACT_RNA_CCA_TERMINAL_STATE"
+
+
+class CandidateRole(str, Enum):
+    UNMODIFIED_REFERENCE_BASELINE = "UNMODIFIED_REFERENCE_BASELINE"
 
 
 class CandidateSetName(str, Enum):
@@ -124,6 +131,19 @@ class IntactRnaTheoreticalCandidate:
     theoretical_formula: str
     theoretical_mass: float
     theoretical_mass_type: str
+    theoretical_monoisotopic_neutral_mass: float
+    theoretical_average_neutral_molecular_mass_m: float
+    theoretical_average_m_plus_h: float
+    theoretical_average_m_minus_h: float
+    primary_reference_candidate: TheoreticalMassDefinition
+    observed_output_species: str
+    observed_output_species_confirmed: bool
+    candidate_role: CandidateRole
+    native_modifications_expected: bool
+    modification_mass_not_yet_applied: bool
+    biological_unmodified_state_assigned: bool
+    target_rna_identity_confirmed_by_mass: bool
+    co_captured_rna_excluded: bool
     candidate_priority: int
     candidate_set_name: CandidateSetName
     candidate_assumption_count: int
@@ -218,10 +238,11 @@ def build_unmodified_intact_candidate(
         convert_t_to_u=False,
         terminal_state_confirmed=False,
     )
-    mass_result = calculate_intact_rna_mass(
+    average_result = calculate_intact_rna_average_mass(
         cca_variant.complete_candidate_sequence,
         parameters=parameters,
     )
+    mass_result = average_result.monoisotopic_result
     candidate_id = _candidate_id(rna_identity_id, cca_variant, terminal_candidate_set)
     return IntactRnaTheoreticalCandidate(
         candidate_id=candidate_id,
@@ -251,6 +272,21 @@ def build_unmodified_intact_candidate(
         theoretical_formula=mass_result.formula,
         theoretical_mass=mass_result.monoisotopic_neutral_mass,
         theoretical_mass_type=mass_result.theoretical_mass_type,
+        theoretical_monoisotopic_neutral_mass=mass_result.monoisotopic_neutral_mass,
+        theoretical_average_neutral_molecular_mass_m=(
+            average_result.average_neutral_molecular_mass_m
+        ),
+        theoretical_average_m_plus_h=average_result.average_m_plus_h,
+        theoretical_average_m_minus_h=average_result.average_m_minus_h,
+        primary_reference_candidate=TheoreticalMassDefinition.AVERAGE_NEUTRAL_M,
+        observed_output_species="UNKNOWN",
+        observed_output_species_confirmed=False,
+        candidate_role=CandidateRole.UNMODIFIED_REFERENCE_BASELINE,
+        native_modifications_expected=True,
+        modification_mass_not_yet_applied=True,
+        biological_unmodified_state_assigned=False,
+        target_rna_identity_confirmed_by_mass=False,
+        co_captured_rna_excluded=False,
         candidate_priority=terminal_candidate_set.candidate_priority,
         candidate_set_name=terminal_candidate_set.candidate_set_name,
         candidate_assumption_count=_assumption_count(terminal_candidate_set),
@@ -275,7 +311,9 @@ def build_unmodified_intact_candidate(
         average_mass_used=False,
         interpretation_warnings=(
             "MASS_MATCH_ONLY",
-            "UNMODIFIED_THEORETICAL_CANDIDATE",
+            "UNMODIFIED_REFERENCE_BASELINE",
+            "NATIVE_MODIFICATIONS_EXPECTED",
+            "OBSERVED_OUTPUT_SPECIES_UNKNOWN",
             "CCA_STATE_NOT_CONFIRMED",
             "TERMINAL_STATE_NOT_CONFIRMED",
         ),

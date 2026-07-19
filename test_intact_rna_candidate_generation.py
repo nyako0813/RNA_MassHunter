@@ -380,3 +380,27 @@ def test_only_allowed_default_terminal_states_are_generated(manifest):
     assert {item.topology for item in candidates} == {RnaTopology.LINEAR}
     assert FivePrimeState.DIPHOSPHATE not in {item.five_prime_state for item in candidates}
     assert FivePrimeState.TRIPHOSPHATE not in {item.five_prime_state for item in candidates}
+
+@pytest.mark.parametrize(
+    ("measurement_id", "expected_count"),
+    [("GLU_UUC_WT_FULL", 4), ("LEU_UAA_WT_FULL", 8), ("LEU_UAG_WT_FULL", 8)],
+)
+def test_candidates_keep_four_mass_references_and_baseline_safeguards(
+    manifest, measurement_id, expected_count
+):
+    candidates = generate_candidates_for_measurement(manifest, measurement_id)
+    assert len(candidates) == expected_count
+    for candidate in candidates:
+        assert candidate.theoretical_monoisotopic_neutral_mass == candidate.theoretical_mass
+        assert candidate.theoretical_average_neutral_molecular_mass_m > 0
+        assert candidate.theoretical_average_m_plus_h > candidate.theoretical_average_neutral_molecular_mass_m
+        assert candidate.theoretical_average_m_minus_h < candidate.theoretical_average_neutral_molecular_mass_m
+        assert candidate.primary_reference_candidate.value == "AVERAGE_NEUTRAL_M"
+        assert candidate.observed_output_species == "UNKNOWN"
+        assert candidate.observed_output_species_confirmed is False
+        assert candidate.candidate_role.value == "UNMODIFIED_REFERENCE_BASELINE"
+        assert candidate.native_modifications_expected is True
+        assert candidate.modification_mass_not_yet_applied is True
+        assert candidate.biological_unmodified_state_assigned is False
+        assert candidate.target_rna_identity_confirmed_by_mass is False
+        assert candidate.co_captured_rna_excluded is False

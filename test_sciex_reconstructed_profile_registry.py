@@ -442,3 +442,73 @@ def test_registry_and_rows_are_nonformal(registry):
         item.mass_definition_compatibility is UnknownMassMetadata.UNKNOWN
         for item in registry.sources
     )
+
+
+def test_full_observed_average_metadata_is_explicit_and_digest_metadata_is_absent(registry):
+    for source in registry.sources:
+        if source.eligible_for_intact_mass_comparison:
+            assert source.observed_mass_scale.value == "AVERAGE"
+            assert source.observed_output_species.value == "UNKNOWN"
+            assert source.observed_output_species_confirmed is False
+        else:
+            assert source.observed_mass_scale is None
+            assert source.observed_output_species is None
+            assert source.observed_output_species_confirmed is None
+
+
+def test_shadow_comparison_keeps_four_modes_counts_and_inference_separate(registry, manifest):
+    routing = route_profile_source_to_candidates(
+        registry, manifest, "GLU_UUC_WT_FULL_RECONSTRUCTED"
+    )
+    result = compare_loaded_profile_shadow(
+        synthetic_loaded(routing.profile_source, routing.candidates), routing
+    )
+    expected_modes = [
+        "AVERAGE_NEUTRAL_M",
+        "AVERAGE_M_PLUS_H",
+        "AVERAGE_M_MINUS_H",
+        "MONOISOTOPIC_NEUTRAL_M",
+    ]
+    assert [item.theoretical_reference_mode for item in result.mode_counts] == expected_modes
+    assert {row.theoretical_reference_mode for row in result.detail_rows} == set(expected_modes)
+    assert all(item.retained_row_count > 0 for item in result.mode_counts)
+    assert all(
+        item.retained_row_count
+        == item.strict_count + item.exploratory_count + item.nearest_no_match_count
+        for item in result.mode_counts
+    )
+    assert result.output_species_inference is not None
+    assert result.output_species_inference.best_supported_output_species in {"M", "M_PLUS_H", "M_MINUS_H"}
+    assert result.output_species_inference.output_species_inference_ambiguous is True
+    assert result.output_species_inference.output_species_assigned is False
+    for row in result.detail_rows:
+        assert row.observed_mass_scale == "AVERAGE"
+        assert row.observed_output_species == "UNKNOWN"
+        assert row.observed_output_species_confirmed is False
+        assert row.candidate_role == "UNMODIFIED_REFERENCE_BASELINE"
+        assert row.native_modifications_expected is True
+        assert row.modification_mass_not_yet_applied is True
+        assert row.biological_unmodified_state_assigned is False
+        assert row.target_rna_identity_confirmed_by_mass is False
+        assert row.co_captured_rna_excluded is False
+
+
+def test_each_reference_mode_is_bounded_independently_and_uses_multiple_peaks(registry, manifest):
+    routing = route_profile_source_to_candidates(
+        registry, manifest, "GLU_UUC_WT_FULL_RECONSTRUCTED"
+    )
+    result = compare_loaded_profile_shadow(
+        synthetic_loaded(routing.profile_source, routing.candidates), routing
+    )
+    for mode in {
+        "AVERAGE_NEUTRAL_M", "AVERAGE_M_PLUS_H", "AVERAGE_M_MINUS_H", "MONOISOTOPIC_NEUTRAL_M"
+    }:
+        mode_rows = [row for row in result.detail_rows if row.theoretical_reference_mode == mode]
+        assert mode_rows
+        assert len({row.candidate_id for row in mode_rows}) == len(routing.candidates)
+    mono_peak_ids = {
+        row.peak_id for row in result.detail_rows
+        if row.theoretical_reference_mode == "MONOISOTOPIC_NEUTRAL_M"
+        and row.match_tolerance_class in {"STRICT", "EXPLORATORY"}
+    }
+    assert len(mono_peak_ids) >= 2
