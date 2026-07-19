@@ -43,11 +43,14 @@ _BLOCK_ORDER = (
     "TXT_NEGATIVE_INTENSITIES", "MZML_RUN_PROFILE_MISSING", "SOURCE_METADATA_RECORD_MISSING",
     "REPLICATE_AUDIT_RESULT_MISSING", "NO_OVERLAPPING_MZ_RANGE", "INSUFFICIENT_MZ_COVERAGE",
     "NO_TXT_PEAKS", "NO_REFERENCE_PEAKS", "NO_MATCHED_PEAKS", "AMBIGUOUS_PEAK_MATCH",
-    "LOW_PROFILE_CORRELATION", "LOW_PEAK_OVERLAP", "INSUFFICIENT_DISCRIMINATING_PEAKS",
+    "LOW_PROFILE_CORRELATION", "LOW_PEAK_OVERLAP", "LOW_TOP_PEAK_SUPPORT",
+    "INSUFFICIENT_DISCRIMINATING_PEAKS",
     "CONFLICTING_DISCRIMINATING_PEAKS", "MULTIPLE_HYPOTHESES_SIMILAR",
     "MEAN_SUM_HYPOTHESES_NOT_IDENTIFIABLE_AFTER_NORMALIZATION",
     "AGGREGATE_HYPOTHESIS_NON_UNIQUE", "PARTIAL_SCAN_HYPOTHESIS_NOT_TESTED",
-    "INSUFFICIENT_SOURCE_LINKAGE", "SOURCE_POLARITY_CONFLICT", "USER_MANIFEST_METADATA_CONFLICT",
+    "PARTIAL_SCAN_HYPOTHESIS_NOT_SUPPORTIVE", "INSUFFICIENT_SOURCE_LINKAGE",
+    "SOURCE_POLARITY_CONFLICT", "USER_MANIFEST_METADATA_CONFLICT",
+    "UAA_COMPARISON_RESULT_MISSING", "UAA_UAG_NOT_COMPARABLE",
 )
 _LOW_QUALITY = {T1PeakQualityClass.LOW_SUPPORT.value, T1PeakQualityClass.SHOULDER_OR_OVERLAP.value}
 
@@ -103,6 +106,7 @@ class TxtProfileType(str, Enum):
 
 
 class HypothesisType(str, Enum):
+    WHOLE_RUN_EXPORT = "WHOLE_RUN_EXPORT"
     RUN_1_ONLY_EXPORT = "RUN_1_ONLY_EXPORT"
     RUN_2_ONLY_EXPORT = "RUN_2_ONLY_EXPORT"
     MEAN_OF_RUNS_EXPORT = "MEAN_OF_RUNS_EXPORT"
@@ -115,6 +119,9 @@ class HypothesisType(str, Enum):
 
 
 class LinkageStatus(str, Enum):
+    STRONG_LINK_TO_REFERENCE_RUN = "STRONG_LINK_TO_REFERENCE_RUN"
+    SUPPORTIVE_LINK_TO_REFERENCE_RUN = "SUPPORTIVE_LINK_TO_REFERENCE_RUN"
+    POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN = "POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN"
     STRONG_LINK_TO_RUN_1 = "STRONG_LINK_TO_RUN_1"
     STRONG_LINK_TO_RUN_2 = "STRONG_LINK_TO_RUN_2"
     SUPPORTIVE_LINK_TO_RUN_1 = "SUPPORTIVE_LINK_TO_RUN_1"
@@ -141,6 +148,7 @@ class SourceLinkageParameters:
     minimum_coverage_fraction: float = 0.25
     minimum_profile_correlation: float = 0.30
     minimum_peak_overlap: float = 0.20
+    minimum_top25_support: float = 0.50
     minimum_discriminating_support: int = 2
     weight_profile_correlation: float = 0.25
     weight_spearman: float = 0.10
@@ -156,7 +164,7 @@ class SourceLinkageParameters:
         scores = (self.strong_score, self.supportive_score, self.minimum_polarity_support_score,
                   self.no_support_score, self.similar_score_margin, self.unique_score_margin,
                   self.minimum_coverage_fraction, self.minimum_profile_correlation,
-                  self.minimum_peak_overlap)
+                  self.minimum_peak_overlap, self.minimum_top25_support)
         if any(not 0 <= value <= 1 for value in scores):
             raise ValueError("source-linkage score parameters must be in [0,1]")
         if not self.no_support_score <= self.supportive_score <= self.strong_score:
@@ -207,6 +215,7 @@ class T1TxtProfile:
     chemical_identity_assigned: bool = False
     fragment_identity_assigned: bool = False
     charge_state_confirmed: bool = False
+    purity_assigned: bool = False
 
 
 @dataclass(frozen=True)
@@ -285,6 +294,7 @@ class TxtMzMLLinkageHypothesisResult:
     chemical_identity_assigned: bool = False
     fragment_identity_assigned: bool = False
     charge_state_confirmed: bool = False
+    purity_assigned: bool = False
 
 
 @dataclass(frozen=True)
@@ -300,6 +310,9 @@ class TxtPeakLinkageEvidence:
     run_1_ppm_error: float | None
     run_1_intensity_rank: int | None
     run_1_scan_recurrence: float | None
+    run_1_prominence: float | None
+    run_1_fwhm: float | None
+    run_1_match_ambiguity_status: str
     run_1_replicate_status: str
     run_2_matched: bool
     run_2_peak_id: str | None
@@ -307,6 +320,9 @@ class TxtPeakLinkageEvidence:
     run_2_ppm_error: float | None
     run_2_intensity_rank: int | None
     run_2_scan_recurrence: float | None
+    run_2_prominence: float | None
+    run_2_fwhm: float | None
+    run_2_match_ambiguity_status: str
     run_2_replicate_status: str
     aggregate_hypothesis_matches: tuple[str, ...]
     peak_linkage_status: str
@@ -319,6 +335,7 @@ class TxtPeakLinkageEvidence:
     chemical_identity_assigned: bool = False
     fragment_identity_assigned: bool = False
     charge_state_confirmed: bool = False
+    purity_assigned: bool = False
 
 
 @dataclass(frozen=True)
@@ -345,6 +362,7 @@ class DiscriminatingPeakEvidence:
     chemical_identity_assigned: bool = False
     fragment_identity_assigned: bool = False
     charge_state_confirmed: bool = False
+    purity_assigned: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -366,6 +384,12 @@ class TxtMzMLSourceLinkageSummary:
     discriminating_peak_evidence: str
     partial_scan_evidence: str
     aggregate_evidence: str
+    aggregate_hypotheses_status: str
+    partial_scan_hypotheses_status: str
+    profile_complexity_status: str
+    mixture_compatible_interpretation: str
+    mixture_confirmed: bool
+    purity_assigned: bool
     source_linkage_confirmed: bool
     exact_run_linkage_confirmed: bool
     source_polarity: str
@@ -600,8 +624,11 @@ def build_txt_profile_peaks(profile: T1TxtProfile, *, detection_config: Mapping[
     return T1TxtPeakProfile(profile, detected_count, len(comparison.peaks), comparison, _ordered_blocks(blocks))
 
 
-def _reference_from_run(profile: ReplicateRunPeakProfile, index: int) -> SourceLinkageReferenceProfile:
-    kind = HypothesisType.RUN_1_ONLY_EXPORT if index == 0 else HypothesisType.RUN_2_ONLY_EXPORT
+def _reference_from_run(
+    profile: ReplicateRunPeakProfile, index: int, *, single_run: bool = False,
+) -> SourceLinkageReferenceProfile:
+    kind = (HypothesisType.WHOLE_RUN_EXPORT if single_run else
+            HypothesisType.RUN_1_ONLY_EXPORT if index == 0 else HypothesisType.RUN_2_ONLY_EXPORT)
     return SourceLinkageReferenceProfile(kind.value, kind, (profile.run_label,), profile)
 
 
@@ -731,6 +758,8 @@ def compare_txt_to_reference_profile(
     ranked_txt = sorted(txt.peaks, key=lambda peak: (peak.intensity_rank, peak.apex_mz, peak.peak_id))
     top10 = sum(peak.peak_id in txt_matched_ids for peak in ranked_txt[:10]) / min(10, len(ranked_txt)) if ranked_txt else 0
     top25 = sum(peak.peak_id in txt_matched_ids for peak in ranked_txt[:25]) / min(25, len(ranked_txt)) if ranked_txt else 0
+    if top25 < parameters.minimum_top25_support:
+        blocks.append("LOW_TOP_PEAK_SUPPORT")
     deltas = np.asarray([delta for _, _, _, delta, _ in paired], dtype=float)
     med_delta = float(np.median(deltas)) if len(deltas) else None
     mad_delta = float(np.median(np.abs(deltas - med_delta))) if len(deltas) else None
@@ -743,13 +772,20 @@ def compare_txt_to_reference_profile(
         + parameters.weight_top25_match * top25
         + parameters.weight_strict_match * strict_fraction
     )
-    if reference_profile.hypothesis_type is HypothesisType.RUN_1_ONLY_EXPORT:
+    if reference_profile.hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT:
+        status = LinkageStatus.STRONG_LINK_TO_REFERENCE_RUN if score >= parameters.strong_score else LinkageStatus.SUPPORTIVE_LINK_TO_REFERENCE_RUN if score >= parameters.supportive_score else LinkageStatus.DIFFERENT_PROCESSING_EXPORT_POSSIBLE if score >= parameters.no_support_score else LinkageStatus.NO_SUPPORTED_LINKAGE
+    elif reference_profile.hypothesis_type is HypothesisType.RUN_1_ONLY_EXPORT:
         status = LinkageStatus.STRONG_LINK_TO_RUN_1 if score >= parameters.strong_score else LinkageStatus.SUPPORTIVE_LINK_TO_RUN_1 if score >= parameters.supportive_score else LinkageStatus.DIFFERENT_PROCESSING_EXPORT_POSSIBLE if score >= parameters.no_support_score else LinkageStatus.NO_SUPPORTED_LINKAGE
     elif reference_profile.hypothesis_type is HypothesisType.RUN_2_ONLY_EXPORT:
         status = LinkageStatus.STRONG_LINK_TO_RUN_2 if score >= parameters.strong_score else LinkageStatus.SUPPORTIVE_LINK_TO_RUN_2 if score >= parameters.supportive_score else LinkageStatus.DIFFERENT_PROCESSING_EXPORT_POSSIBLE if score >= parameters.no_support_score else LinkageStatus.NO_SUPPORTED_LINKAGE
     elif reference_profile.hypothesis_type is HypothesisType.PARTIAL_SCAN_EXPORT_POSSIBLE:
-        run2 = "RUN_2" in reference_profile.reference_run_labels[0]
-        status = (LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_2 if run2 else LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_1) if score >= parameters.supportive_score else LinkageStatus.NO_SUPPORTED_LINKAGE
+        if len(reference_profile.reference_run_labels) == 1 and not any(
+            marker in reference_profile.reference_run_labels[0] for marker in ("RUN_1", "RUN_2")
+        ):
+            status = LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN if score >= parameters.supportive_score else LinkageStatus.NO_SUPPORTED_LINKAGE
+        else:
+            run2 = "RUN_2" in reference_profile.reference_run_labels[0]
+            status = (LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_2 if run2 else LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_1) if score >= parameters.supportive_score else LinkageStatus.NO_SUPPORTED_LINKAGE
     else:
         status = LinkageStatus.BEST_MATCH_AGGREGATE_PROFILE if score >= parameters.supportive_score else LinkageStatus.NO_SUPPORTED_LINKAGE
     confidence = "HIGH" if score >= parameters.strong_score else "MEDIUM" if score >= parameters.supportive_score else "LOW"
@@ -931,7 +967,7 @@ def _add_discrimination_counts(
         else:
             support, conflict = run1_support + run2_support, min(run1_support, run2_support)
         blocks = list(result.block_reasons)
-        if support < 2:
+        if evidence and support < 2:
             blocks.append("INSUFFICIENT_DISCRIMINATING_PEAKS")
         if conflict:
             blocks.append("CONFLICTING_DISCRIMINATING_PEAKS")
@@ -959,17 +995,18 @@ def build_peak_evidence(
 ) -> tuple[TxtPeakLinkageEvidence, ...]:
     params = parameters or SourceLinkageParameters()
     txt_peaks = txt_profile.comparison_profile.peaks
-    run_refs = [reference for reference in references if reference.hypothesis_type in {HypothesisType.RUN_1_ONLY_EXPORT, HypothesisType.RUN_2_ONLY_EXPORT}]
+    run_refs = [reference for reference in references if reference.hypothesis_type in {HypothesisType.WHOLE_RUN_EXPORT, HypothesisType.RUN_1_ONLY_EXPORT, HypothesisType.RUN_2_ONLY_EXPORT}]
     aggregate_refs = [reference for reference in references if reference.hypothesis_type in {HypothesisType.MEAN_OF_RUNS_EXPORT, HypothesisType.SUM_OF_RUNS_EXPORT, HypothesisType.MEDIAN_OF_RUNS_EXPORT}]
     status_map = _replicate_status_by_peak(replicate_result)
-    match_maps: list[dict[str, tuple[ReplicateRunPeak, float, float]]] = []
+    single_reference = len(run_refs) == 1 and run_refs[0].hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT
+    match_maps: list[dict[str, tuple[ReplicateRunPeak, float, float, str]]] = []
     for reference in run_refs:
         reference_map = {peak.peak_id: peak for peak in reference.run_profile.peaks}
         mapping = {}
         for match in match_replicate_peaks(txt_profile.comparison_profile, reference.run_profile, parameters=params.replicate_parameters):
             txt_id, ref_id, delta, ppm = _match_orientation(match, txt_profile.comparison_profile.run_label)
             if txt_id and ref_id:
-                mapping[txt_id] = (reference_map[ref_id], float(delta), float(ppm))
+                mapping[txt_id] = (reference_map[ref_id], float(delta), float(ppm), match.match_ambiguity_status.value)
         match_maps.append(mapping)
     aggregate_matches: dict[str, list[str]] = {peak.peak_id: [] for peak in txt_peaks}
     for reference in aggregate_refs:
@@ -984,7 +1021,8 @@ def build_peak_evidence(
         if one and two:
             linkage, confidence = "MATCHED_BOTH_RUNS", "MEDIUM"
         elif one:
-            linkage, confidence = "MATCHED_RUN_1_ONLY", "MEDIUM"
+            linkage = "MATCHED_REFERENCE_RUN" if single_reference else "MATCHED_RUN_1_ONLY"
+            confidence = "MEDIUM"
         elif two:
             linkage, confidence = "MATCHED_RUN_2_ONLY", "MEDIUM"
         elif aggregate_matches[txt.peak_id]:
@@ -998,12 +1036,16 @@ def build_peak_evidence(
             run_1_delta_mz=one[1] if one else None, run_1_ppm_error=one[2] if one else None,
             run_1_intensity_rank=one[0].intensity_rank if one else None,
             run_1_scan_recurrence=one[0].scan_recurrence_fraction if one else None,
-            run_1_replicate_status=status_map.get(one[0].peak_id, "NOT_MATCHED") if one else "NOT_MATCHED",
+            run_1_prominence=one[0].prominence if one else None, run_1_fwhm=one[0].fwhm if one else None,
+            run_1_match_ambiguity_status=one[3] if one else "UNMATCHED",
+            run_1_replicate_status=status_map.get(one[0].peak_id, "SINGLE_RUN_NOT_APPLICABLE") if one else "NOT_MATCHED",
             run_2_matched=two is not None, run_2_peak_id=two[0].peak_id if two else None,
             run_2_delta_mz=two[1] if two else None, run_2_ppm_error=two[2] if two else None,
             run_2_intensity_rank=two[0].intensity_rank if two else None,
             run_2_scan_recurrence=two[0].scan_recurrence_fraction if two else None,
-            run_2_replicate_status=status_map.get(two[0].peak_id, "NOT_MATCHED") if two else "NOT_MATCHED",
+            run_2_prominence=two[0].prominence if two else None, run_2_fwhm=two[0].fwhm if two else None,
+            run_2_match_ambiguity_status=two[3] if two else "UNMATCHED",
+            run_2_replicate_status=status_map.get(two[0].peak_id, "SINGLE_RUN_NOT_APPLICABLE") if two else "NOT_MATCHED",
             aggregate_hypothesis_matches=tuple(sorted(aggregate_matches[txt.peak_id])),
             peak_linkage_status=linkage, peak_linkage_confidence=confidence, block_reasons=(),
         ))
@@ -1020,6 +1062,7 @@ def summarize_txt_mzml_source_linkage(
     params = parameters or SourceLinkageParameters()
     ordered = sorted(hypothesis_results, key=lambda result: (-result.composite_linkage_score, result.hypothesis_id))
     records = tuple(source_metadata_records or ())
+    single_run = len(records) == 1
     if not ordered:
         return TxtMzMLSourceLinkageSummary(
             txt_file=txt_file, rna_identity="UNKNOWN", digest_type="UNKNOWN", context_source="UNKNOWN",
@@ -1028,8 +1071,11 @@ def summarize_txt_mzml_source_linkage(
             best_composite_score=0, second_best_composite_score=0, score_margin=0,
             profile_evidence="NOT_AVAILABLE", peak_evidence="NOT_AVAILABLE",
             discriminating_peak_evidence="NOT_AVAILABLE", partial_scan_evidence="NOT_TESTED",
-            aggregate_evidence="NOT_AVAILABLE", source_linkage_confirmed=False,
-            exact_run_linkage_confirmed=False, source_polarity="UNKNOWN",
+            aggregate_evidence="NOT_AVAILABLE",
+            aggregate_hypotheses_status="NOT_APPLICABLE_SINGLE_RUN" if single_run else "NOT_AVAILABLE",
+            partial_scan_hypotheses_status="NOT_TESTED", profile_complexity_status="UNKNOWN",
+            mixture_compatible_interpretation="POSSIBLE", mixture_confirmed=False, purity_assigned=False,
+            source_linkage_confirmed=False, exact_run_linkage_confirmed=False, source_polarity="UNKNOWN",
             source_polarity_evidence="NOT_AVAILABLE", common_source_polarity_supported=False,
             polarity_propagation_eligible=False, polarity_propagation_applied=False,
             polarity_propagation_block_reasons=("INSUFFICIENT_SOURCE_LINKAGE",),
@@ -1039,24 +1085,45 @@ def summarize_txt_mzml_source_linkage(
     second = ordered[1] if len(ordered) > 1 else None
     second_score = second.composite_linkage_score if second else 0.0
     margin = best.composite_linkage_score - second_score
-    similar = second is not None and margin < params.similar_score_margin
+    similar = (
+        second is not None and margin < params.similar_score_margin
+        and best.composite_linkage_score >= params.no_support_score
+    )
     blocks = list(best.block_reasons)
     support = best.discriminating_peak_support_count
     conflict = best.discriminating_peak_conflict_count
-    exact = (
-        best.hypothesis_type in {HypothesisType.RUN_1_ONLY_EXPORT, HypothesisType.RUN_2_ONLY_EXPORT}
-        and best.composite_linkage_score >= params.strong_score and margin >= params.unique_score_margin
-        and support >= params.minimum_discriminating_support and conflict == 0
+    evidence_gates = (
+        best.composite_linkage_score >= params.strong_score
+        and margin >= params.unique_score_margin
+        and (best.base_peak_normalized_correlation or 0) >= params.minimum_profile_correlation
+        and best.txt_overlap_fraction >= params.minimum_peak_overlap
+        and best.top_25_txt_peak_match_fraction >= params.minimum_top25_support
+        and best.coverage_fraction >= params.minimum_coverage_fraction
+        and conflict == 0
     )
+    exact_single = single_run and best.hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT and evidence_gates
+    exact_multi = (
+        not single_run
+        and best.hypothesis_type in {HypothesisType.RUN_1_ONLY_EXPORT, HypothesisType.RUN_2_ONLY_EXPORT}
+        and evidence_gates and support >= params.minimum_discriminating_support
+    )
+    exact = exact_single or exact_multi
     if similar:
-        status, confidence = LinkageStatus.MULTIPLE_HYPOTHESES_SIMILAR, "MEDIUM" if best.composite_linkage_score >= params.supportive_score else "LOW"
+        status = LinkageStatus.MULTIPLE_HYPOTHESES_SIMILAR
+        confidence = "MEDIUM" if best.composite_linkage_score >= params.supportive_score else "LOW"
         blocks.append("MULTIPLE_HYPOTHESES_SIMILAR")
     elif best.hypothesis_type is HypothesisType.PARTIAL_SCAN_EXPORT_POSSIBLE and best.composite_linkage_score >= params.supportive_score:
-        run2 = "RUN_2" in best.reference_run_labels[0]
-        status = LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_2 if run2 else LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_1
+        if single_run:
+            status = LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN
+        else:
+            run2 = "RUN_2" in best.reference_run_labels[0]
+            status = LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_2 if run2 else LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_1
         confidence = "MEDIUM"
     elif best.hypothesis_type in {HypothesisType.MEAN_OF_RUNS_EXPORT, HypothesisType.SUM_OF_RUNS_EXPORT, HypothesisType.MEDIAN_OF_RUNS_EXPORT} and best.composite_linkage_score >= params.supportive_score:
         status, confidence = LinkageStatus.BEST_MATCH_AGGREGATE_PROFILE, "MEDIUM"
+    elif best.hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT and best.composite_linkage_score >= params.supportive_score:
+        status = LinkageStatus.STRONG_LINK_TO_REFERENCE_RUN if exact else LinkageStatus.SUPPORTIVE_LINK_TO_REFERENCE_RUN
+        confidence = "HIGH" if exact else "MEDIUM"
     elif best.hypothesis_type is HypothesisType.RUN_1_ONLY_EXPORT and best.composite_linkage_score >= params.supportive_score:
         status = LinkageStatus.STRONG_LINK_TO_RUN_1 if exact else LinkageStatus.SUPPORTIVE_LINK_TO_RUN_1
         confidence = "HIGH" if exact else "MEDIUM"
@@ -1070,7 +1137,10 @@ def summarize_txt_mzml_source_linkage(
         blocks.append("INSUFFICIENT_SOURCE_LINKAGE")
     polarities = {record.polarity_status for record in records}
     all_negative = bool(records) and polarities == {PolarityStatus.NEGATIVE_ONLY}
-    manifest_ok = bool(records) and all(record.context_source == "USER_PROVIDED_RUNTIME_MANIFEST" and not record.context_conflict for record in records)
+    manifest_ok = bool(records) and all(
+        record.context_source == "USER_PROVIDED_RUNTIME_MANIFEST" and not record.context_conflict
+        for record in records
+    )
     common_polarity = all_negative and manifest_ok and best.composite_linkage_score >= params.minimum_polarity_support_score
     polarity_blocks: list[str] = []
     if len(polarities) > 1:
@@ -1079,8 +1149,30 @@ def summarize_txt_mzml_source_linkage(
         polarity_blocks.append("USER_MANIFEST_METADATA_CONFLICT")
     if not common_polarity:
         polarity_blocks.append("INSUFFICIENT_SOURCE_LINKAGE")
-    aggregate = [result for result in ordered if result.hypothesis_type in {HypothesisType.MEAN_OF_RUNS_EXPORT, HypothesisType.SUM_OF_RUNS_EXPORT, HypothesisType.MEDIAN_OF_RUNS_EXPORT}]
+    aggregate = [result for result in ordered if result.hypothesis_type in {
+        HypothesisType.MEAN_OF_RUNS_EXPORT, HypothesisType.SUM_OF_RUNS_EXPORT, HypothesisType.MEDIAN_OF_RUNS_EXPORT,
+    }]
     partial = [result for result in ordered if result.hypothesis_type is HypothesisType.PARTIAL_SCAN_EXPORT_POSSIBLE]
+    best_partial_score = max((item.composite_linkage_score for item in partial), default=0.0)
+    if partial:
+        partial_status = "TESTED_SUPPORTIVE" if best_partial_score >= params.supportive_score else "TESTED_NOT_SUPPORTIVE"
+        if best_partial_score < params.supportive_score:
+            blocks.append("PARTIAL_SCAN_HYPOTHESIS_NOT_SUPPORTIVE")
+    elif best.hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT and best.composite_linkage_score >= params.supportive_score:
+        partial_status = "NOT_REQUIRED_WHOLE_RUN_SUPPORTIVE"
+    else:
+        partial_status = "NOT_TESTED"
+    aggregate_status = "NOT_APPLICABLE_SINGLE_RUN" if single_run else "EVALUATED" if aggregate else "NOT_AVAILABLE"
+    if best.txt_overlap_fraction < params.minimum_peak_overlap:
+        complexity = "HIGH_UNMATCHED_COMPLEXITY"
+    elif best.txt_overlap_fraction < 0.50:
+        complexity = "MODERATE_UNMATCHED_COMPLEXITY"
+    else:
+        complexity = "LOW_UNMATCHED_COMPLEXITY"
+    aggregate_evidence = (
+        "NOT_APPLICABLE_SINGLE_RUN" if single_run else
+        f"Tested={len(aggregate)};Best={max((item.composite_linkage_score for item in aggregate), default=0)};NonUnique=True"
+    )
     return TxtMzMLSourceLinkageSummary(
         txt_file=txt_file, rna_identity=records[0].rna_identity if records else "UNKNOWN",
         digest_type=records[0].digest_type if records else "UNKNOWN",
@@ -1091,9 +1183,11 @@ def summarize_txt_mzml_source_linkage(
         score_margin=margin,
         profile_evidence=f"BasePeak_Correlation={best.base_peak_normalized_correlation};Cosine={best.cosine_similarity}",
         peak_evidence=f"Txt_Overlap={best.txt_overlap_fraction};Jaccard={best.peak_jaccard}",
-        discriminating_peak_evidence=f"Support={support};Conflict={conflict}",
-        partial_scan_evidence=f"Tested={len(partial)};Best={max((item.composite_linkage_score for item in partial), default=0)}",
-        aggregate_evidence=f"Tested={len(aggregate)};Best={max((item.composite_linkage_score for item in aggregate), default=0)};NonUnique=True",
+        discriminating_peak_evidence=f"Support={support};Conflict={conflict}" if not single_run else "NOT_APPLICABLE_SINGLE_RUN",
+        partial_scan_evidence=f"Tested={len(partial)};Best={best_partial_score}",
+        aggregate_evidence=aggregate_evidence, aggregate_hypotheses_status=aggregate_status,
+        partial_scan_hypotheses_status=partial_status, profile_complexity_status=complexity,
+        mixture_compatible_interpretation="POSSIBLE", mixture_confirmed=False, purity_assigned=False,
         source_linkage_confirmed=exact, exact_run_linkage_confirmed=exact,
         source_polarity="NEGATIVE" if all_negative else "CONFLICT" if len(polarities) > 1 else "UNKNOWN",
         source_polarity_evidence="MZML_INTERNAL_METADATA" if records else "NOT_AVAILABLE",
@@ -1123,7 +1217,11 @@ def audit_t1_txt_mzml_source_linkage(
             parameters=params.replicate_parameters,
         )
     run_profiles = replicate_audit_result.run_profiles
-    references = tuple(_reference_from_run(profile, index) for index, profile in enumerate(run_profiles))
+    single_run = len(run_profiles) == 1
+    references = tuple(
+        _reference_from_run(profile, index, single_run=single_run)
+        for index, profile in enumerate(run_profiles)
+    )
     aggregates = build_replicate_aggregate_profiles(run_profiles)
     references += aggregates
     stage1 = tuple(compare_txt_to_reference_profile(txt_peaks, reference,

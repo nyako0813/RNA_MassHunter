@@ -14,7 +14,8 @@ from rna_masshunter.sciex_t1_replicate_consistency_audit import (
 from rna_masshunter.sciex_t1_txt_mzml_source_linkage_audit import (
     HypothesisType, LinkageStatus, SourceLinkageParameters, SourceLinkageReferenceProfile,
     TxtProfileType, _add_discrimination_counts, _derived_profile, _reference_from_run,
-    audit_optional_result, build_discriminating_evidence, build_peak_evidence,
+    audit_optional_result, audit_t1_txt_mzml_source_linkage,
+    build_discriminating_evidence, build_peak_evidence,
     build_replicate_aggregate_profiles, build_txt_profile_peaks,
     compare_txt_to_reference_profile, parse_t1_txt_profile,
     summarize_txt_mzml_source_linkage,
@@ -168,7 +169,7 @@ def test_partial_window_result_can_be_best_without_confirming_exact_run(tmp_path
     partial_result = compare_txt_to_reference_profile(txt, partial_ref)
     summary = summarize_txt_mzml_source_linkage([whole_result, partial_result], txt_file="x",
         source_metadata_records=[metadata("R1")])
-    assert summary.best_linkage_status is LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_RUN_1
+    assert summary.best_linkage_status is LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN
     assert not summary.exact_run_linkage_confirmed
 
 
@@ -219,6 +220,99 @@ def test_partial_window_discrimination_counts_follow_run_label(tmp_path):
     assert "CONFLICTING_DISCRIMINATING_PEAKS" in updated.block_reasons
 
 
+def test_single_run_strong_linkage_confirms_exact_source(tmp_path):
+    txt = txt_peak_profile(tmp_path, [(100.5, 10), (101.5, 6)])
+    run = gaussian_profile("UAG_T1_RUN", [(100.5, 10), (101.5, 6)])
+    reference = _reference_from_run(run, 0, single_run=True)
+    result = compare_txt_to_reference_profile(txt, reference)
+    summary = summarize_txt_mzml_source_linkage(
+        [result], txt_file="uag.txt", source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    assert result.hypothesis_type is HypothesisType.WHOLE_RUN_EXPORT
+    assert summary.best_linkage_status is LinkageStatus.STRONG_LINK_TO_REFERENCE_RUN
+    assert summary.source_linkage_confirmed and summary.exact_run_linkage_confirmed
+    assert summary.aggregate_hypotheses_status == "NOT_APPLICABLE_SINGLE_RUN"
+    assert summary.polarity_propagation_eligible and not summary.polarity_propagation_applied
+
+
+def test_single_run_supportive_and_weak_linkage_are_not_confirmed(tmp_path):
+    txt = txt_peak_profile(tmp_path, [(100.5, 10), (101.5, 6)])
+    run = gaussian_profile("UAG_T1_RUN", [(100.5, 10), (101.5, 6)])
+    result = compare_txt_to_reference_profile(txt, _reference_from_run(run, 0, single_run=True))
+    supportive = replace(result, composite_linkage_score=0.60)
+    weak = replace(
+        result, composite_linkage_score=0.20, base_peak_normalized_correlation=0.10,
+        txt_overlap_fraction=0.10, top_25_txt_peak_match_fraction=0.10,
+    )
+    supportive_summary = summarize_txt_mzml_source_linkage(
+        [supportive], source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    weak_summary = summarize_txt_mzml_source_linkage(
+        [weak], source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    assert supportive_summary.best_linkage_status is LinkageStatus.SUPPORTIVE_LINK_TO_REFERENCE_RUN
+    assert not supportive_summary.source_linkage_confirmed
+    assert supportive_summary.common_source_polarity_supported
+    assert weak_summary.best_linkage_status is LinkageStatus.NO_SUPPORTED_LINKAGE
+    assert not weak_summary.polarity_propagation_eligible
+    second_weak = replace(weak, hypothesis_id="PARTIAL_WEAK",
+                          hypothesis_type=HypothesisType.PARTIAL_SCAN_EXPORT_POSSIBLE,
+                          composite_linkage_score=0.19)
+    weak_pair = summarize_txt_mzml_source_linkage(
+        [weak, second_weak], source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    assert weak_pair.best_linkage_status is LinkageStatus.NO_SUPPORTED_LINKAGE
+
+
+def test_single_run_audit_does_not_generate_aggregate_hypotheses(tmp_path):
+    txt_path = write_profile(
+        tmp_path, points=list(zip(
+            np.arange(100.0, 103.0001, 0.001),
+            gaussian_profile("SOURCE", [(100.5, 10)]).comparison_raw_profile,
+            strict=False,
+        )),
+    )
+    run = gaussian_profile("UAG_T1_RUN", [(100.5, 10)])
+    replicate = ReplicateConsistencyAuditResult(ReplicateAuditParameters(), (run,), (), ())
+    audit = audit_t1_txt_mzml_source_linkage(
+        txt_path, [tmp_path / "unused.mzML"],
+        source_metadata_records=[metadata("UAG_T1_RUN")], replicate_audit_result=replicate,
+    )
+    assert [item.hypothesis_type for item in audit.hypothesis_results] == [HypothesisType.WHOLE_RUN_EXPORT]
+    assert audit.summary.aggregate_hypotheses_status == "NOT_APPLICABLE_SINGLE_RUN"
+    assert not audit.discriminating_evidence
+    assert audit.peak_evidence[0].run_1_prominence is not None
+    assert audit.peak_evidence[0].run_1_match_ambiguity_status == "UNAMBIGUOUS_ONE_TO_ONE"
+    assert audit.peak_evidence[0].peak_linkage_status == "MATCHED_REFERENCE_RUN"
+
+
+def test_single_run_partial_improvement_does_not_confirm_exact_source(tmp_path):
+    txt = txt_peak_profile(tmp_path, [(100.5, 10)])
+    whole = gaussian_profile("UAG_T1_RUN", [(102.0, 10)])
+    window = gaussian_profile("UAG_T1_RUN_WINDOW", [(100.5, 10)])
+    whole_result = compare_txt_to_reference_profile(
+        txt, _reference_from_run(whole, 0, single_run=True),
+    )
+    partial_result = compare_txt_to_reference_profile(
+        txt, SourceLinkageReferenceProfile(
+            "PARTIAL_UAG", HypothesisType.PARTIAL_SCAN_EXPORT_POSSIBLE,
+            ("UAG_T1_RUN",), window, 0, 1, 10,
+        ),
+    )
+    summary = summarize_txt_mzml_source_linkage(
+        [whole_result, partial_result], source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    assert summary.best_linkage_status is LinkageStatus.POSSIBLE_PARTIAL_SCAN_EXPORT_REFERENCE_RUN
+    assert not summary.exact_run_linkage_confirmed
+    small = summarize_txt_mzml_source_linkage(
+        [replace(whole_result, composite_linkage_score=0.40),
+         replace(partial_result, composite_linkage_score=0.42)],
+        source_metadata_records=[metadata("UAG_T1_RUN")],
+    )
+    assert small.best_linkage_status is LinkageStatus.MULTIPLE_HYPOTHESES_SIMILAR
+    assert not small.source_linkage_confirmed
+
+
 def test_common_negative_polarity_can_be_supported_without_exact_run(tmp_path):
     txt = txt_peak_profile(tmp_path, [(100.5, 10)])
     run1 = gaussian_profile("UAA_T1_RUN_1", [(100.5, 10)])
@@ -258,7 +352,7 @@ def test_determinism_formal_nonpropagation_and_optional_payload(tmp_path):
     safeguards = (
         "shadow_analysis_only", "source_linkage_audit_only", "formal_propagation",
         "polarity_propagation_applied", "chemical_identity_assigned",
-        "fragment_identity_assigned", "charge_state_confirmed",
+        "fragment_identity_assigned", "charge_state_confirmed", "purity_assigned",
     )
     for records in payload.values():
         for row in records:
