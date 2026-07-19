@@ -22,6 +22,7 @@ from rna_masshunter.sciex_reconstructed_profile_registry import (
     ReconstructedProfileType,
     ShadowComparisonStatus,
     UnknownMassMetadata,
+    analyze_loaded_profile_peak_families,
     build_profile_registry,
     compare_loaded_profile_shadow,
     load_profile_source,
@@ -512,3 +513,46 @@ def test_each_reference_mode_is_bounded_independently_and_uses_multiple_peaks(re
         and row.match_tolerance_class in {"STRICT", "EXPLORATORY"}
     }
     assert len(mono_peak_ids) >= 2
+
+
+
+def test_full_profile_routes_to_peak_family_analysis(registry, manifest):
+    routing = route_profile_source_to_candidates(
+        registry, manifest, "GLU_UUC_WT_FULL_RECONSTRUCTED"
+    )
+    loaded = synthetic_loaded(routing.profile_source, routing.candidates)
+    result = analyze_loaded_profile_peak_families(loaded, routing)
+    assert result.status == "COMPLETED"
+    assert result.peaks
+    assert len(result.selected_peaks) > 1
+    assert len(result.selected_peaks) <= 50
+    assert len(result.delta_pairs) == len(result.selected_peaks) * (len(result.selected_peaks) - 1) // 2
+    assert len(result.candidate_relations) == len(result.selected_peaks) * 4
+    assert result.families
+    assert result.observed_output_species == "UNKNOWN"
+    assert result.observed_output_species_confirmed is False
+    assert result.output_species_assigned is False
+
+
+@pytest.mark.parametrize(
+    "source_id",
+    ["LEU_UAA_WT_T1_MZ", "LEU_UAG_WT_T1_MZ", "GLU_UUC_WT_P1_AP_MZML"],
+)
+def test_digest_peak_family_analysis_is_skipped_with_all_counts_zero(
+    registry, manifest, source_id
+):
+    routing = route_profile_source_to_candidates(registry, manifest, source_id)
+    source = routing.profile_source
+    loaded = LoadedProfileSource(
+        source.profile_source_id, Path(source.source_file_name or "digest"), True,
+        "0" * 64, 0, (), source.profile_type, "METADATA_ONLY", (), (), 0,
+        None, None, None, None, (),
+    )
+    result = analyze_loaded_profile_peak_families(loaded, routing)
+    assert result.status == "SKIPPED"
+    assert result.peaks == ()
+    assert result.selected_peaks == ()
+    assert result.delta_pairs == ()
+    assert result.delta_matches == ()
+    assert result.candidate_relations == ()
+    assert result.families == ()

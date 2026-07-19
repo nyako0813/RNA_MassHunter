@@ -30,6 +30,12 @@ from rna_masshunter.sciex_intact_peak_detection import (
     SciexIntactPeakDetectionResult,
     detect_sciex_intact_peaks,
 )
+from rna_masshunter.sciex_intact_peak_family import (
+    PeakFamilyParameters,
+    SciexIntactPeakFamilyResult,
+    analyze_sciex_intact_peak_families,
+    skipped_peak_family_result,
+)
 from rna_masshunter.sciex_profile_parser import (
     MZ_PROFILE as PARSER_MZ_PROFILE,
     NEUTRAL_MASS_PROFILE as PARSER_NEUTRAL_MASS_PROFILE,
@@ -794,6 +800,41 @@ def compare_loaded_profile_shadow(
         exploratory_tolerance_da,
         counts,
         inference,
+    )
+
+
+def analyze_loaded_profile_peak_families(
+    loaded: LoadedProfileSource,
+    routing: ProfileCandidateRoutingResult,
+    *,
+    peak_parameters: SciexIntactPeakDetectionParameters | None = None,
+    family_parameters: PeakFamilyParameters | None = None,
+    known_modifications: Iterable[Any] = (),
+) -> SciexIntactPeakFamilyResult:
+    """Route a full neutral source to detector-backed shadow family analysis."""
+    if loaded.profile_source_id != routing.profile_source.profile_source_id:
+        raise ProfileRegistryValidationError("loaded source and routing source conflict")
+    if routing.status is ProfileRoutingStatus.SKIPPED:
+        return skipped_peak_family_result(routing.reason, parameters=family_parameters)
+    if loaded.profile_type is not ReconstructedProfileType.NEUTRAL_MASS_PROFILE:
+        return skipped_peak_family_result("PROFILE_NOT_NEUTRAL_MASS", parameters=family_parameters)
+    source = routing.profile_source
+    detection = detect_sciex_intact_peaks(
+        loaded.coordinates,
+        loaded.intensities,
+        profile_type=PARSER_NEUTRAL_MASS_PROFILE,
+        input_status=loaded.input_status,
+        eligible_for_neutral_mass_analysis=True,
+        parameters=peak_parameters,
+    )
+    return analyze_sciex_intact_peak_families(
+        detection,
+        source_id=source.profile_source_id,
+        measurement_id=source.measurement_id,
+        rna_identity=routing.rna_identity_id,
+        candidates=routing.candidates,
+        known_modifications=known_modifications,
+        parameters=family_parameters,
     )
 
 
