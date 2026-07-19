@@ -102,6 +102,8 @@ def test_independent_run_processing_and_intensity_normalization():
         run_label="RUN_2", metadata_record=metadata("RUN_2"))
     assert one.run_label != two.run_label and one.ms1_spectra_used == two.ms1_spectra_used == 3
     assert one.detected_peak_count and two.detected_peak_count
+    assert one.comparison_mz_grid is not None and one.comparison_raw_profile is not None and one.comparison_normalized_profile is not None
+    assert len(one.comparison_mz_grid) == len(one.comparison_normalized_profile)
     assert one.peaks[0].normalized_apex_intensity == pytest.approx(two.peaks[0].normalized_apex_intensity)
     assert two.peaks[0].raw_apex_intensity == pytest.approx(one.peaks[0].raw_apex_intensity * 10)
 

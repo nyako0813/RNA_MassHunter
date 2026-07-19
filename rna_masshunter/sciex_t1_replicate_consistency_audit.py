@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from math import log2
 from pathlib import Path
@@ -202,6 +202,9 @@ class ReplicateRunPeakProfile:
     biological_replicate_claim: bool = False
     chemical_identity_assigned: bool = False
     formal_propagation: bool = False
+    comparison_mz_grid: np.ndarray | None = field(default=None, repr=False, compare=False)
+    comparison_raw_profile: np.ndarray | None = field(default=None, repr=False, compare=False)
+    comparison_normalized_profile: np.ndarray | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -523,6 +526,9 @@ def build_ms1_peak_profile_from_spectra(
         peak_detection_method="detect_t1_profile_peaks",
         detected_peak_count=len(peaks), peaks=peaks, polarity_status=polarity,
         representation_status=representation, block_reasons=_ordered_blocks(blocks),
+        comparison_mz_grid=grid.copy() if ms1_used and state["origin"] is not None else None,
+        comparison_raw_profile=raw_mean.copy() if ms1_used and state["origin"] is not None else None,
+        comparison_normalized_profile=smoothed.copy() if ms1_used and state["origin"] is not None else None,
     )
 
 
