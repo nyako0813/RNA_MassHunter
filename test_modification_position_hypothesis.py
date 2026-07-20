@@ -10,7 +10,11 @@ from rna_masshunter.modification_hypothesis_audit import _interpret,_interpret_o
 from rna_masshunter.models import Peak
 from rna_masshunter.masses import mz_from_neutral_mass
 
-ROOT=Path(__file__).resolve().parent;CFG=load_config(ROOT/"config.yaml");SEQ=CFG.sequence["sequence"]
+ROOT=Path(__file__).resolve().parent;CFG=load_config(ROOT/"config.yaml")
+# Stable synthetic/known-valid RNA sequence used to isolate schema validation
+# from local config.yaml contents.
+VALID_TEST_SEQUENCE="GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA"
+SEQ=VALID_TEST_SEQUENCE
 def target(hypotheses):return {"target_id":"T","sequence_id":CFG.sequence["name"],"sequence_name":CFG.sequence["name"],"sequence_length":len(SEQ),"sequence_sha256":hashlib.sha256(SEQ.encode()).hexdigest(),"organism":CFG.organism["species"],"rule_set":CFG.organism["rule_set"],"hypotheses":hypotheses}
 def hyp(hid="H",kind="nucleoside_modification",**extra):
  d={"hypothesis_id":hid,"hypothesis_type":kind,"priority":"normal","prior_status":"suspected","prior_strength":"moderate","evidence_basis":["manual_expert_hypothesis"]};d.update(extra);return d

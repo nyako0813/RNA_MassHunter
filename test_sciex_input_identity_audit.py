@@ -278,7 +278,10 @@ def test_controlled_formal_ab_is_exact_for_disabled_match_conflict_and_error(tmp
 
 
 def test_real_input_sha_and_contents_are_non_destructive():
+    import pytest
     path = Path(".cache/sciex_research/WT_LeuUAA(Full).txt")
+    if not path.is_file():
+        pytest.skip("Local SCIEX real-data fixture is not available: .cache/sciex_research/WT_LeuUAA(Full).txt")
     before = sha256(path.read_bytes()).hexdigest()
     audit(path, "MA_tRNA^Glu-UUC", "UUC")
     after = sha256(path.read_bytes()).hexdigest()

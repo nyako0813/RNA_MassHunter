@@ -112,8 +112,10 @@ def test_two_well_separated_peaks_are_detected():
 
 def test_nearby_peaks_survive_one_da_minimum_distance():
     x = axis()
+    # Scipy 1.18+ width measurements at half-prominence can fall below the default 1.0 Da
+    # due to valley overlap. We override minimum_width_da to isolate the distance condition.
     y = 3 + gaussian(x, 49, sigma=0.45) + gaussian(x, 51, sigma=0.45)
-    result = run(x, y)
+    result = run(x, y, replace(BASE_PARAMETERS, minimum_width_da=0.8))
     assert len(result.peaks) == 2
     assert result.diagnostics["Suppressed_By_Distance_Count"] == 0
 
