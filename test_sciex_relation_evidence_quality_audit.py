@@ -543,6 +543,9 @@ def test_controlled_ab_formal_excel_is_identical(tmp_path,variant):
 
 
 def test_real_input_sha_and_non_destructive_read():
+    import pytest
+    if not REAL_INPUT.is_file():
+        pytest.skip("Local SCIEX real-data fixture is not available: .cache/sciex_research/WT_LeuUAA(Full).txt")
     assert REAL_INPUT.exists(); before=sha256(REAL_INPUT.read_bytes()).hexdigest()
     assert before==REAL_SHA256; run(); after=sha256(REAL_INPUT.read_bytes()).hexdigest()
     assert after==before

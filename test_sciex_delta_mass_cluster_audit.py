@@ -418,7 +418,10 @@ def test_excel_cluster_and_relation_order_is_deterministic(tmp_path):
 
 
 def test_real_input_sha_and_contents_are_non_destructive():
+    import pytest
     path = Path(".cache/sciex_research/WT_LeuUAA(Full).txt")
+    if not path.is_file():
+        pytest.skip("Local SCIEX real-data fixture is not available: .cache/sciex_research/WT_LeuUAA(Full).txt")
     before = sha256(path.read_bytes()).hexdigest()
     run([0.0, 1.0])
     after = sha256(path.read_bytes()).hexdigest()
