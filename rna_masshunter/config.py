@@ -52,6 +52,9 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "minimum_recurrent_support_pairs": 2,
             "minimum_interpretable_resolution_margin": 2.0,
         },
+        "cross_layer_evidence_reconciliation": {
+            "enabled": True,
+        },
     },
     "reconstruction": {
         "enabled": True,
@@ -392,7 +395,7 @@ def _merge_defaults(data: dict[str, Any], warnings: list[dict[str, Any]] | None)
             key for key in missing
             if not (
                 section == "sciex_profile"
-                and key in {"intact_mass_comparison", "delta_mass_cluster_audit", "spacing_resolution_audit", "relation_evidence_quality_audit"}
+                and key in {"intact_mass_comparison", "delta_mass_cluster_audit", "spacing_resolution_audit", "relation_evidence_quality_audit", "cross_layer_evidence_reconciliation"}
             )
         ]
         if reported_missing and warnings is not None and not optional_section_absent:
@@ -493,6 +496,13 @@ def validate_config(config: RunConfig, warnings: list[dict[str, Any]] | None = N
                 raise ValueError(
                     f"Invalid sciex_profile.relation_evidence_quality_audit: {exc}"
                 ) from exc
+
+        cross_layer_audit = sciex_profile.get(
+            "cross_layer_evidence_reconciliation",
+            DEFAULT_CONFIG["sciex_profile"]["cross_layer_evidence_reconciliation"],
+        )
+        if not isinstance(cross_layer_audit, dict):
+            raise ValueError("sciex_profile.cross_layer_evidence_reconciliation must be a mapping")
 
     if not config.input.get("mzml_path") and not config.input.get("raw_path") and warnings is not None:
         add_warning(warnings, "WARNING", "config", "input.mzml_path and input.raw_path are empty; sample config mode.")

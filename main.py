@@ -3,8 +3,11 @@ from pathlib import Path
 import math
 import time
 import tracemalloc
+import logging
+from typing import Any
 
 from rna_masshunter.config import load_config, validate_config, resolve_paths
+from rna_masshunter.models import RunConfig
 from rna_masshunter.composite_modification_audit import (
     append_composite_diagnostics, build_composite_modification_audit,
 )
@@ -117,6 +120,10 @@ from rna_masshunter.sciex_input_identity_audit import (
     ERROR_CODE as SCIEX_IDENTITY_AUDIT_ERROR_CODE,
     WARNING_CODE as SCIEX_IDENTITY_CONFLICT_WARNING_CODE,
     audit_sciex_input_identity,
+)
+from rna_masshunter.sciex_rna_cross_layer_evidence_reconciliation import (
+    OPTIONAL_RESULT_KEY as SCIEX_CROSS_LAYER_RESULT_KEY,
+    audit_rna_cross_layer_evidence_reconciliation,
 )
 from rna_masshunter.sciex_profile_parser import parse_sciex_profile
 from rna_masshunter.startup_check import run_startup_check
@@ -528,6 +535,68 @@ def build_sciex_relation_evidence_optional_results(
     return {SCIEX_RELATION_EVIDENCE_RESULT_KEY: result}
 
 
+def build_sciex_cross_layer_evidence_optional_results(
+    config: RunConfig,
+    optional_results: dict[str, Any],
+    warnings: list[dict[str, Any]],
+    logger: logging.Logger | None = None,
+) -> dict[str, Any]:
+    settings = (config.sciex_profile or {}).get("cross_layer_evidence_reconciliation") or {}
+    if not settings.get("enabled"):
+        return {}
+
+    full_length_result = optional_results.get("sciex_intact_oxygen_water_state_audit")
+    t1_result = optional_results.get("sciex_t1_fragment_state_series_audit")
+    p1ap_ms1_result = optional_results.get("sciex_p1ap_nucleoside_state_audit")
+    p1ap_ms2_result = optional_results.get("sciex_p1ap_nucleoside_ms2_identity_audit")
+
+    if full_length_result is None and t1_result is None and p1ap_ms1_result is None and p1ap_ms2_result is None:
+        return {}
+
+    identity_audit = optional_results.get("sciex_input_identity_audit")
+    identity_conflict = False
+    if identity_audit and hasattr(identity_audit, "values"):
+        identity_conflict = identity_audit.values.get("Identity_Conflict", False)
+
+    seq_name = (config.sequence or {}).get("name")
+    if seq_name:
+        runtime_context = {
+            "RNA_Identity": seq_name,
+            "Context_Source": "RUN_CONFIG_SEQUENCE_NAME",
+            "Context_Confidence": "LOW_CONFLICT" if identity_conflict else "USER_PROVIDED",
+        }
+    else:
+        runtime_context = {
+            "RNA_Identity": "Unknown",
+            "Context_Source": "NONE",
+            "Context_Confidence": "UNAVAILABLE",
+        }
+
+    reconciliation_config = {k: v for k, v in settings.items() if k != "enabled"}
+
+    try:
+        result = audit_rna_cross_layer_evidence_reconciliation(
+            full_length_result=full_length_result,
+            t1_result=t1_result,
+            p1ap_ms1_result=p1ap_ms1_result,
+            p1ap_ms2_result=p1ap_ms2_result,
+            runtime_context=runtime_context,
+            reconciliation_config=reconciliation_config,
+        )
+    except Exception as exc:
+        add_warning(
+            warnings, "ERROR", "sciex_cross_layer_evidence_reconciliation",
+            "SCIEX cross-layer evidence reconciliation failed.",
+            {"error": f"{type(exc).__name__}: {exc}"},
+        )
+        if logger is not None:
+            logger.error("SCIEX cross-layer evidence reconciliation failed: %s", exc)
+        return {}
+    return {SCIEX_CROSS_LAYER_RESULT_KEY: result}
+
+
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run RNA_MassHunter analysis.")
     parser.add_argument(
@@ -785,11 +854,19 @@ def main(argv: list[str] | None = None) -> None:
             optional_results[SCIEX_DELTA_CLUSTER_RESULT_KEY] = annotated_cluster_result
             optional_results[SCIEX_SPACING_RESOLUTION_RESULT_KEY] = annotated_resolution_result
             optional_results.update(relation_evidence_optional_results)
+
+        cross_layer_optional_results = build_sciex_cross_layer_evidence_optional_results(
+            config, optional_results, warnings, logger=logger,
+        )
+        if cross_layer_optional_results:
+            optional_results.update(cross_layer_optional_results)
+
         detector_executed = SCIEX_INTACT_OPTIONAL_RESULT_KEY in sciex_optional_results
         comparison_executed = SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY in comparison_optional_results
         delta_cluster_executed = SCIEX_DELTA_CLUSTER_RESULT_KEY in delta_cluster_optional_results
         spacing_resolution_executed = SCIEX_SPACING_RESOLUTION_RESULT_KEY in spacing_resolution_optional_results
         relation_evidence_executed = SCIEX_RELATION_EVIDENCE_RESULT_KEY in relation_evidence_optional_results
+        cross_layer_executed = SCIEX_CROSS_LAYER_RESULT_KEY in cross_layer_optional_results
         output_sheets = [
             name for name in sciex_optional_results
             if name != SCIEX_INTACT_OPTIONAL_RESULT_KEY
@@ -816,6 +893,11 @@ def main(argv: list[str] | None = None) -> None:
             output_sheets.extend((
                 SCIEX_RELATION_EVIDENCE_DETAIL_SHEET,
                 SCIEX_RELATION_EVIDENCE_SUMMARY_SHEET,
+            ))
+        if cross_layer_executed and audit_policy.level != "standard":
+            output_sheets.extend((
+                "XL_Nodes", "XL_Edges", "XL_Hypotheses",
+                "XL_Layer_Summary", "XL_Consensus", "XL_Next_Evidence"
             ))
         _record_workflow_step(
             workflow_rows,

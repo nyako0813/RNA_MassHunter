@@ -149,6 +149,9 @@ def test_config_defaults_are_backward_compatible_and_unknown_keys_are_retained(t
             "minimum_recurrent_support_pairs": 2,
             "minimum_interpretable_resolution_margin": 2.0,
         },
+        "cross_layer_evidence_reconciliation": {
+            "enabled": True,
+        },
     }
 
     config_path.write_text(
