@@ -194,6 +194,10 @@ from rna_masshunter.sciex_input_identity_audit import (
     OUTPUT_COLUMNS as SCIEX_IDENTITY_AUDIT_COLUMNS,
     SHEET_NAME as SCIEX_IDENTITY_AUDIT_SHEET,
 )
+from rna_masshunter.sciex_rna_cross_layer_evidence_reconciliation import (
+    OPTIONAL_RESULT_KEY as SCIEX_CROSS_LAYER_RESULT_KEY,
+    audit_optional_result as audit_cross_layer_optional_result,
+)
 from rna_masshunter.rnase_ms2_standard_composite_crosswalk import (
     SUMMARY_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_SUMMARY_COLUMNS,
     CROSSWALK_COLUMNS as RNASE_MS2_STANDARD_COMPOSITE_CROSSWALK_COLUMNS,
@@ -1133,6 +1137,30 @@ def _sciex_identity_audit_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
     }
 
 
+def _sciex_cross_layer_excel_sheets(value: Any | None) -> dict[str, pd.DataFrame]:
+    if value is None:
+        return {}
+    records = audit_cross_layer_optional_result(value)
+
+    def _format(rows: list[dict[str, Any]]) -> pd.DataFrame:
+        if not rows:
+            return pd.DataFrame()
+        safe_rows = [
+            {key: _excel_safe_cell(item) for key, item in sorted(row.items())}
+            for row in _record_rows(rows)
+        ]
+        return pd.DataFrame(safe_rows)
+
+    return {
+        "XL_Nodes": _format(records.get("node_records", [])),
+        "XL_Edges": _format(records.get("edge_records", [])),
+        "XL_Hypotheses": _format(records.get("hypothesis_records", [])),
+        "XL_Layer_Summary": _format(records.get("layer_summary_records", [])),
+        "XL_Consensus": _format(records.get("consensus_records", [])),
+        "XL_Next_Evidence": _format(records.get("next_evidence_records", [])),
+    }
+
+
 def _sciex_mass_comparison_excel_sheets(value: Any) -> dict[str, pd.DataFrame]:
     if value is None:
         return {}
@@ -1944,6 +1972,9 @@ def write_excel_report(
     data_sheets.update(
         _sciex_mass_comparison_excel_sheets(optional_results.get(SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY))
     )
+    data_sheets.update(
+        _sciex_cross_layer_excel_sheets(optional_results.get(SCIEX_CROSS_LAYER_RESULT_KEY))
+    )
     for sheet_name, value in optional_results.items():
         if sheet_name in {
             "Index", "Run_summary", "Warnings", "Workflow_Summary",
@@ -1953,6 +1984,7 @@ def write_excel_report(
             SCIEX_SPACING_RESOLUTION_RESULT_KEY,
             SCIEX_RELATION_EVIDENCE_RESULT_KEY,
             SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY,
+            SCIEX_CROSS_LAYER_RESULT_KEY,
         }:
             continue
         frame = _coerce_to_frame(value)
