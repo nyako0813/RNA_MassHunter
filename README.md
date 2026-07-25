@@ -209,6 +209,81 @@ The optional spacing-resolution shadow audit independently estimates the neutral
 
 The optional relation evidence-quality shadow audit assigns numerical-fit, recurrence, resolution, identity, biological, and chemical-interpretation flags to a derived row for every exported SCIEX relation. It reuses the exported relation set and existing spacing-resolution metadata without sorting, truncating, deleting, or changing relation flags. Evidence tiers remain diagnostic: Tier 4, isotope assignment, chemical interpretation, and formal propagation are disabled by default. `SCIEX_Relation_Evidence` and `SCIEX_Relation_Evidence_Summary` are available at `audit` and `full` and hidden at `standard`.
 
+## SCIEX Cross-Layer Evidence Bundles
+
+The production cross-layer bundle workflow reuses validated layer results without keeping several raw mzML files in memory or reparsing them during reconciliation. It requires exactly four non-empty production bundles: `FULL`, `T1`, `P1AP_MS1`, and `P1AP_MS2`. Bundles must be exported from the corresponding production producer result with the current serializer. Old Antigravity bundles and bundles from older serializers must be regenerated; they are not migration inputs.
+
+RNA identity (`name`, sequence, anticodon, and taxonomy fields) is checked separately from sample identity and source provenance. In particular, `04 new T1.mzML` and `05 old T1.mzML` are different samples and must not be interchanged. P1/AP MS1 and MS2 bundles from the same source run belong to one shared-source/independence group and do not count as independent biological support.
+
+Cross-layer output is shadow analysis only. It never changes formal score, ranking, candidate filtering, localization, identity assignment, or final consensus. FULL currently has limited node-level source provenance; the runner reports that limitation while still verifying bundle-level provenance. An ambiguous consensus is a valid analytical result, not a runner failure. `LOW` confidence preserves insufficient evidence instead of manufacturing exact identity, nucleotide position, atom localization, or reaction-order claims.
+
+The CLI consumes bundles only: it does not run raw-data producers or read mzML. Existing output files are never overwritten. See the [operational workflow](docs/sciex_cross_layer_bundle_workflow.md) for production export, validation, persistent-copy, recovery, and Windows/WSL procedures.
+
+```bash
+PYTHONPATH=. python -m rna_masshunter.sciex_cross_layer_bundle_cli \
+  --full-bundle /persistent/bundle_FULL.json \
+  --t1-bundle /persistent/bundle_T1.json \
+  --p1ap-ms1-bundle /persistent/bundle_P1AP_MS1.json \
+  --p1ap-ms2-bundle /persistent/bundle_P1AP_MS2.json \
+  --aggregate-json /new/output/cross_layer_aggregate.json \
+  --excel-output /new/output/cross_layer.xlsx \
+  --summary-json /new/output/cross_layer_summary.json
+```
+
+Validate compatibility and aggregate in memory without writing files:
+
+```bash
+PYTHONPATH=. python -m rna_masshunter.sciex_cross_layer_bundle_cli \
+  --full-bundle /persistent/bundle_FULL.json \
+  --t1-bundle /persistent/bundle_T1.json \
+  --p1ap-ms1-bundle /persistent/bundle_P1AP_MS1.json \
+  --p1ap-ms2-bundle /persistent/bundle_P1AP_MS2.json \
+  --dry-run
+```
+
+A dedicated alternate YAML file may supply the same paths through `--config`; relative paths are resolved from that file's directory. `--debug` adds a traceback for unexpected failures. This example is documentation only; do not add real-data paths to the repository `config.yaml`.
+
+<!-- sciex-cross-layer-config-example:start -->
+```yaml
+cross_layer_bundle_runner:
+  enabled: true
+  overwrite: false
+  bundles:
+    full: bundles/bundle_FULL.json
+    t1: bundles/bundle_T1.json
+    p1ap_ms1: bundles/bundle_P1AP_MS1.json
+    p1ap_ms2: bundles/bundle_P1AP_MS2.json
+  output:
+    aggregate_json: results/cross_layer_aggregate.json
+    excel: results/cross_layer.xlsx
+    summary_json: results/cross_layer_summary.json
+```
+<!-- sciex-cross-layer-config-example:end -->
+
+The aggregate JSON contains `schema_version`, per-layer `input_bundles` with hashes and provenance, `compatibility_report`, `aggregate_counts`, `consensus`, `safeguards`, `warnings`, and grouped `records`. The optional summary JSON contains the CLI status, bundle paths/hashes, compatibility, warnings, counts, consensus/confidence, safeguards, and output paths.
+
+The XL-only workbook contains these six sheets:
+
+| Sheet | Content |
+| --- | --- |
+| `XL_Nodes` | Layer evidence nodes and their shadow-only provenance. |
+| `XL_Edges` | Cross-layer relationships, including independence metadata. |
+| `XL_Hypotheses` | Reconciled hypotheses without formal assignment. |
+| `XL_Layer_Summary` | Per-layer evidence and compatibility summary. |
+| `XL_Consensus` | Shadow consensus status and confidence. |
+| `XL_Next_Evidence` | Evidence still needed to resolve ambiguity. |
+
+CLI exit codes are stable operational categories:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Success, including a valid ambiguous or `LOW` result. |
+| 2 | Argument or configuration error. |
+| 3 | Bundle validation error. |
+| 4 | Four-bundle compatibility error. |
+| 5 | Output path or write error. |
+| 6 | Cross-layer aggregation error. |
+
 ## Current Features
 
 - Reads `config.yaml`.
