@@ -30,9 +30,10 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, get_type_hints
 
 SCHEMA_VERSION = "1.0"
+SERIALIZER_FORMAT_VERSION = "enum-tagged-v2"
 BUNDLE_TYPE = "RNA_MASSHUNTER_LAYER_EVIDENCE"
 
 SAFEGUARDS = {
@@ -53,7 +54,7 @@ SAFEGUARDS = {
 }
 
 _REQUIRED_TOP_LEVEL = {
-    "schema_version", "bundle_type", "layer", "optional_result_key",
+    "schema_version", "serializer_format_version", "bundle_type", "layer", "optional_result_key",
     "producer_name", "producer_module", "producer_commit", "created_at_utc",
     "source", "rna", "experiment", "result", "safeguards", "validation",
     "canonical_payload_sha256",
@@ -219,14 +220,19 @@ def _reject_forbidden_payload(value: Any) -> None:
 def _encode(value: Any, *, field_name: str | None = None) -> Any:
     if field_name and _dangerous_field(field_name):
         raise LayerEvidenceBundleError(f"raw spectrum/binary field is forbidden: {field_name}")
-    if value is None or isinstance(value, (str, bool, int)):
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        class_name = _type_name(type(value))
+        if class_name not in _allowed_types():
+            raise LayerEvidenceBundleError(f"unapproved enum type: {class_name}")
+        return {"__bundle_type__": "enum", "class": class_name, "value": _encode(value.value)}
+    if isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
             raise LayerEvidenceBundleError("non-finite float is forbidden")
         return value
-    if isinstance(value, Enum):
-        return {"__bundle_type__": "enum", "class": _type_name(type(value)), "value": _encode(value.value)}
     if is_dataclass(value) and not isinstance(value, type):
         class_name = _type_name(type(value))
         if class_name not in _allowed_types():
@@ -338,11 +344,23 @@ def _decode(value: Any) -> Any:
                 f"transient fields must not be serialized for {class_name}: {sorted(serialized_transient)}"
             )
         kwargs = {}
+        type_hints = get_type_hints(cls)
         for name, definition in definitions.items():
             if not definition.init:
                 continue
             if name in value["fields"]:
-                kwargs[name] = _decode(value["fields"][name])
+                decoded = _decode(value["fields"][name])
+                expected_type = type_hints.get(name)
+                if (
+                    isinstance(expected_type, type)
+                    and issubclass(expected_type, Enum)
+                    and type(decoded) is not expected_type
+                ):
+                    raise LayerEvidenceBundleError(
+                        f"enum field type mismatch for {class_name}.{name}: "
+                        f"expected {_type_name(expected_type)}, got {_type_name(type(decoded))}"
+                    )
+                kwargs[name] = decoded
             elif name in _TRANSIENT_RESTORE_VALUES.get(class_name, {}):
                 kwargs[name] = _TRANSIENT_RESTORE_VALUES[class_name][name]
             elif definition.default is MISSING and definition.default_factory is MISSING:
@@ -495,6 +513,10 @@ def validate_layer_evidence_bundle(
     if bundle.get("schema_version") != SCHEMA_VERSION:
         raise LayerEvidenceBundleError(f"unknown schema_version: {bundle.get('schema_version')}")
     top = _require_mapping(bundle, "bundle", _REQUIRED_TOP_LEVEL)
+    if top["serializer_format_version"] != SERIALIZER_FORMAT_VERSION:
+        raise LayerEvidenceBundleError(
+            f"unknown serializer_format_version: {top['serializer_format_version']}"
+        )
     if top["bundle_type"] != BUNDLE_TYPE:
         raise LayerEvidenceBundleError(f"unknown bundle_type: {top['bundle_type']}")
     contract = _contract_for_bundle(top)
@@ -632,7 +654,8 @@ def export_layer_evidence_bundle(
     _validate_safeguards(result, encoded_result, SAFEGUARDS)
     created = created_at_utc or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     bundle: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION, "bundle_type": BUNDLE_TYPE, "layer": layer,
+        "schema_version": SCHEMA_VERSION, "serializer_format_version": SERIALIZER_FORMAT_VERSION,
+        "bundle_type": BUNDLE_TYPE, "layer": layer,
         "optional_result_key": contract.optional_result_key,
         "producer_name": contract.producer_name, "producer_module": contract.producer_module,
         "producer_commit": str(producer_commit), "created_at_utc": created,

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from dataclasses import replace
+from enum import IntEnum
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import rna_masshunter.sciex_layer_evidence_bundle as bundle_serializer
 from rna_masshunter.masses import load_base_masses
 from rna_masshunter.sciex_intact_oxygen_water_state_audit import audit_oxygen_water_state_series
 from rna_masshunter.sciex_intact_peak_family import (
@@ -15,6 +17,7 @@ from rna_masshunter.sciex_intact_peak_family import (
 )
 from rna_masshunter.sciex_layer_evidence_bundle import (
     BUNDLE_TYPE, LAYER_CONTRACTS, SAFEGUARDS, SCHEMA_VERSION,
+    SERIALIZER_FORMAT_VERSION,
     LayerEvidenceBundleError, canonical_json_bytes,
     compare_layer_evidence_provenance, export_layer_evidence_bundle,
     load_layer_evidence_bundle, restore_layer_evidence_result,
@@ -23,10 +26,11 @@ from rna_masshunter.sciex_layer_evidence_bundle import (
 from rna_masshunter.sciex_p1ap_nucleoside_ms2_identity_audit import (
     NucleosideCandidateMS2Summary, NucleosideMS2ProductMatch,
     P1APNucleosideMS2AuditResult, P1APNucleosideMS2Summary, ProcessedMS2Spectrum,
-    audit_p1ap_nucleoside_ms2_identity,
+    audit_p1ap_nucleoside_ms2_identity, candidate_records_from_ms1_result,
 )
 from rna_masshunter.sciex_p1ap_nucleoside_state_audit import (
-    P1APNucleosideStateAuditResult, audit_p1ap_nucleoside_state_series,
+    NucleosideCandidateClass, P1APNucleosideStateAuditResult,
+    audit_p1ap_nucleoside_state_series,
     match_nucleoside_ions_to_peaks,
 )
 from rna_masshunter.sciex_rna_cross_layer_evidence_reconciliation import (
@@ -626,3 +630,153 @@ def test_p1ap_ms1_nonempty_comparison_arrays_round_trip_as_transient(results, so
     assert restored == result
     assert all(getattr(restored.run_profile.profile, name) is None for name in _TRANSIENT_PROFILE_FIELDS)
     assert all(name.encode() not in canonical_json_bytes(bundle) for name in _TRANSIENT_PROFILE_FIELDS)
+
+
+class _SyntheticIntEnum(IntEnum):
+    ONE = 1
+
+
+def _approved_test_enum(monkeypatch, enum_class):
+    approved = dict(bundle_serializer._allowed_types())
+    approved[bundle_serializer._type_name(enum_class)] = enum_class
+    monkeypatch.setattr(bundle_serializer, "_allowed_types", lambda: approved)
+
+
+def test_str_enum_uses_type_tag_and_restores_exact_class():
+    encoded = bundle_serializer._encode(NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE)
+    assert encoded == {
+        "__bundle_type__": "enum",
+        "class": bundle_serializer._type_name(NucleosideCandidateClass),
+        "value": NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE.value,
+    }
+    restored = bundle_serializer._decode(encoded)
+    assert type(restored) is NucleosideCandidateClass
+    assert restored.value == NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE.value
+
+
+def test_primitive_string_int_and_bool_remain_exact_primitive_types():
+    for value in ("plain", 7, True, False):
+        encoded = bundle_serializer._encode(value)
+        restored = bundle_serializer._decode(encoded)
+        assert encoded is value or encoded == value
+        assert type(restored) is type(value)
+
+
+def test_int_enum_uses_type_tag_and_restores_exact_class(monkeypatch):
+    _approved_test_enum(monkeypatch, _SyntheticIntEnum)
+    encoded = bundle_serializer._encode(_SyntheticIntEnum.ONE)
+    assert encoded["__bundle_type__"] == "enum"
+    assert encoded["value"] == 1
+    restored = bundle_serializer._decode(encoded)
+    assert type(restored) is _SyntheticIntEnum
+    assert restored.value == 1
+
+
+def test_unapproved_enum_type_is_rejected():
+    with pytest.raises(LayerEvidenceBundleError, match="unapproved enum type"):
+        bundle_serializer._encode(_SyntheticIntEnum.ONE)
+
+
+def test_invalid_enum_type_tag_is_rejected():
+    encoded = bundle_serializer._encode(NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE)
+    encoded["class"] = bundle_serializer._type_name(P1APNucleosideStateAuditResult)
+    with pytest.raises(LayerEvidenceBundleError, match="malformed enum encoding"):
+        bundle_serializer._decode(encoded)
+
+
+def test_invalid_enum_value_is_rejected():
+    encoded = bundle_serializer._encode(NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE)
+    encoded["value"] = "NOT_A_CANDIDATE_CLASS"
+    with pytest.raises(LayerEvidenceBundleError, match="invalid enum value"):
+        bundle_serializer._decode(encoded)
+
+
+def test_unknown_enum_class_is_rejected():
+    encoded = bundle_serializer._encode(NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE)
+    encoded["class"] = "unknown.module.MissingEnum"
+    with pytest.raises(LayerEvidenceBundleError, match="unapproved encoded class"):
+        bundle_serializer._decode(encoded)
+
+
+def test_legacy_schema_1_bundle_without_serializer_format_is_rejected(results, source_file):
+    bundle = _bundle(results["FULL"], "FULL", source_file)
+    del bundle["serializer_format_version"]
+    _rehash(bundle)
+    with pytest.raises(LayerEvidenceBundleError, match="missing required fields"):
+        validate_layer_evidence_bundle(bundle, source_path=source_file)
+
+
+def test_unknown_serializer_format_is_rejected(results, source_file):
+    bundle = _bundle(results["FULL"], "FULL", source_file)
+    bundle["serializer_format_version"] = "legacy-primitive-first"
+    _rehash(bundle)
+    with pytest.raises(LayerEvidenceBundleError, match="unknown serializer_format_version"):
+        validate_layer_evidence_bundle(bundle, source_path=source_file)
+
+
+def test_tampered_nested_enum_replaced_by_plain_string_is_rejected(results, source_file):
+    bundle = _bundle(results["P1AP_MS1"], "P1AP_MS1", source_file)
+    encoded_match = _find_encoded_dataclass(bundle["result"], ".NucleosidePeakMatch")
+    assert encoded_match is not None
+    encoded_match["fields"]["candidate_class"] = (
+        NucleosideCandidateClass.NEUTRAL_NUCLEOSIDE.value
+    )
+    _rehash(bundle)
+    with pytest.raises(LayerEvidenceBundleError, match="enum field type mismatch"):
+        validate_layer_evidence_bundle(bundle, source_path=source_file)
+
+
+def test_p1ap_ms1_nested_candidate_class_exact_type_and_ms2_setup(results, source_file):
+    original = results["P1AP_MS1"]
+    restored = restore_layer_evidence_result(_bundle(original, "P1AP_MS1", source_file))
+    assert type(restored) is P1APNucleosideStateAuditResult
+    assert type(restored.matches[0].candidate_class) is NucleosideCandidateClass
+    assert restored.matches[0].candidate_class.value
+    records = candidate_records_from_ms1_result(restored)
+    assert records
+    assert type(records[0].candidate_class) is str
+
+
+def test_full_nested_enums_restore_exact_types(results, source_file):
+    original = results["FULL"]
+    restored = restore_layer_evidence_result(_bundle(original, "FULL", source_file))
+    assert type(restored) is type(original)
+    assert type(restored.references[0].reference_category) is type(
+        original.references[0].reference_category
+    )
+    assert type(restored.relations[0].state_relation_class) is type(
+        original.relations[0].state_relation_class
+    )
+
+
+def test_t1_nested_enums_restore_exact_types(results, source_file):
+    original = results["T1"]
+    restored = restore_layer_evidence_result(_bundle(original, "T1", source_file))
+    assert type(restored) is type(original)
+    assert type(restored.ion_hypotheses[0].ion_mode) is type(
+        original.ion_hypotheses[0].ion_mode
+    )
+    assert type(restored.fragment_matches[0].ion_mode) is type(
+        original.fragment_matches[0].ion_mode
+    )
+
+
+def test_p1ap_ms2_synthetic_nested_round_trip_after_enum_safe_ms1_setup(
+    results, source_file,
+):
+    restored_ms1 = restore_layer_evidence_result(
+        _bundle(results["P1AP_MS1"], "P1AP_MS1", source_file)
+    )
+    assert type(restored_ms1.matches[0].candidate_class) is NucleosideCandidateClass
+    records = candidate_records_from_ms1_result(restored_ms1)
+    ms2 = replace(results["P1AP_MS2"], candidates=records)
+    restored_ms2 = restore_layer_evidence_result(_bundle(ms2, "P1AP_MS2", source_file))
+    assert type(restored_ms2) is P1APNucleosideMS2AuditResult
+    assert restored_ms2.candidates == records
+    assert all(type(record.candidate_class) is str for record in restored_ms2.candidates)
+
+
+def test_serializer_format_is_explicit(results, source_file):
+    bundle = _bundle(results["FULL"], "FULL", source_file)
+    assert bundle["schema_version"] == "1.0"
+    assert bundle["serializer_format_version"] == SERIALIZER_FORMAT_VERSION
