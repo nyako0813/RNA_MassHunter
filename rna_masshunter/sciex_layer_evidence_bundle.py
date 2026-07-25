@@ -79,6 +79,20 @@ _RAW_FIELD_NAMES = {
     "binary_payload", "binary_data_array",
 }
 
+# These fields are derived in-memory profiles, not cross-layer evidence.  They
+# are omitted by exact production class and field name; every other NumPy array
+# remains forbidden.  Missing fields use the dataclass default, except for the
+# existing ProcessedMS2Spectrum.peaks contract, whose constructor requires ().
+TRANSIENT_DATACLASS_FIELDS = {
+    "rna_masshunter.sciex_p1ap_nucleoside_ms2_identity_audit.ProcessedMS2Spectrum": frozenset({"peaks"}),
+    "rna_masshunter.sciex_t1_replicate_consistency_audit.ReplicateRunPeakProfile": frozenset({
+        "comparison_mz_grid", "comparison_raw_profile", "comparison_normalized_profile",
+    }),
+}
+_TRANSIENT_RESTORE_VALUES = {
+    "rna_masshunter.sciex_p1ap_nucleoside_ms2_identity_audit.ProcessedMS2Spectrum": {"peaks": ()},
+}
+
 _ALLOWED_TYPE_MODULES = {
     "rna_masshunter.intact_rna_average_mass",
     "rna_masshunter.sciex_intact_peak_family",
@@ -218,8 +232,9 @@ def _encode(value: Any, *, field_name: str | None = None) -> Any:
         if class_name not in _allowed_types():
             raise LayerEvidenceBundleError(f"unapproved dataclass type: {class_name}")
         encoded_fields: dict[str, Any] = {}
+        transient_fields = TRANSIENT_DATACLASS_FIELDS.get(class_name, frozenset())
         for item in sorted(fields(value), key=lambda row: row.name):
-            if class_name.endswith(".ProcessedMS2Spectrum") and item.name == "peaks":
+            if item.name in transient_fields:
                 continue
             encoded_fields[item.name] = _encode(getattr(value, item.name), field_name=item.name)
         return {"__bundle_type__": "dataclass", "class": class_name, "fields": encoded_fields}
@@ -317,14 +332,19 @@ def _decode(value: Any) -> Any:
         unknown = set(value["fields"]) - set(definitions)
         if unknown:
             raise LayerEvidenceBundleError(f"unknown fields for {class_name}: {sorted(unknown)}")
+        serialized_transient = set(value["fields"]) & set(TRANSIENT_DATACLASS_FIELDS.get(class_name, ()))
+        if serialized_transient:
+            raise LayerEvidenceBundleError(
+                f"transient fields must not be serialized for {class_name}: {sorted(serialized_transient)}"
+            )
         kwargs = {}
         for name, definition in definitions.items():
             if not definition.init:
                 continue
             if name in value["fields"]:
                 kwargs[name] = _decode(value["fields"][name])
-            elif class_name.endswith(".ProcessedMS2Spectrum") and name == "peaks":
-                kwargs[name] = ()
+            elif name in _TRANSIENT_RESTORE_VALUES.get(class_name, {}):
+                kwargs[name] = _TRANSIENT_RESTORE_VALUES[class_name][name]
             elif definition.default is MISSING and definition.default_factory is MISSING:
                 raise LayerEvidenceBundleError(f"missing field for {class_name}: {name}")
         try:

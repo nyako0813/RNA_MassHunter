@@ -4,6 +4,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from rna_masshunter.masses import load_base_masses
@@ -517,3 +518,111 @@ def test_harness_schema_is_safely_rejected_as_unknown(tmp_path):
     path.write_text(json.dumps({"schema_version": "rna-masshunter-cross-layer-bundle-v1"}), encoding="utf-8")
     with pytest.raises(LayerEvidenceBundleError, match="missing required fields|unknown schema"):
         load_layer_evidence_bundle(path)
+
+
+_TRANSIENT_PROFILE_FIELDS = (
+    "comparison_mz_grid", "comparison_raw_profile", "comparison_normalized_profile",
+)
+
+
+def _with_comparison_arrays(profile):
+    return replace(
+        profile,
+        comparison_mz_grid=np.array([100.0, 100.5, 101.0], dtype=float),
+        comparison_raw_profile=np.array([10.0, 20.0, 5.0], dtype=float),
+        comparison_normalized_profile=np.array([0.5, 1.0, 0.25], dtype=float),
+    )
+
+
+def _find_encoded_dataclass(value, class_suffix):
+    if isinstance(value, dict):
+        if value.get("__bundle_type__") == "dataclass" and str(value.get("class", "")).endswith(class_suffix):
+            return value
+        for item in value.values():
+            found = _find_encoded_dataclass(item, class_suffix)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _find_encoded_dataclass(item, class_suffix)
+            if found is not None:
+                return found
+    return None
+
+
+def test_t1_nonempty_comparison_arrays_round_trip_as_transient(results, source_file):
+    original = results["T1"]
+    profile = _with_comparison_arrays(original.run_profile)
+    result = replace(original, run_profile=profile)
+    before = {name: getattr(profile, name).copy() for name in _TRANSIENT_PROFILE_FIELDS}
+
+    bundle = _bundle(result, "T1", source_file)
+    restored = restore_layer_evidence_result(bundle)
+
+    assert type(restored) is type(result) is T1FragmentStateSeriesAuditResult
+    assert restored == result
+    assert all(getattr(restored.run_profile, name) is None for name in _TRANSIENT_PROFILE_FIELDS)
+    assert all(np.array_equal(getattr(profile, name), before[name]) for name in _TRANSIENT_PROFILE_FIELDS)
+
+
+def test_t1_transient_arrays_and_field_names_absent_from_canonical_payload(results, source_file):
+    result = replace(results["T1"], run_profile=_with_comparison_arrays(results["T1"].run_profile))
+    encoded = canonical_json_bytes(_bundle(result, "T1", source_file))
+    assert all(name.encode() not in encoded for name in _TRANSIENT_PROFILE_FIELDS)
+    assert b"100.5" not in encoded
+
+
+def test_t1_with_transient_arrays_restores_into_cross_layer_builder(results, source_file):
+    result = replace(results["T1"], run_profile=_with_comparison_arrays(results["T1"].run_profile))
+    restored = restore_layer_evidence_result(_bundle(result, "T1", source_file))
+    output = audit_rna_cross_layer_evidence_reconciliation(
+        full_length_result=None, t1_result=restored, p1ap_ms1_result=None,
+        p1ap_ms2_result=None, runtime_context={"RNA_Identity": RNA["name"]},
+    )
+    assert output.nodes
+    assert any(node.layer == "T1" for node in output.nodes)
+
+
+def test_unknown_numpy_array_remains_rejected(results, source_file):
+    result = results["P1AP_MS1"]
+    first = replace(result.candidates[0], source_candidate={"unexpected_profile": np.array([1.0, 2.0])})
+    changed = replace(result, candidates=(first,) + result.candidates[1:])
+    with pytest.raises(LayerEvidenceBundleError, match="numpy/raw arrays are forbidden"):
+        _bundle(changed, "P1AP_MS1", source_file)
+
+
+def test_manually_serialized_transient_field_is_rejected(results, source_file):
+    result = replace(results["T1"], run_profile=_with_comparison_arrays(results["T1"].run_profile))
+    bundle = _bundle(result, "T1", source_file)
+    encoded_profile = _find_encoded_dataclass(bundle["result"], ".ReplicateRunPeakProfile")
+    assert encoded_profile is not None
+    encoded_profile["fields"]["comparison_mz_grid"] = {"__bundle_type__": "list", "items": [1.0]}
+    with pytest.raises(LayerEvidenceBundleError, match="transient fields must not be serialized"):
+        validate_layer_evidence_bundle(bundle, source_path=source_file)
+
+
+@pytest.mark.parametrize("replacement", [
+    {"base64": "AAAA"},
+    {"binary_payload": "AAAA"},
+    b"not-json-binary",
+])
+def test_malformed_transient_replacement_is_rejected(replacement, results, source_file):
+    bundle = _bundle(results["T1"], "T1", source_file)
+    encoded_profile = _find_encoded_dataclass(bundle["result"], ".ReplicateRunPeakProfile")
+    assert encoded_profile is not None
+    encoded_profile["fields"]["comparison_raw_profile"] = replacement
+    with pytest.raises(LayerEvidenceBundleError, match="raw spectrum/binary|transient fields"):
+        validate_layer_evidence_bundle(bundle, source_path=source_file)
+
+
+def test_p1ap_ms1_nonempty_comparison_arrays_round_trip_as_transient(results, source_file):
+    original = results["P1AP_MS1"]
+    nested = _with_comparison_arrays(original.run_profile.profile)
+    result = replace(original, run_profile=replace(original.run_profile, profile=nested))
+    bundle = _bundle(result, "P1AP_MS1", source_file)
+    restored = restore_layer_evidence_result(bundle)
+
+    assert type(restored) is type(result) is P1APNucleosideStateAuditResult
+    assert restored == result
+    assert all(getattr(restored.run_profile.profile, name) is None for name in _TRANSIENT_PROFILE_FIELDS)
+    assert all(name.encode() not in canonical_json_bytes(bundle) for name in _TRANSIENT_PROFILE_FIELDS)
