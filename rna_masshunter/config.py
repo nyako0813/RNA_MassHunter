@@ -56,6 +56,12 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
             "enabled": True,
         },
     },
+    "cca_tail": {
+        "enabled": True,
+        "excludes_cca_candidate_states": ["NONE", "C", "CC", "CCA"],
+        "includes_cca_candidate_states": ["CCA", "CC"],
+        "default_status": "ASSUMED",
+    },
     "reconstruction": {
         "enabled": True,
         "rt_min": None,

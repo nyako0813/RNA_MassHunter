@@ -37,11 +37,39 @@ from rna_masshunter.sciex_sample_manifest import (
     get_rna_identity,
     get_sample,
 )
+from rna_masshunter.cca_tail_state import (
+    CCATailState,
+    CCATailStatus,   # ← 追加
+    CCATailVariant,
+    RegisteredSequenceCCAMode,
+    generate_cca_tail_variants,
+)
 
 CANDIDATE_GENERATION_APPLIED_TO_FORMAL_SCORE = False
 CANDIDATE_GENERATION_APPLIED_TO_RANKING = False
 CANDIDATE_GENERATION_APPLIED_TO_CANDIDATE_FILTERING = False
 CANDIDATE_GENERATION_APPLIED_TO_FINAL_CONSENSUS = False
+
+_ALLOWED_CONFIG_STATUSES = (CCATailStatus.ASSUMED, CCATailStatus.UNKNOWN)
+
+
+def _cca_candidate_states_from_config(
+    cca_tail_config: dict | None,
+    mode: RegisteredSequenceCCAMode,
+) -> tuple[CCATailState, ...] | None:
+    """Resolve candidate CCA states from config, or None to use built-in defaults."""
+    settings = cca_tail_config or {}
+    if not settings.get("enabled", True):
+        return None
+    key = (
+        "excludes_cca_candidate_states"
+        if mode is RegisteredSequenceCCAMode.EXCLUDES_CCA
+        else "includes_cca_candidate_states"
+    )
+    raw = settings.get(key)
+    if not raw:
+        return None
+    return tuple(CCATailState(value) for value in raw)
 
 
 class CandidateGenerationError(ValueError):
@@ -347,6 +375,7 @@ def generate_candidates_for_measurement(
     measurement_id: str,
     *,
     include_secondary_terminal_state: bool = True,
+    cca_tail_config: dict | None = None,   # ← 追加
 ) -> tuple[IntactRnaTheoreticalCandidate, ...]:
     """Route a full-length measurement through manifest references only."""
     if not isinstance(manifest, SCIEXSampleManifest):
@@ -373,9 +402,13 @@ def generate_candidates_for_measurement(
             f"RNA identity {identity.rna_identity_id} has UNKNOWN registered CCA mode"
         )
 
+    candidate_states = _cca_candidate_states_from_config(
+        cca_tail_config, identity.registered_sequence_cca_mode
+    )
     cca_variants = generate_cca_tail_variants(
         identity.sequence,
         identity.registered_sequence_cca_mode,
+        candidate_states,   # ← None なら既存のデフォルト挙動と完全に同じ
     )
     terminal_sets = (
         (PRIMARY_DEFAULT, SECONDARY_TERMINAL_DIAGNOSTIC)

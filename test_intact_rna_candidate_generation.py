@@ -404,3 +404,13 @@ def test_candidates_keep_four_mass_references_and_baseline_safeguards(
         assert candidate.biological_unmodified_state_assigned is False
         assert candidate.target_rna_identity_confirmed_by_mass is False
         assert candidate.co_captured_rna_excluded is False
+
+def test_generate_candidates_for_measurement_respects_cca_tail_config(manifest):
+    cca_tail_config = {
+        "enabled": True,
+        "excludes_cca_candidate_states": ["CCA"],
+    }
+    candidates = generate_candidates_for_measurement(
+        manifest, "LEU_UAA_WT_FULL", cca_tail_config=cca_tail_config,
+    )
+    assert candidate_states(candidates) == [CCATailState.CCA, CCATailState.CCA]
