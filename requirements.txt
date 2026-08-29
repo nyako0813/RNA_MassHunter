@@ -7,3 +7,4 @@ pyteomics
 tqdm
 lxml
 psims
+python-docx

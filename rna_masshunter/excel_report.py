@@ -248,6 +248,18 @@ from rna_masshunter.p1_sap_feature_quality import (
     P1_SAP_ISOTOPE_AUDIT_COLUMNS,
     P1_SAP_QUALITY_SUMMARY_COLUMNS,
 )
+from rna_masshunter.audit_policy import (
+    AUDIT_STATUS_COLUMNS, DIAGNOSTIC_COLUMNS as AUDIT_LEVEL_DIAGNOSTIC_COLUMNS,
+    AuditPolicy, included_sheet_names, sheet_category,
+    FORMAL_CORE, FORMAL_OPTIONAL, AUDIT_SUMMARY, AUDIT_GROUP, AUDIT_DETAIL,
+)
+from rna_masshunter.report_document_export import (
+    WordExportCollector, _is_multi_sentence, write_word_appendix,
+)
+from rna_masshunter.report_document_export import (
+    WordExportCollector, _is_multi_sentence, write_word_appendix,
+    SHEETS_EXCLUDED_FROM_WORD_EXPORT,
+)
 
 
 AUDIT_TOP_SHADOW_COLUMNS = list(dict.fromkeys(
@@ -1209,6 +1221,82 @@ def _add_index_and_backlinks(writer: pd.ExcelWriter, sheet_names: list[str]) -> 
         worksheet["A1"].hyperlink = _sheet_link("Index", "A1")
         worksheet["A1"].style = "Hyperlink"
 
+_CONCLUSION_CATEGORIES = {FORMAL_CORE, FORMAL_OPTIONAL}
+_SEPARATOR_SHEET_NAME = "─── 詳細シート ───"
+
+
+def _reorder_sheets_conclusion_then_detail(
+    sheets: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """Reorder report sheets so formal/conclusion sheets come first, followed
+    by a blank separator sheet, then shadow-audit detail sheets. Run_summary
+    is always pinned first. Unclassified sheets are treated as detail
+    (conservative default)."""
+    conclusion: list[str] = []
+    detail: list[str] = []
+    for name in sheets:
+        if name == "Run_summary":
+            continue
+        if sheet_category(name) in _CONCLUSION_CATEGORIES:
+            conclusion.append(name)
+        else:
+            detail.append(name)
+
+    ordered: dict[str, pd.DataFrame] = {}
+    if "Run_summary" in sheets:
+        ordered["Run_summary"] = sheets["Run_summary"]
+    for name in conclusion:
+        ordered[name] = sheets[name]
+    if detail:
+        ordered[_SEPARATOR_SHEET_NAME] = pd.DataFrame()
+    for name in detail:
+        ordered[name] = sheets[name]
+    return ordered
+
+
+def _extract_long_cells_to_word(
+    sheets: dict[str, pd.DataFrame],
+    collector: WordExportCollector,
+) -> dict[str, pd.DataFrame]:
+    """Replace any cell spanning more than one sentence with a short bookmark
+    label (e.g. "P12"), collecting the original text into `collector` for
+    the companion Word document."""
+    processed: dict[str, pd.DataFrame] = {}
+    for sheet_name, frame in sheets.items():
+        if frame.empty or sheet_name in SHEETS_EXCLUDED_FROM_WORD_EXPORT:
+            processed[sheet_name] = frame
+            continue
+        frame = frame.copy()
+        for col_position, column in enumerate(frame.columns):
+            if frame.iloc[:, col_position].dtype != object:
+                continue
+            for row_position in range(len(frame)):
+                value = frame.iat[row_position, col_position]
+                if _is_multi_sentence(value):
+                    bookmark = collector.add(
+                        sheet_name, str(column), col_position, row_position + 1, value
+                    )
+                    frame.iat[row_position, col_position] = bookmark
+        processed[sheet_name] = frame
+    return processed
+
+
+def _add_word_appendix_hyperlinks(
+    writer: pd.ExcelWriter,
+    collector: WordExportCollector,
+    word_appendix_filename: str,
+) -> None:
+    workbook = writer.book
+    for item in collector.items:
+        if item.sheet_name not in workbook.sheetnames:
+            continue
+        worksheet = workbook[item.sheet_name]
+        excel_row = item.row_index + 3  # header at row 3 (startrow=2); data starts row 4
+        excel_col = item.column_position + 1
+        cell = worksheet.cell(row=excel_row, column=excel_col)
+        cell.hyperlink = f"{word_appendix_filename}#{item.bookmark}"
+        cell.style = "Hyperlink"
+
 
 def _fragment_rows(theoretical_fragments: list[Any]) -> list[dict[str, Any]]:
     rows = []
@@ -1460,7 +1548,9 @@ def write_excel_report(
     audit_policy = audit_policy or AuditPolicy.from_level("full")
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = out_dir / f"RNA_MassHunter_MVP5_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    report_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report_path = out_dir / f"RNA_MassHunter_MVP5_{report_timestamp}.xlsx"
+    word_appendix_path = out_dir / f"RNA_MassHunter_MVP5_{report_timestamp}_appendix.docx"
 
     reporting = config.reporting or {}
     max_excel_rows = _as_positive_int(reporting.get("max_excel_rows_per_sheet"), 100000)
@@ -2066,6 +2156,15 @@ def write_excel_report(
         for sheet_name, frame in sheets.items()
     }
 
+    sheets = _reorder_sheets_conclusion_then_detail(sheets)
+
+    word_export_collector = WordExportCollector()
+    sheets = _extract_long_cells_to_word(sheets, word_export_collector)
+
+    word_appendix_written_path = None
+    if not word_export_collector.is_empty():
+        word_appendix_written_path = write_word_appendix(word_export_collector, word_appendix_path)
+
     index_rows = [
         {
             "Sheet": sheet_name,
@@ -2080,5 +2179,8 @@ def write_excel_report(
         for sheet_name, frame in sheets.items():
             frame.to_excel(writer, sheet_name=sheet_name, index=False, startrow=2)
         _add_index_and_backlinks(writer, list(sheets))
+        if word_appendix_written_path is not None:
+            _add_word_appendix_hyperlinks(writer, word_export_collector, word_appendix_written_path.name)
         _autosize_and_freeze(writer)
-    return report_path
+    return report_path, word_appendix_written_path
+    

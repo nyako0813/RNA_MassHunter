@@ -1414,7 +1414,7 @@ def main(argv: list[str] | None = None) -> None:
     optional_results["MS2_Unmatched_Ion_Diagnostics"] = append_composite_diagnostics(
         optional_results.get("MS2_Unmatched_Ion_Diagnostics"), composite_audit,
     )
-    report_path = write_excel_report(
+    report_path, word_appendix_path = write_excel_report(
         output_dir=Path(config.project["output_dir"]),
         config=config,
         diagnostics=diagnostics,
@@ -1432,6 +1432,8 @@ def main(argv: list[str] | None = None) -> None:
         audit_policy=audit_policy,
     )
     logger.info("Excel report written: %s", report_path)
+    if word_appendix_path is not None:
+        logger.info("Word appendix written: %s", word_appendix_path)
     if p1_sap_audit is not None:
         summary_path = write_p1_sap_summary_json(
             p1_sap_audit, Path(config.project["output_dir"]), mzml_path=mzml_path,
