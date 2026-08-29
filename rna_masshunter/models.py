@@ -26,6 +26,7 @@ class RunConfig:
     performance: dict[str, Any] = field(default_factory=dict)
     reporting: dict[str, Any] = field(default_factory=dict)
     cca_tail: dict[str, Any] = field(default_factory=dict)
+    cca_processing: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
 

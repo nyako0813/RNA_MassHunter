@@ -5,7 +5,7 @@ project:
   cache_dir: .cache
 input:
   raw_path: ''
-  mzml_path: ''
+  mzml_path: '/mnt/c/Users/nyako/OneDrive - 国立大学法人東海国立大学機構/研究室関連/ms/260826/20 Lys4h.mzML'
   msconvert_path: ''
 organism:
   group: archaea
@@ -14,9 +14,9 @@ organism:
 sequence:
   name: target_tRNA
   type: RNA
-  sequence: ''
-  anticodon: ''
-  wobble_position: 34
+  sequence: 'AGUCCUGUAGGGUAGUGGUCAAUCCUUCGGGCCUUUGGAGCCCGGGACAGCGGUUCGAAUCCGCUCAGGACUA'
+  anticodon: 'UUG'
+  wobble_position: 35
 experiment:
   condition_name: wild_type
   knocked_out_genes: []
@@ -64,6 +64,18 @@ alkaline_phosphatase:
   assume_complete: false
   allow_residual_phosphate: true
   allow_cyclic_phosphate: true
+alkaline_phosphatase:
+  enabled: false
+  assume_complete: false
+  allow_residual_phosphate: true
+  allow_cyclic_phosphate: true
+cca_tail:
+  enabled: true
+  excludes_cca_candidate_states: [NONE, C, CC, CCA]
+  includes_cca_candidate_states: [CCA, CC]
+  default_status: ASSUMED   # ASSUMED か UNKNOWN のみ指定可(CONFIRMEDはconfigからは設定不可)
+cca_processing:
+  enabled: true
 fragment_mapping:
   # Keep enabled for RNase digestion fragment MS1 matching.
   enabled: true

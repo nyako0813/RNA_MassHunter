@@ -19,6 +19,64 @@ def _fragment_warning(fragment_warnings: list[str], message: str) -> None:
     if message not in fragment_warnings:
         fragment_warnings.append(message)
 
+def _generate_three_prime_tail_candidates(
+    fragment: Fragment,
+    full_sequence_length: int,
+    base_masses: dict,
+    warnings: list[dict[str, Any]] | None = None,
+) -> list[Fragment]:
+    """Generate 3'-terminal C/CC/CCA sequence candidates.
+
+    Only fragments reaching the original RNA 3' end are eligible.
+    The candidates are ordinary Fragment objects so the existing MS1
+    mapping can match their theoretical masses directly.
+    """
+    if fragment.end != full_sequence_length:
+        return [fragment]
+
+    tail_sequences = ("", "C", "CC", "CCA")
+    candidates: list[Fragment] = []
+
+    for tail in tail_sequences:
+        sequence = fragment.sequence + tail
+        end = fragment.end + len(tail)
+
+        mass = calculate_unmodified_rna_mass(
+            sequence,
+            base_masses,
+            warnings=warnings,
+            terminal_form=fragment.terminal_form,
+        )
+
+        fragment_warnings = list(fragment.warnings)
+        if mass is None:
+            _fragment_warning(
+                fragment_warnings,
+                "unmodified mass could not be calculated",
+            )
+            mass = 0.0
+
+        candidates.append(
+            replace(
+                fragment,
+                fragment_id=(
+                    f"{fragment.target_id}_{fragment.enzyme}_"
+                    f"{fragment.start}_{end}_"
+                    f"mc{fragment.missed_cleavages}_{fragment.terminal_form}"
+                ),
+                sequence=sequence,
+                end=end,
+                standard_end=(
+                    fragment.standard_end
+                    if not tail
+                    else None
+                ),
+                unmodified_mass=float(mass),
+                warnings=fragment_warnings,
+            )
+        )
+
+    return candidates
 
 def digest_sequence(
     target_id: str,
@@ -135,7 +193,22 @@ def digest_sequence(
             unmodified_mass=float(mass),
             warnings=fragment_warnings,
         )
-        fragments.extend(generate_terminal_forms(fragment, config, base_masses, warnings=warnings))
+        terminal_fragments = generate_terminal_forms(
+            fragment,
+            config,
+            base_masses,
+            warnings=warnings,
+        )
+
+        for terminal_fragment in terminal_fragments:
+            fragments.extend(
+                _generate_three_prime_tail_candidates(
+                    terminal_fragment,
+                    len(sequence),
+                    base_masses,
+                    warnings=warnings,
+                )
+            )
     return fragments
 
 
