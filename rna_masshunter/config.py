@@ -257,6 +257,21 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "min_peak_tier": ["Major", "Minor"],
         "min_confidence": ["High", "Medium"],
     },
+    "unknown_modification_search": {
+        "enabled": True,
+        "mz_tolerance_ppm": 10,
+        "max_candidates_per_match": 10,
+        "min_peak_tier": ["Major", "Minor"],
+        "min_confidence": ["High", "Medium"],
+        "include_known_modification_composites": True,
+        "candidate_deltas": [
+            {"label": "+O (oxidation)", "elements": {"O": 1}},
+            {"label": "+S (thiolation)", "elements": {"S": 1}},
+            {"label": "+CH2 (methylation)", "elements": {"C": 1, "H": 2}},
+            {"label": "-H2O (dehydration)", "elements": {"H": -2, "O": -1}},
+            {"label": "+CH2O2 (formylation-like, +CHO2H)", "elements": {"C": 1, "H": 2, "O": 2}},
+        ],
+    },
     "p1_sap_dinucleotide": {
         "enabled": True,
         "candidate_generation": {

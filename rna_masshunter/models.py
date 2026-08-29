@@ -17,6 +17,7 @@ class RunConfig:
     alkaline_phosphatase: dict[str, Any] = field(default_factory=dict)
     fragment_mapping: dict[str, Any] = field(default_factory=dict)
     modification_search: dict[str, Any] = field(default_factory=dict)
+    unknown_modification_search: dict[str, Any] = field(default_factory=dict)
     peak_filtering: dict[str, Any] = field(default_factory=dict)
     p1_annotation: dict[str, Any] = field(default_factory=dict)
     p1_sap_dinucleotide: dict[str, Any] = field(default_factory=dict)
@@ -398,6 +399,76 @@ class KnownModificationCandidate:
     modification_name: str
     target_base: str
     modification_mass_shift: float
+    modified_mass: float
+    mass_error_modified_da: float
+    mass_error_modified_ppm: float
+    charge: int | None
+    intensity: float
+    rt: float | None
+    peak_tier: str | None
+    confidence: str
+    priority_score: float
+    notes: str = ""
+    warnings: list[str] = field(default_factory=list)
+
+@dataclass
+class UnknownModificationCandidate:
+    candidate_id: str
+    source_type: str
+    source_id: str
+    target_id: str
+    sequence: str
+    start: int | None
+    end: int | None
+    standard_start: int | None
+    standard_end: int | None
+    observed_mz: float | None
+    theoretical_mz: float | None
+    observed_mass: float
+    unmodified_mass: float
+    mass_error_unmodified_da: float
+    mass_error_unmodified_ppm: float
+    delta_label: str
+    delta_elements: str
+    delta_mass_shift: float
+    modified_mass: float
+    mass_error_modified_da: float
+    mass_error_modified_ppm: float
+    charge: int | None
+    intensity: float
+    rt: float | None
+    peak_tier: str | None
+    confidence: str
+    priority_score: float
+    notes: str = ""
+    warnings: list[str] = field(default_factory=list)
+
+@dataclass
+class CompoundModificationCandidate:
+    candidate_id: str
+    source_type: str
+    source_id: str
+    target_id: str
+    sequence: str
+    start: int | None
+    end: int | None
+    standard_start: int | None
+    standard_end: int | None
+    observed_mz: float | None
+    theoretical_mz: float | None
+    observed_mass: float
+    unmodified_mass: float
+    mass_error_unmodified_da: float
+    mass_error_unmodified_ppm: float
+    modification_id: str
+    modification_symbol: str | None
+    modification_name: str
+    target_base: str
+    modification_mass_shift: float
+    delta_label: str
+    delta_elements: str
+    delta_mass_shift: float
+    combined_mass_shift: float
     modified_mass: float
     mass_error_modified_da: float
     mass_error_modified_ppm: float

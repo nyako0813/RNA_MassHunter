@@ -98,3 +98,13 @@ def mz_from_neutral_mass(neutral_mass: float, charge: int, polarity: str = "nega
     if str(polarity).lower() == "negative":
         return (float(neutral_mass) - z * proton_mass) / z
     return (float(neutral_mass) + z * proton_mass) / z
+
+def elemental_delta_mass(elements: dict[str, int]) -> float:
+    """Compute the monoisotopic mass shift for a simple elemental delta,
+    e.g. {"O": 1} for +O (oxidation) or {"H": -2, "O": -1} for -H2O."""
+    total = 0.0
+    for element, count in elements.items():
+        if element not in MONOISOTOPIC_ATOMIC_MASSES:
+            raise ValueError(f"Unsupported element in delta: {element}")
+        total += MONOISOTOPIC_ATOMIC_MASSES[element] * count
+    return total

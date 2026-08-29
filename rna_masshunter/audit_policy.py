@@ -63,6 +63,8 @@ FORMAL_CORE_SHEETS = {
     "Run_summary", "Workflow_Summary", "Input_parameters", "mzML_diagnostics",
     "Theoretical_fragments", "Fragment_MS1_matches", "Fragment_MS1_filtered",
     "Fragment_MS1_summary", "Known_Modification_Candidates", "Known_Modification_Summary",
+    "Unknown_Modification_Candidates", "Unknown_Modification_Summary",
+    "Compound_Modification_Candidates", "Compound_Modification_Summary",
     "Modification_Evidence_Summary", "Modification_Evidence_Ranking",
     "Modification_Ambiguity_Groups", "Modification_Position_Priors",
     "MS2_Biological_Plausibility", "MS2_Modification_Identity",

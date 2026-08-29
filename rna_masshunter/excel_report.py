@@ -699,6 +699,100 @@ KNOWN_MODIFICATION_SUMMARY_COLUMNS = [
     "Best_Priority_Score",
 ]
 
+UNKNOWN_MODIFICATION_CANDIDATE_COLUMNS = [
+    "candidate_id",
+    "source_type",
+    "source_id",
+    "target_id",
+    "sequence",
+    "start",
+    "end",
+    "observed_mz",
+    "theoretical_mz",
+    "observed_mass",
+    "unmodified_mass",
+    "mass_error_unmodified_da",
+    "mass_error_unmodified_ppm",
+    "delta_label",
+    "delta_elements",
+    "delta_mass_shift",
+    "modified_mass",
+    "mass_error_modified_da",
+    "mass_error_modified_ppm",
+    "charge",
+    "intensity",
+    "rt",
+    "peak_tier",
+    "confidence",
+    "priority_score",
+    "notes",
+    "warnings",
+]
+
+UNKNOWN_MODIFICATION_SUMMARY_COLUMNS = [
+    "Delta_Label",
+    "Delta_Elements",
+    "Delta_Mass_Shift",
+    "Candidate_Count",
+    "Best_Source_ID",
+    "Best_Sequence",
+    "Best_Mass_Error_Modified_ppm",
+    "Best_Intensity",
+    "Best_Peak_Tier",
+    "Best_Confidence",
+    "Best_Priority_Score",
+]
+
+COMPOUND_MODIFICATION_CANDIDATE_COLUMNS = [
+    "candidate_id",
+    "source_type",
+    "source_id",
+    "target_id",
+    "sequence",
+    "start",
+    "end",
+    "observed_mz",
+    "theoretical_mz",
+    "observed_mass",
+    "unmodified_mass",
+    "mass_error_unmodified_da",
+    "mass_error_unmodified_ppm",
+    "modification_id",
+    "modification_symbol",
+    "modification_name",
+    "target_base",
+    "modification_mass_shift",
+    "delta_label",
+    "delta_elements",
+    "delta_mass_shift",
+    "combined_mass_shift",
+    "modified_mass",
+    "mass_error_modified_da",
+    "mass_error_modified_ppm",
+    "charge",
+    "intensity",
+    "rt",
+    "peak_tier",
+    "confidence",
+    "priority_score",
+    "notes",
+    "warnings",
+]
+
+COMPOUND_MODIFICATION_SUMMARY_COLUMNS = [
+    "Modification_ID",
+    "Delta_Label",
+    "Combined_Mass_Shift",
+    "Candidate_Count",
+    "Best_Source_ID",
+    "Best_Sequence",
+    "Best_Mass_Error_Modified_ppm",
+    "Best_Intensity",
+    "Best_Peak_Tier",
+    "Best_Confidence",
+    "Best_Priority_Score",
+]
+
 SHEET_DESCRIPTIONS = {
     "Run_summary": "Run-level summary for this RNA_MassHunter MVP-3 report.",
     "Workflow_Summary": "Workflow step execution and skip status for the selected analysis mode.",
@@ -846,6 +940,8 @@ SHEET_DESCRIPTIONS = {
     "MS2_Fragment_Evidence": "Spectrum-parent fragment evidence summary from matched MS2 ions.",
     "MS2_Peak_Annotations": "Optional all-peak MS2 annotation sheet, disabled by default.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
+    "Compound_Modification_Candidates": "Known modification plus an additional simple mass shift (e.g. ncm5s2U + S), not present as a single catalog entry.",
+    "Compound_Modification_Summary": "Grouped summary of compound (known modification + extra shift) candidates.",    
 }
 
 
@@ -1542,6 +1638,10 @@ def write_excel_report(
     fragment_ms1_matches: list[Any] | None = None,
     known_modification_candidates: list[dict[str, Any]] | None = None,
     known_modification_summary: list[dict[str, Any]] | None = None,
+    unknown_modification_candidates: list[dict[str, Any]] | None = None,
+    unknown_modification_summary: list[dict[str, Any]] | None = None,
+    compound_modification_candidates: list[dict[str, Any]] | None = None,
+    compound_modification_summary: list[dict[str, Any]] | None = None,
     optional_results: dict[str, Any] | None = None,
     audit_policy: AuditPolicy | None = None,
 ) -> Path:
@@ -1803,6 +1903,10 @@ def write_excel_report(
     fragment_ms1_matches = fragment_ms1_matches or []
     known_modification_candidates = known_modification_candidates or []
     known_modification_summary = known_modification_summary or []
+    unknown_modification_candidates = unknown_modification_candidates or []
+    unknown_modification_summary = unknown_modification_summary or []
+    compound_modification_candidates = compound_modification_candidates or []
+    compound_modification_summary = compound_modification_summary or []
     fragment_ms1_filtered = _filter_fragment_ms1_matches(fragment_ms1_matches, config.fragment_mapping or {})
     fragment_ms1_summary_rows = _fragment_ms1_summary_rows(fragment_ms1_matches, config.fragment_mapping or {})
     input_parameters = {
@@ -1852,6 +1956,10 @@ def write_excel_report(
         "Fragment_MS1_summary": pd.DataFrame(fragment_ms1_summary_rows, columns=FRAGMENT_MS1_SUMMARY_COLUMNS),
         "Known_Modification_Candidates": pd.DataFrame(known_modification_candidates, columns=KNOWN_MODIFICATION_CANDIDATE_COLUMNS),
         "Known_Modification_Summary": pd.DataFrame(known_modification_summary, columns=KNOWN_MODIFICATION_SUMMARY_COLUMNS),
+        "Unknown_Modification_Candidates": pd.DataFrame(unknown_modification_candidates, columns=UNKNOWN_MODIFICATION_CANDIDATE_COLUMNS),
+        "Unknown_Modification_Summary": pd.DataFrame(unknown_modification_summary, columns=UNKNOWN_MODIFICATION_SUMMARY_COLUMNS),        
+        "Compound_Modification_Candidates": pd.DataFrame(compound_modification_candidates, columns=COMPOUND_MODIFICATION_CANDIDATE_COLUMNS),
+        "Compound_Modification_Summary": pd.DataFrame(compound_modification_summary, columns=COMPOUND_MODIFICATION_SUMMARY_COLUMNS),
     }
     intact_qc_sheets = {
         "Intact_Reconstruction_QC": pd.DataFrame(intact_qc_rows, columns=INTACT_QC_COLUMNS),
@@ -2132,6 +2240,10 @@ def write_excel_report(
         {"Item": "Fragment MS1 summary", "Value": len(fragment_ms1_summary_rows)},
         {"Item": "Known modification candidates", "Value": len(known_modification_candidates)},
         {"Item": "Known modification summary", "Value": len(known_modification_summary)},
+        {"Item": "Unknown modification candidates", "Value": len(unknown_modification_candidates)},
+        {"Item": "Unknown modification summary", "Value": len(unknown_modification_summary)},
+        {"Item": "Compound modification candidates", "Value": len(compound_modification_candidates)},
+        {"Item": "Compound modification summary", "Value": len(compound_modification_summary)},
         {"Item": "Truncated sheets", "Value": _truncation_summary(truncations)},
         {"Item": "Warnings", "Value": len(warnings)},
         *audit_policy.run_summary_items(),

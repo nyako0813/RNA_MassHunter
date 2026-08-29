@@ -2,9 +2,11 @@ from dataclasses import asdict, is_dataclass
 from math import isfinite
 from typing import Any
 
-from rna_masshunter.masses import neutral_mass_from_mz
 from rna_masshunter.models import FragmentMS1Match, IntactMassCandidate, KnownModificationCandidate, Modification, RunConfig
 from rna_masshunter.warnings_manager import add_warning
+from rna_masshunter.masses import mz_from_neutral_mass, neutral_mass_from_mz
+from rna_masshunter.mass_shift_ms1_search import SortedPeakIndex, build_sorted_peak_index, find_peaks_near_mz
+from rna_masshunter.ms1_mapping import _eligible_peaks
 
 
 def _as_bool(value: Any, default: bool = True) -> bool:
@@ -253,6 +255,135 @@ def _fragment_candidates(
             )
     return candidates
 
+def _fragment_candidates_by_mass_shift(
+    theoretical_fragments: list[Any],
+    peak_index: SortedPeakIndex,
+    modifications: list[Modification],
+    config: RunConfig,
+    warnings: list[dict[str, Any]] | None,
+) -> list[KnownModificationCandidate]:
+    search_config = config.modification_search or {}
+    tolerance_ppm = _as_float(search_config.get("mz_tolerance_ppm"), 10.0)
+    max_candidates = _as_positive_int(search_config.get("max_candidates_per_match"), 10)
+    require_base = _as_bool(search_config.get("require_base_compatibility"), True)
+    allowed_tiers = _normalize_values(search_config.get("min_peak_tier", ["Major", "Minor"]))
+    allowed_confidence = _normalize_values(search_config.get("min_confidence", ["High", "Medium"]))
+    mapping_config = config.fragment_mapping or {}
+    polarity = str(mapping_config.get("polarity", "auto") or "auto").lower()
+    if polarity == "auto":
+        polarity = str((config.instrument or {}).get("polarity", "negative") or "negative").lower()
+    min_charge = _as_positive_int(mapping_config.get("min_charge"), 1)
+    max_charge = _as_positive_int(mapping_config.get("max_charge"), 8)
+
+    candidates: list[KnownModificationCandidate] = []
+    for fragment in theoretical_fragments:
+        per_fragment: list[KnownModificationCandidate] = []
+        for modification in modifications:
+            if not _candidate_policy_allows_mass_search(modification):
+                continue
+            shift = modification.mass_shift_from_unmodified
+            if not isfinite(shift):
+                continue
+            if _should_skip_isobaric_shift(shift, search_config):
+                continue
+            if require_base and not _base_compatible(fragment.sequence, modification):
+                continue
+            modified_mass = fragment.unmodified_mass + shift
+            if modified_mass <= 0:
+                continue
+            compatible = _base_compatible(fragment.sequence, modification)
+            for charge in range(min_charge, max_charge + 1):
+                theoretical_mz = mz_from_neutral_mass(modified_mass, charge, polarity)
+                for peak_match in find_peaks_near_mz(peak_index, theoretical_mz, tolerance_ppm):
+                    tier = getattr(peak_match.peak, "tier", None)
+                    if allowed_tiers and str(tier or "").lower() not in allowed_tiers:
+                        continue
+                    if allowed_confidence and peak_match.confidence.lower() not in allowed_confidence:
+                        continue
+                    observed_mass = neutral_mass_from_mz(peak_match.observed_mz, charge, polarity)
+                    unmodified_mass = fragment.unmodified_mass
+                    mass_error_modified_ppm = _ppm_error(observed_mass, modified_mass)
+                    priority = _priority_score(peak_match.confidence, tier, mass_error_modified_ppm, tolerance_ppm)
+                    per_fragment.append(
+                        KnownModificationCandidate(
+                            candidate_id="",
+                            source_type="fragment",
+                            source_id=fragment.fragment_id,
+                            target_id=fragment.target_id,
+                            sequence=fragment.sequence,
+                            start=fragment.start,
+                            end=fragment.end,
+                            standard_start=fragment.standard_start,
+                            standard_end=fragment.standard_end,
+                            observed_mz=peak_match.observed_mz,
+                            theoretical_mz=theoretical_mz,
+                            observed_mass=observed_mass,
+                            unmodified_mass=unmodified_mass,
+                            mass_error_unmodified_da=observed_mass - unmodified_mass,
+                            mass_error_unmodified_ppm=_ppm_error(observed_mass, unmodified_mass),
+                            modification_id=modification.id,
+                            modification_symbol=modification.symbol,
+                            modification_name=_modification_name(modification),
+                            target_base=_target_base_label(modification),
+                            modification_mass_shift=shift,
+                            modified_mass=modified_mass,
+                            mass_error_modified_da=observed_mass - modified_mass,
+                            mass_error_modified_ppm=mass_error_modified_ppm,
+                            charge=charge,
+                            intensity=float(getattr(peak_match.peak, "intensity", 0.0) or 0.0),
+                            rt=getattr(peak_match.peak, "rt", None),
+                            peak_tier=tier,
+                            confidence=peak_match.confidence,
+                            priority_score=priority,
+                            notes="base compatible" if compatible else "base compatibility not required",
+                        )
+                    )
+        per_fragment.sort(key=lambda item: (-item.priority_score, abs(item.mass_error_modified_ppm), -item.intensity))
+        candidates.extend(per_fragment[:max_candidates])
+        if len(per_fragment) > max_candidates and warnings is not None:
+            add_warning(
+                warnings, "WARNING", "modification_search",
+                "Known modification candidates were truncated by max_candidates_per_match.",
+                {"source_id": fragment.fragment_id, "before": len(per_fragment), "after": max_candidates},
+            )
+    return candidates
+
+
+def search_known_modifications_by_mass_shift(
+    theoretical_fragments: list[Any],
+    peaks: list[Any],
+    intact_results: list[IntactMassCandidate],
+    modifications: list[Modification],
+    config: RunConfig,
+    warnings: list[dict[str, Any]] | None = None,
+) -> list[KnownModificationCandidate]:
+    """Direct fragment x modification x charge mass-shift search against raw
+    MS1 peaks (binary search), independent of any prior unmodified-only
+    match. Use this for the real pipeline; `search_known_modifications`
+    (matches-based) remains for shadow-audit modules that intentionally
+    evaluate a specific, already-truncated match set."""
+    search_config = config.modification_search or {}
+    if not _as_bool(search_config.get("enabled"), True):
+        return []
+    source = search_config.get("source", {}) if isinstance(search_config.get("source", {}), dict) else {}
+    use_fragments = _as_bool(source.get("use_fragments"), True)
+    use_intact = _as_bool(source.get("use_intact"), False)
+
+    candidates: list[KnownModificationCandidate] = []
+    if use_fragments:
+        if theoretical_fragments and peaks:
+            eligible = _eligible_peaks(peaks, config.fragment_mapping or {})
+            peak_index = build_sorted_peak_index(eligible)
+            candidates.extend(_fragment_candidates_by_mass_shift(theoretical_fragments, peak_index, modifications, config, warnings))
+        elif warnings is not None:
+            add_warning(warnings, "INFO", "modification_search", "Known modification mass-shift search was enabled but theoretical fragments or MS1 peaks are empty.")
+    if use_intact:
+        candidates.extend(_intact_candidates(intact_results, modifications, config))
+
+    candidates.sort(key=lambda item: (-item.priority_score, abs(item.mass_error_modified_ppm), -item.intensity))
+    for index, candidate in enumerate(candidates, start=1):
+        candidate.candidate_id = f"KMOD_{index:06d}"
+    return candidates
 
 def _intact_candidates(
     intact_results: list[IntactMassCandidate],

@@ -33,8 +33,14 @@ from rna_masshunter.evidence_ranking import build_ambiguity_groups, build_modifi
 from rna_masshunter.intact_reconstruction import reconstruct_intact_masses
 from rna_masshunter.logging_utils import setup_logger
 from rna_masshunter.masses import calculate_unmodified_rna_mass, load_base_masses
-from rna_masshunter.modification_search import known_modification_candidate_rows, search_known_modifications, summarize_known_modification_candidates
+from rna_masshunter.modification_search import known_modification_candidate_rows, search_known_modifications_by_mass_shift, summarize_known_modification_candidates
 from rna_masshunter.modifications import load_modifications, validate_modifications
+from rna_masshunter.unknown_modification import (
+    generate_unknown_modification_candidates,
+    summarize_unknown_modification_candidates,
+    generate_compound_modification_candidates,
+    summarize_compound_modification_candidates,
+)
 from rna_masshunter.ms1_mapping import map_fragments_to_ms1_peaks
 from rna_masshunter.ms1_match_truncation_audit import (
     append_diagnostic_shadow_columns,
@@ -706,6 +712,10 @@ def main(argv: list[str] | None = None) -> None:
     fragment_ms1_matches = []
     known_modification_candidates = []
     known_modification_summary = []
+    unknown_modification_candidates = []
+    unknown_modification_summary = []
+    compound_modification_candidates = []
+    compound_modification_summary = []
     ranking_rows = []
     ms1_audit_context = {}
     sequence = (config.sequence.get("sequence", "") or "").upper().replace("T", "U")
@@ -790,8 +800,9 @@ def main(argv: list[str] | None = None) -> None:
     if intact_only:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "skipped_by_analysis_mode", _as_bool(config.modification_search.get("enabled"), True), False, "intact_only skips modification search")
     elif _as_bool(config.modification_search.get("enabled"), True):
-        known_modification_candidates = search_known_modifications(
-            fragment_ms1_matches=fragment_ms1_matches,
+        known_modification_candidates = search_known_modifications_by_mass_shift(
+            theoretical_fragments=theoretical_fragments,
+            peaks=peaks,
             intact_results=intact_results,
             modifications=modifications,
             config=config,
@@ -801,6 +812,37 @@ def main(argv: list[str] | None = None) -> None:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "executed", True, True, output_sheets="Known_Modification_Candidates; Known_Modification_Summary", notes=f"candidates={len(known_modification_candidates)}")
     else:
         _record_workflow_step(workflow_rows, analysis_mode, "known_modification_search", "disabled_by_config", False, False, "modification_search.enabled=false")
+
+    if intact_only:
+        _record_workflow_step(workflow_rows, analysis_mode, "unknown_modification_search", "skipped_by_analysis_mode", _as_bool(config.unknown_modification_search.get("enabled"), True), False, "intact_only skips unknown modification search")
+    elif _as_bool(config.unknown_modification_search.get("enabled"), True):
+        unknown_modification_candidates = generate_unknown_modification_candidates(
+            theoretical_fragments=theoretical_fragments,
+            peaks=peaks,
+            intact_results=intact_results,
+            config=config,
+            warnings=warnings,
+        )
+        unknown_modification_summary = summarize_unknown_modification_candidates(unknown_modification_candidates)
+        _record_workflow_step(workflow_rows, analysis_mode, "unknown_modification_search", "executed", True, True, output_sheets="Unknown_Modification_Candidates; Unknown_Modification_Summary", notes=f"candidates={len(unknown_modification_candidates)}")
+    else:
+        _record_workflow_step(workflow_rows, analysis_mode, "unknown_modification_search", "disabled_by_config", False, False, "unknown_modification_search.enabled=false")
+
+
+    if intact_only:
+        _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "skipped_by_analysis_mode", _as_bool(config.unknown_modification_search.get("enabled"), True), False, "intact_only skips compound modification search")
+    elif _as_bool(config.unknown_modification_search.get("enabled"), True) and _as_bool(config.unknown_modification_search.get("include_known_modification_composites"), True):
+        compound_modification_candidates = generate_compound_modification_candidates(
+            theoretical_fragments=theoretical_fragments,
+            peaks=peaks,
+            modifications=modifications,
+            config=config,
+            warnings=warnings,
+        )
+        compound_modification_summary = summarize_compound_modification_candidates(compound_modification_candidates)
+        _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "executed", True, True, output_sheets="Compound_Modification_Candidates; Compound_Modification_Summary", notes=f"candidates={len(compound_modification_candidates)}")
+    else:
+        _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "disabled_by_config", False, False, "unknown_modification_search.enabled=false or include_known_modification_composites=false")
 
     optional_results = {"Workflow_Summary": workflow_rows}
     sciex_enabled = _as_bool((config.sciex_profile or {}).get("enabled"), False)
@@ -1428,6 +1470,10 @@ def main(argv: list[str] | None = None) -> None:
         fragment_ms1_matches=fragment_ms1_matches,
         known_modification_candidates=known_modification_candidate_rows(known_modification_candidates),
         known_modification_summary=known_modification_summary,
+        unknown_modification_candidates=known_modification_candidate_rows(unknown_modification_candidates),
+        unknown_modification_summary=unknown_modification_summary,
+        compound_modification_candidates=known_modification_candidate_rows(compound_modification_candidates),
+        compound_modification_summary=compound_modification_summary,
         optional_results=optional_results,
         audit_policy=audit_policy,
     )
