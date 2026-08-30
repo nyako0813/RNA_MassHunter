@@ -5,7 +5,7 @@ project:
   cache_dir: .cache
 input:
   raw_path: ''
-  mzml_path: '/mnt/c/Users/nyako/OneDrive - 国立大学法人東海国立大学機構/研究室関連/ms/260826/20 Lys4h.mzML'
+  mzml_path: '/mnt/c/Users/nyako/OneDrive - 国立大学法人東海国立大学機構/研究室関連/その他/ms/Mass/260424/05 old T1.mzML'
   msconvert_path: ''
 organism:
   group: archaea
@@ -14,9 +14,9 @@ organism:
 sequence:
   name: target_tRNA
   type: RNA
-  sequence: 'AGUCCUGUAGGGUAGUGGUCAAUCCUUCGGGCCUUUGGAGCCCGGGACAGCGGUUCGAAUCCGCUCAGGACUA'
-  anticodon: 'UUG'
-  wobble_position: 35
+  sequence: 'GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA'
+  anticodon: 'UUC'
+  wobble_position: 37
 experiment:
   condition_name: wild_type
   knocked_out_genes: []
@@ -249,3 +249,26 @@ modification_search:
   min_confidence:
     - High
     - Medium
+unknown_modification_search:
+  enabled: true
+  include_known_modification_composites: true   # これがCompound探索のON/OFF
+  mz_tolerance_ppm: 10.0
+  max_candidates_per_match: 10
+  min_peak_tier: ["Major", "Minor"]
+  min_confidence: ["High", "Medium"]
+  source:
+    use_fragments: true
+    use_intact: false
+  candidate_deltas:
+    - label: "+O"
+      elements: {O: 1}
+    - label: "+S"
+      elements: {S: 1}
+    - label: "O→S"
+      elements: {O: -1, S: 1}
+    - label: "+CH2"
+      elements: {C: 1, H: 2}
+    - label: "-H2O"
+      elements: {H: -2, O: -1}
+    - label: "+CH2O2"
+      elements: {C: 1, H: 2, O: 2}

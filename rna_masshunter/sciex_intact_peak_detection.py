@@ -11,6 +11,11 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks, peak_prominences, peak_widths, savgol_filter
 
+# numpy.trapezoid was introduced in numpy 2.0, replacing the older numpy.trapz name.
+# Support both so this module works on numpy < 2.0 (where only trapz exists) and
+# numpy >= 2.0 (where trapz is deprecated in favor of trapezoid).
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 NEUTRAL_MASS_PROFILE = "NEUTRAL_MASS_PROFILE"
 SUPPORTED_INPUT = "SUPPORTED_INPUT"
 ALGORITHM_VERSION = "sciex-intact-neutral-mass-v1"
@@ -314,10 +319,10 @@ def _centroid_and_areas(
     local_mass = masses[left:right + 1]
     local_raw = raw[left:right + 1]
     local_weights = quantification_weights[left:right + 1]
-    raw_area = float(np.trapezoid(local_raw, local_mass)) if len(local_mass) > 1 else 0.0
-    corrected_area = float(np.trapezoid(local_weights, local_mass)) if len(local_mass) > 1 else 0.0
+    raw_area = float(_trapezoid(local_raw, local_mass)) if len(local_mass) > 1 else 0.0
+    corrected_area = float(_trapezoid(local_weights, local_mass)) if len(local_mass) > 1 else 0.0
     if corrected_area > 0:
-        centroid = float(np.trapezoid(local_mass * local_weights, local_mass) / corrected_area)
+        centroid = float(_trapezoid(local_mass * local_weights, local_mass) / corrected_area)
         return centroid, raw_area, corrected_area, False
     return float(apex_mass), raw_area, corrected_area, True
 
