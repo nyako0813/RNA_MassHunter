@@ -85,7 +85,7 @@ def writer_config(report_limit=1000):
 
 
 def write_report(tmp_path, level, optional_results, label):
-    return write_excel_report(
+    report_path, _word_appendix_path = write_excel_report(
         output_dir=tmp_path / label,
         config=writer_config(),
         diagnostics={}, intact_results=[], charge_state_peaks=[], warnings=[],
@@ -94,6 +94,7 @@ def write_report(tmp_path, level, optional_results, label):
         known_modification_summary=[], optional_results=optional_results,
         audit_policy=AuditPolicy.from_level(level),
     )
+    return report_path
 
 
 def sheet_names(path):
@@ -372,7 +373,8 @@ def test_main_places_routed_result_in_excel_optional_results(tmp_path, monkeypat
 
     def capture_writer(**kwargs):
         captured.update(kwargs)
-        return tmp_path / "captured.xlsx"
+        # main.py unpacks this as (report_path, word_appendix_path); match that contract.
+        return tmp_path / "captured.xlsx", None
 
     monkeypatch.setattr(main_module, "setup_logger", lambda _path: Mock())
     monkeypatch.setattr(main_module, "run_startup_check", lambda *_args, **_kwargs: None)

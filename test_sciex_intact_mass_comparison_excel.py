@@ -121,7 +121,7 @@ def write_comparison(tmp_path, result, level="full", limit=1000, optional=None):
         {SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY:result}
         if optional is None else optional
     )
-    return write_excel_report(
+    report_path, _word_appendix_path = write_excel_report(
         tmp_path / f"{level}-{limit}",
         writer_config(limit),
         {}, [], [], [],
@@ -130,6 +130,7 @@ def write_comparison(tmp_path, result, level="full", limit=1000, optional=None):
         optional_results=optional_results,
         audit_policy=AuditPolicy.from_level(level),
     )
+    return report_path
 
 
 def sheet_names(path):

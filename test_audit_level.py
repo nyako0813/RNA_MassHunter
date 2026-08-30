@@ -96,12 +96,16 @@ def make_report(tmp_path, level):
         "Mod_Hypothesis_Detail":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
         "Mod_Hypothesis_Alternatives":[{"Hypothesis_ID":"h","Applied_To_Formal_Result":False,"Formal_Change_Ready":False,"Formal_Result_Changed":False}],
     }
-    return write_excel_report(
+    # write_excel_report now returns (report_path, word_appendix_path) since the
+    # Word appendix export feature was added; these tests only exercise the Excel
+    # workbook, so only the first element is returned here.
+    report_path, _word_appendix_path = write_excel_report(
         output_dir=out,config=config(out),diagnostics={},intact_results=[],charge_state_peaks=[],
         warnings=[],modifications=[],rule_set={},pathways=[],theoretical_fragments=[],
         fragment_ms1_matches=[],known_modification_candidates=[],known_modification_summary=[],
         optional_results=optional,audit_policy=p,
     )
+    return report_path
 
 
 def read(path,sheet): return pd.read_excel(path,sheet_name=sheet,header=2,dtype=object)
