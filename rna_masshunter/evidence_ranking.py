@@ -18,8 +18,11 @@ RANKING_COLUMNS = [
     "Context_Pathway_Supported", "Context_Organism_Supported", "Context_TRNA_Supported",
     "Context_Conflict",
     "Candidate_tRNA_Position", "Candidate_Base", "Parent_Fragment_ID", "Parent_Sequence", "Parent_Start", "Parent_End", "Candidate_Position_In_Parent",
+    "Base_Modification_ID",
     "Has_MS1_Fragment_Evidence", "MS1_Fragment_Best_Confidence", "MS1_Fragment_Total_Intensity",
     "Has_Known_Modification_Candidate", "Known_Modification_Priority_Score",
+    "Has_Compound_Modification_Candidate", "Compound_Priority_Score", "Compound_Delta_Label", "Compound_Combined_Mass_Shift",
+    "Has_Unknown_Modification_Candidate", "Unknown_Priority_Score", "Unknown_Delta_Label", "Unknown_Delta_Mass_Shift",
     "Has_MS2_Precursor_Evidence", "Num_MS2_Precursor_Candidates", "Best_Precursor_Error_ppm", "Modified_Precursor_Rescue",
     "Has_Modified_Ion_Evidence", "Num_Modified_Ion_Matches", "Num_Informative_Modified_Ion_Matches", "Best_Modified_Ion_Error_ppm",
     "Has_Localization_Evidence", "Localization_Level", "Localization_Score", "Localization_Interpretation", "Num_c_Modified_Ions", "Num_y_Modified_Ions",
@@ -194,6 +197,8 @@ def build_modification_evidence_ranking(
     ms2_results: dict[str, Any],
     rule_set: dict[str, Any] | None = None,
     pathways: list[dict[str, Any]] | None = None,
+    unknown_candidates: list[Any] | None = None,
+    compound_candidates: list[Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     ranking = getattr(config, "modification_evidence_ranking", {}) or {}
     if not _bool(ranking.get("enabled"), True):
@@ -229,6 +234,32 @@ def build_modification_evidence_ranking(
         fragment_id = row.get("source_id") if str(row.get("source_type", "")).lower() == "fragment" else ""
         ensure(row.get("modification_id"), fragment_id, "").setdefault("known", []).append(row)
 
+    # Compound candidates (known modification + extra elemental delta) get their own
+    # pseudo Modification_ID ("<base_id>+<delta_label>") so they never merge with the
+    # pure Known row for the same base modification -- their effective mass shift and
+    # evidence are different hypotheses. The real modification id is kept as
+    # "base_modification_id" so family/position-rule lookups can still resolve it.
+    for raw_candidate in compound_candidates or []:
+        row = _raw(raw_candidate)
+        fragment_id = row.get("source_id") if str(row.get("source_type", "")).lower() == "fragment" else ""
+        base_mod_id = str(row.get("modification_id") or "")
+        delta_label = str(row.get("delta_label") or "")
+        pseudo_id = f"{base_mod_id}+{delta_label}" if base_mod_id else f"UNKNOWN_BASE+{delta_label}"
+        item = ensure(pseudo_id, fragment_id, "")
+        item["base_modification_id"] = base_mod_id
+        item.setdefault("compound", []).append(row)
+
+    # Unknown (mass-shift-only) candidates have no modification_id at all, so they get
+    # a pseudo id keyed purely by the elemental delta they were searched for. Family and
+    # parent-base lookups will gracefully resolve to "unknown" for these, since no
+    # curated modification exists for a pseudo id.
+    for raw_candidate in unknown_candidates or []:
+        row = _raw(raw_candidate)
+        fragment_id = row.get("source_id") if str(row.get("source_type", "")).lower() == "fragment" else ""
+        delta_label = str(row.get("delta_label") or "")
+        pseudo_id = f"UNKNOWN:{delta_label}"
+        ensure(pseudo_id, fragment_id, "").setdefault("unknown", []).append(row)
+
     # Attach non-position evidence to every matching localized position; retain non-localized candidates too.
     for key, item in list(candidates.items()):
         if item["position"] == "":
@@ -240,7 +271,12 @@ def build_modification_evidence_ranking(
     output = []
     for item in candidates.values():
         mod_id, fragment_id, position = item["mod_id"], item["fragment_id"], item["position"]
-        modification = modification_lookup.get(mod_id)
+        compound_rows = item.get("compound", [])
+        unknown_rows = item.get("unknown", [])
+        # For compound candidates, evidence/family lookups must use the real base
+        # modification id, not the pseudo id used to key this row.
+        base_mod_id = item.get("base_modification_id") or mod_id
+        modification = modification_lookup.get(base_mod_id)
         mod_raw = getattr(modification, "raw", {}) or {}
         source = mod_raw.get("source", {}) or {}
         source_priority_raw = mod_raw.get("source_priority") or source.get("source_priority") or ""
@@ -264,10 +300,18 @@ def build_modification_evidence_ranking(
         ambiguous = ambiguity_status == "ambiguous" or loc.get("Localization_Interpretation") in {"ambiguous-multiple-positions", "position-ambiguous-non-discriminating-ions"}
         low_information = bool(modified_ions) and not informative_ions
         shift = _float(getattr(modification, "mass_shift_from_unmodified", None), _float(precursor_rows[0].get("Modification_Mass_Shift") if precursor_rows else 0))
+        if compound_rows:
+            # The compound hypothesis's real mass shift is the known modification's
+            # shift PLUS the extra elemental delta, not the base modification alone.
+            shift = _float(compound_rows[0].get("combined_mass_shift"), shift)
+        elif unknown_rows:
+            shift = _float(unknown_rows[0].get("delta_mass_shift"), shift)
         isobaric = abs(shift) <= 1e-6
         score = 0.0
         if matching_ms1 and _bool(ranking.get("use_ms1_fragment_evidence"), True): score += weight("ms1_fragment_match", 1.0)
         if known_rows and _bool(ranking.get("use_known_modification_candidates"), True): score += weight("known_modification_candidate", 1.0)
+        if compound_rows and _bool(ranking.get("use_known_modification_candidates"), True): score += weight("compound_modification_candidate", weight("known_modification_candidate", 1.0))
+        if unknown_rows: score += weight("unknown_modification_candidate", 0.5)
         if precursor_rows and _bool(ranking.get("use_ms2_precursor_evidence"), True): score += weight("ms2_precursor_rescue", 2.0)
         if modified_ions and _bool(ranking.get("use_ms2_modified_ion_evidence"), True): score += weight("ms2_modified_ion_match", 2.0)
         if _bool(ranking.get("use_localization_evidence"), True): score += weight(f"localization_{level.lower()}", {"Weak": 1.0, "Moderate": 3.0, "Strong": 5.0}.get(level, 0.0))
@@ -325,10 +369,17 @@ def build_modification_evidence_ranking(
             ambiguous, low_information, len(informative_ions), num_c, num_y,
         )
         target_bases = getattr(modification, "target_bases", []) if modification else []
+        base_name = mod_raw.get("name") or getattr(modification, "symbol", None) or (precursor_rows[0].get("Modification_Name") if precursor_rows else base_mod_id)
+        if compound_rows:
+            display_name = f"{base_name} + {compound_rows[0].get('delta_label') or ''}"
+        elif unknown_rows:
+            display_name = f"Unknown ({unknown_rows[0].get('delta_label') or ''})"
+        else:
+            display_name = base_name
         output.append({
             "Final_Score": score, "Final_Confidence": confidence, "Final_Interpretation": interpretation,
             "Confidence_Limiting_Factor": limiting_factor,
-            "Modification_ID": mod_id, "Modification_Name": mod_raw.get("name") or getattr(modification, "symbol", None) or (precursor_rows[0].get("Modification_Name") if precursor_rows else mod_id),
+            "Modification_ID": mod_id, "Modification_Name": display_name,
             "Modification_Category": getattr(modification, "category", ""), "Target_Base": ",".join(target_bases), "Mass_Shift": shift, "Is_Isobaric": isobaric,
             "Source_Priority": source_priority, "Curation_Status": curation_status,
             "Candidate_Policy_By_Mass_Search": _bool(candidate_policy.get("include_by_mass_search"), True),
@@ -339,9 +390,18 @@ def build_modification_evidence_ranking(
             "Candidate_tRNA_Position": trna_position, "Candidate_Base": loc.get("Candidate_Modification_Base", ""), "Parent_Fragment_ID": fragment_id,
             "Parent_Sequence": loc.get("Parent_Sequence") or getattr(fragment, "sequence", ""), "Parent_Start": loc.get("Parent_Start", getattr(fragment, "start", "")),
             "Parent_End": loc.get("Parent_End", getattr(fragment, "end", "")), "Candidate_Position_In_Parent": position,
+            "Base_Modification_ID": base_mod_id,
             "Has_MS1_Fragment_Evidence": bool(matching_ms1), "MS1_Fragment_Best_Confidence": best_ms1.get("confidence", ""),
             "MS1_Fragment_Total_Intensity": sum(_float(row.get("intensity")) for row in matching_ms1),
             "Has_Known_Modification_Candidate": bool(known_rows), "Known_Modification_Priority_Score": max((_float(row.get("priority_score")) for row in known_rows), default=""),
+            "Has_Compound_Modification_Candidate": bool(compound_rows),
+            "Compound_Priority_Score": max((_float(row.get("priority_score")) for row in compound_rows), default=""),
+            "Compound_Delta_Label": compound_rows[0].get("delta_label", "") if compound_rows else "",
+            "Compound_Combined_Mass_Shift": compound_rows[0].get("combined_mass_shift", "") if compound_rows else "",
+            "Has_Unknown_Modification_Candidate": bool(unknown_rows),
+            "Unknown_Priority_Score": max((_float(row.get("priority_score")) for row in unknown_rows), default=""),
+            "Unknown_Delta_Label": unknown_rows[0].get("delta_label", "") if unknown_rows else "",
+            "Unknown_Delta_Mass_Shift": unknown_rows[0].get("delta_mass_shift", "") if unknown_rows else "",
             "Has_MS2_Precursor_Evidence": bool(precursor_rows), "Num_MS2_Precursor_Candidates": len(precursor_rows), "Best_Precursor_Error_ppm": best_precursor_error,
             "Modified_Precursor_Rescue": any(_bool(row.get("Modified_Precursor_Rescue")) for row in precursor_rows),
             "Has_Modified_Ion_Evidence": bool(modified_ions), "Num_Modified_Ion_Matches": len(modified_ions),

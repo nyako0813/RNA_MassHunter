@@ -19,9 +19,36 @@ def _fragment_warning(fragment_warnings: list[str], message: str) -> None:
     if message not in fragment_warnings:
         fragment_warnings.append(message)
 
+def _resolve_three_prime_tail_sequences(full_sequence: str) -> tuple[str, ...]:
+    """Determine which 3'-CCA maturation states are still worth hypothesizing.
+
+    The CCA-adding enzyme appends C, C, then A one residue at a time onto a
+    genomic/precursor 3' end that does not itself encode CCA. If the target
+    sequence supplied by the user already carries part (or all) of that tail,
+    re-appending the full "C"/"CC"/"CCA" set on top would double count
+    residues that are already present (e.g. an input ending in "...CCA"
+    would otherwise become "...CCACCA").
+
+    This inspects the *existing* 3' end of the full sequence and only
+    returns the remaining maturation states that are still biologically
+    possible from there.
+    """
+    if full_sequence.endswith("CCA"):
+        # Already fully matured; no further tail growth to hypothesize.
+        return ("",)
+    if full_sequence.endswith("CC"):
+        # Only the final A addition remains possible.
+        return ("", "A")
+    if full_sequence.endswith("C"):
+        # Either stalled after the first C, or completed with "CA".
+        return ("", "CA")
+    # No CCA-related residues encoded yet; all maturation states are possible.
+    return ("", "C", "CC", "CCA")
+
+
 def _generate_three_prime_tail_candidates(
     fragment: Fragment,
-    full_sequence_length: int,
+    full_sequence: str,
     base_masses: dict,
     warnings: list[dict[str, Any]] | None = None,
 ) -> list[Fragment]:
@@ -31,10 +58,10 @@ def _generate_three_prime_tail_candidates(
     The candidates are ordinary Fragment objects so the existing MS1
     mapping can match their theoretical masses directly.
     """
-    if fragment.end != full_sequence_length:
+    if fragment.end != len(full_sequence):
         return [fragment]
 
-    tail_sequences = ("", "C", "CC", "CCA")
+    tail_sequences = _resolve_three_prime_tail_sequences(full_sequence)
     candidates: list[Fragment] = []
 
     for tail in tail_sequences:
@@ -204,7 +231,7 @@ def digest_sequence(
             fragments.extend(
                 _generate_three_prime_tail_candidates(
                     terminal_fragment,
-                    len(sequence),
+                    sequence,
                     base_masses,
                     warnings=warnings,
                 )

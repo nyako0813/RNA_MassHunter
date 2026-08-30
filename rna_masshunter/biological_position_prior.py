@@ -167,7 +167,7 @@ def _structure_groups(
     base_groups: dict[tuple[Any, ...], list[tuple[float, int]]] = {}
     candidate_keys: dict[int, tuple[Any, ...] | None] = {index: None for index in range(len(rows))}
     for index, row in enumerate(rows):
-        mod_id = str(row.get("Modification_ID") or "")
+        mod_id = str(row.get("Base_Modification_ID") or row.get("Modification_ID") or "")
         modification = modifications.get(mod_id, {})
         compatibility, observed_base, _, _ = _parent_base(row, modification, sequence)
         position = _position(row.get("Candidate_tRNA_Position"))
@@ -227,8 +227,16 @@ def evaluate_biological_position_priors(config: Any, ranking_rows: list[dict[str
     for index, original in enumerate(ranking_rows):
         row = dict(original)
         mod_id = str(row.get("Modification_ID") or "")
-        mod = mod_map.get(mod_id, {})
-        family_rule = _family(mod_id, rules)
+        # Compound candidates are keyed by a pseudo id ("<base_id>+<delta_label>") that
+        # never appears in the curated modification catalog or rule_set families.
+        # Base_Modification_ID (set by build_modification_evidence_ranking) points back
+        # to the real, curated modification so family/position rules and parent-base
+        # compatibility still resolve correctly. For Known candidates the two are equal;
+        # for Unknown candidates there is no base id, so it falls back to the pseudo id
+        # and lookups gracefully resolve to "unknown" (no matching curated entry).
+        family_lookup_id = str(row.get("Base_Modification_ID") or mod_id)
+        mod = mod_map.get(family_lookup_id, {})
+        family_rule = _family(family_lookup_id, rules)
         family = str(family_rule.get("id") or "unclassified")
         pos = _position(row.get("Candidate_tRNA_Position"))
         if pos is None:

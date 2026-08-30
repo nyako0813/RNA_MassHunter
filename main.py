@@ -1000,6 +1000,8 @@ def main(argv: list[str] | None = None) -> None:
             ms2_results=optional_results,
             rule_set=rule_set,
             pathways=pathways,
+            unknown_candidates=unknown_modification_candidates,
+            compound_candidates=compound_modification_candidates,
         )
         position_prior_rules = load_position_prior_rules(project_root / "data" / "modification_position_priors.yaml")
         ranking_rows, position_prior_rows, plausibility_rows, position_diagnostics = evaluate_biological_position_priors(
