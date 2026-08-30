@@ -840,7 +840,7 @@ def main(argv: list[str] | None = None) -> None:
             warnings=warnings,
         )
         compound_modification_summary = summarize_compound_modification_candidates(compound_modification_candidates)
-        _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "executed", True, True, output_sheets="Compound_Modification_Candidates; Compound_Modification_Summary", notes=f"candidates={len(compound_modification_candidates)}")
+        _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "executed", True, True, output_sheets="Compound_Mod_Candidates; Compound_Mod_Summary", notes=f"candidates={len(compound_modification_candidates)}")
     else:
         _record_workflow_step(workflow_rows, analysis_mode, "compound_modification_search", "disabled_by_config", False, False, "unknown_modification_search.enabled=false or include_known_modification_composites=false")
 

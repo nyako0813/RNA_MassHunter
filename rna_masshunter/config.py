@@ -267,6 +267,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "candidate_deltas": [
             {"label": "+O (oxidation)", "elements": {"O": 1}},
             {"label": "+S (thiolation)", "elements": {"S": 1}},
+            {"label": "O→S substitution (e.g. 2-/4-thiouridine)", "elements": {"O": -1, "S": 1}},
             {"label": "+CH2 (methylation)", "elements": {"C": 1, "H": 2}},
             {"label": "-H2O (dehydration)", "elements": {"H": -2, "O": -1}},
             {"label": "+CH2O2 (formylation-like, +CHO2H)", "elements": {"C": 1, "H": 2, "O": 2}},

@@ -940,8 +940,8 @@ SHEET_DESCRIPTIONS = {
     "MS2_Fragment_Evidence": "Spectrum-parent fragment evidence summary from matched MS2 ions.",
     "MS2_Peak_Annotations": "Optional all-peak MS2 annotation sheet, disabled by default.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
-    "Compound_Modification_Candidates": "Known modification plus an additional simple mass shift (e.g. ncm5s2U + S), not present as a single catalog entry.",
-    "Compound_Modification_Summary": "Grouped summary of compound (known modification + extra shift) candidates.",    
+    "Compound_Mod_Candidates": "Known modification plus an additional simple mass shift (e.g. ncm5s2U + S), not present as a single catalog entry.",
+    "Compound_Mod_Summary": "Grouped summary of compound (known modification + extra shift) candidates.",   
 }
 
 
@@ -1958,8 +1958,8 @@ def write_excel_report(
         "Known_Modification_Summary": pd.DataFrame(known_modification_summary, columns=KNOWN_MODIFICATION_SUMMARY_COLUMNS),
         "Unknown_Modification_Candidates": pd.DataFrame(unknown_modification_candidates, columns=UNKNOWN_MODIFICATION_CANDIDATE_COLUMNS),
         "Unknown_Modification_Summary": pd.DataFrame(unknown_modification_summary, columns=UNKNOWN_MODIFICATION_SUMMARY_COLUMNS),        
-        "Compound_Modification_Candidates": pd.DataFrame(compound_modification_candidates, columns=COMPOUND_MODIFICATION_CANDIDATE_COLUMNS),
-        "Compound_Modification_Summary": pd.DataFrame(compound_modification_summary, columns=COMPOUND_MODIFICATION_SUMMARY_COLUMNS),
+        "Compound_Mod_Candidates": pd.DataFrame(compound_modification_candidates, columns=COMPOUND_MODIFICATION_CANDIDATE_COLUMNS),
+        "Compound_Mod_Summary": pd.DataFrame(compound_modification_summary, columns=COMPOUND_MODIFICATION_SUMMARY_COLUMNS),
     }
     intact_qc_sheets = {
         "Intact_Reconstruction_QC": pd.DataFrame(intact_qc_rows, columns=INTACT_QC_COLUMNS),
