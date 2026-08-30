@@ -85,7 +85,7 @@ def write_report(tmp_path, level, payload=OMITTED, report_limit=1000, label="rep
     optional_results = {}
     if payload is not OMITTED:
         optional_results[SCIEX_INTACT_OPTIONAL_RESULT_KEY] = payload
-    return write_excel_report(
+    report_path, _word_appendix_path = write_excel_report(
         output_dir=output_dir,
         config=config(report_limit),
         diagnostics={},
@@ -102,6 +102,7 @@ def write_report(tmp_path, level, payload=OMITTED, report_limit=1000, label="rep
         optional_results=optional_results,
         audit_policy=AuditPolicy.from_level(level),
     )
+    return report_path
 
 
 def sheet_names(path):

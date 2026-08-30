@@ -142,7 +142,7 @@ def writer_config():
 @pytest.mark.parametrize("level,expected",[("standard",False),("audit",True),("full",True)])
 def test_real_excel_writer_routes_comparison_sheets_by_policy(tmp_path,level,expected):
     result=compare([100])
-    report=write_excel_report(tmp_path/level,writer_config(),{},[],[],[],optional_results={SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY:result},audit_policy=AuditPolicy.from_level(level))
+    report,_word_appendix=write_excel_report(tmp_path/level,writer_config(),{},[],[],[],optional_results={SCIEX_MASS_COMPARISON_OPTIONAL_RESULT_KEY:result},audit_policy=AuditPolicy.from_level(level))
     from openpyxl import load_workbook
     workbook=load_workbook(report,read_only=True,data_only=True)
     try: names=workbook.sheetnames

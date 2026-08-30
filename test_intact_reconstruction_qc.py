@@ -678,7 +678,7 @@ def _excel_config(reconstruction, analysis=None):
 
 
 def _write_empty_excel(tmp_path, reconstruction, analysis=None):
-    return write_excel_report(
+    report_path, _word_appendix_path = write_excel_report(
         output_dir=tmp_path,
         config=_excel_config(reconstruction, analysis=analysis),
         diagnostics={},
@@ -694,6 +694,7 @@ def _write_empty_excel(tmp_path, reconstruction, analysis=None):
         known_modification_summary=[],
         optional_results={},
     )
+    return report_path
 
 
 def _diagnostic_row(workbook):
@@ -1045,7 +1046,7 @@ def test_rt_localized_excel_sheets_are_present(tmp_path):
         "Missing_Charge_Diagnostics": [{"Cluster_ID": "RTL00001", "Missing_Charge": 7, "Detection_Status": "no_peak_in_tolerance"}],
         "Intact_Engine_Comparison": [],
     }
-    report = write_excel_report(
+    report, _word_appendix_path = write_excel_report(
         output_dir=tmp_path,
         config=_excel_config({"enabled": True, **_rt_config()}),
         diagnostics={},
@@ -1236,7 +1237,7 @@ def test_mvp597_rt_engine_qc_summary_sheet_is_written(tmp_path):
     candidate = _candidate("SUMMARY", [10, 11, 12], mass=MODIFIED_MASS, intensity=30000, theoretical_mass=UNMODIFIED_MASS)
     peaks = _peaks("SUMMARY", [10, 11, 12], masses=[25325.49, 25325.50, 25325.51], intensity=10000)
     rows, _ = _qc([candidate], peaks)
-    report = write_excel_report(
+    report, _word_appendix_path = write_excel_report(
         output_dir=tmp_path,
         config=_excel_config({"enabled": True, **BASE_QC_CONFIG}),
         diagnostics={},
@@ -1430,7 +1431,7 @@ def test_mvp598a_competition_excel_sheets_are_present(tmp_path):
     candidate = _competition_candidate("EXCEL", [6, 7, 8])
     peaks = [_competition_peak("EXCEL", z, f"p{z}") for z in [6, 7, 8]]
     build_intact_reconstruction_qc([candidate], peaks, _generic_config())
-    report = write_excel_report(
+    report, _word_appendix_path = write_excel_report(
         output_dir=tmp_path,
         config=_excel_config({"enabled": True, **_generic_config()}),
         diagnostics={},
@@ -1748,7 +1749,7 @@ def test_mvp598c_empty_disabled_and_legacy_engine_safe():
 def test_mvp598c_excel_sheets_empty_audit_and_names(tmp_path):
     candidate = _competition_candidate("EXCELC", [6, 7, 8])
     peaks = [_competition_peak("EXCELC", z, f"p{z}") for z in [6, 7, 8]]
-    report = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
+    report, _word_appendix_path = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
     workbook = load_workbook(report, read_only=True, data_only=True)
     try:
         for name in ["Assignment_Sensitivity", "Assignment_Stability", "Assignment_Candidate_Audit"]:
@@ -1903,7 +1904,7 @@ def test_mvp598d_empty_disabled_and_legacy_safe():
 def test_mvp598d_excel_sheets_and_names(tmp_path):
     candidate = _competition_candidate("EXCELD", [6, 7, 8])
     peaks = [_competition_peak("EXCELD", z, f"p{z}") for z in [6, 7, 8]]
-    report = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
+    report, _word_appendix_path = write_excel_report(output_dir=tmp_path, config=_excel_config({"enabled": True, **_generic_config()}), diagnostics={}, intact_results=[candidate], charge_state_peaks=peaks, warnings=[], modifications=[], rule_set={}, pathways=[], theoretical_fragments=[], fragment_ms1_matches=[], known_modification_candidates=[], known_modification_summary=[], optional_results={})
     workbook = load_workbook(report, read_only=True, data_only=True)
     try:
         assert "Assignment_Ambiguous_Candidates" in workbook.sheetnames

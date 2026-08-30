@@ -485,12 +485,13 @@ def writer_config():
 
 
 def write_report(tmp_path,level,optional):
-    return write_excel_report(
+    report_path,_word_appendix_path=write_excel_report(
         tmp_path/level,writer_config(),{},[],[],[],
         known_modification_candidates=[{"Candidate_ID":"C1"}],
         known_modification_summary=[{"Summary_Key":"S1"}],optional_results=optional,
         audit_policy=AuditPolicy.from_level(level),
     )
+    return report_path
 
 
 @pytest.mark.parametrize("level,present",[("standard",False),("audit",True),("full",True)])
