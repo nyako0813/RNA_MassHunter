@@ -12,6 +12,27 @@ from rna_masshunter.masses import (
 )
 from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 
+MODIFIED_BASE_LOSS_THEORETICAL_ION_COLUMNS = [
+    "Ion_ID", "Spectrum_ID", "Parent_Fragment_ID", "Parent_Sequence", "Candidate_Type",
+    "Modification_ID", "Modification_Name", "Modification_Target_Base", "Modification_Mass_Shift",
+    "Candidate_Modification_Position_In_Parent", "Candidate_Modification_Base", "Ion_Type", "Ion_Sequence",
+    "Ion_Start", "Ion_End", "Ion_Length", "Informative_Ion", "Ion_Contains_Modification",
+    "Modification_Mass_Shift_Applied", "Charge", "Theoretical_Mass", "Theoretical_mz",
+    "Base_Loss_Applied", "Base_Loss_Position_In_Parent", "Base_Loss_Is_Modified_Base",
+    "Base_Loss_Base_Or_Modification_ID", "Comment",
+]
+
+MODIFIED_BASE_LOSS_ION_MATCH_COLUMNS = [
+    "Spectrum_ID", "Scan_Index", "RT", "Precursor_mz", "Precursor_Charge", "Parent_Fragment_ID",
+    "Parent_Sequence", "Candidate_Type", "Modification_ID", "Modification_Name",
+    "Candidate_Modification_Position_In_Parent", "Candidate_Modification_Base", "Observed_mz",
+    "Observed_Intensity", "Ion_ID", "Ion_Type", "Ion_Sequence", "Ion_Start", "Ion_End", "Ion_Length",
+    "Informative_Ion", "Ion_Contains_Modification", "Modification_Mass_Shift_Applied", "Theoretical_mz",
+    "Mass_Error_Da", "Mass_Error_ppm", "Match_Status", "Confidence",
+    "Base_Loss_Applied", "Base_Loss_Position_In_Parent", "Base_Loss_Is_Modified_Base",
+    "Base_Loss_Base_Or_Modification_ID", "Comment",
+]
+
 
 def _as_bool(value: Any, default: bool) -> bool:
     if isinstance(value, bool):
@@ -128,6 +149,166 @@ def generate_modified_theoretical_ions(
                         })
                         if len(rows) >= max_rows:
                             return rows
+    return rows
+
+
+def generate_modified_precursor_ions_for_base_loss(
+    parent_rows: list[dict[str, Any]],
+    config: Any,
+) -> list[dict[str, Any]]:
+    """Build one synthetic full-length "precursor" row per (modified parent
+    candidate, candidate modification position). These exist only to feed
+    ``generate_modified_base_loss_ions``; they are never added to the
+    ``MS2_Modified_Theoretical_Ions`` sheet, so existing modified d/w/a/z ion
+    output is untouched. The modified mass is taken directly from the parent
+    candidate's already-validated ``Parent_Modified_Mass`` (which already
+    reflects the underlying fragment's actual terminal form).
+    """
+    ms2 = getattr(config, "ms2_annotation", {}) or {}
+    if not _as_bool(ms2.get("include_base_loss"), False):
+        return []
+    if not _as_bool(ms2.get("base_loss_include_precursor"), True):
+        return []
+    require_target = _as_bool(ms2.get("modified_fragment_require_target_base"), True)
+    position_limit = _positive_int(ms2.get("modified_fragment_max_positions_per_candidate"), 20)
+    polarity = str(getattr(config, "instrument", {}).get("polarity", "negative") or "negative").lower()
+    rows: list[dict[str, Any]] = []
+    seen_parents: set[tuple[Any, ...]] = set()
+    for parent in parent_rows:
+        if parent.get("Candidate_Type") != "modified":
+            continue
+        sequence = str(parent.get("Candidate_Parent_Sequence") or "").upper().replace("T", "U")
+        parent_key = (parent.get("Spectrum_ID"), parent.get("Candidate_Parent_Fragment_ID"), parent.get("Modification_ID"), parent.get("Parent_Charge"))
+        if parent_key in seen_parents:
+            continue
+        seen_parents.add(parent_key)
+        positions = _target_positions(sequence, parent.get("Modification_Target_Base"), require_target, position_limit)
+        try:
+            shift = float(parent.get("Modification_Mass_Shift") or 0.0)
+            charge = abs(int(parent.get("Parent_Charge") or 1))
+            mass = float(parent.get("Parent_Modified_Mass"))
+        except (TypeError, ValueError):
+            continue
+        for position in positions:
+            rows.append({
+                "Ion_ID": f"M53PRECION_{len(rows) + 1:08d}",
+                "Spectrum_ID": parent.get("Spectrum_ID"),
+                "Parent_Fragment_ID": parent.get("Candidate_Parent_Fragment_ID"),
+                "Parent_Sequence": sequence, "Candidate_Type": "modified",
+                "Modification_ID": parent.get("Modification_ID"),
+                "Modification_Name": parent.get("Modification_Name"),
+                "Modification_Target_Base": parent.get("Modification_Target_Base"),
+                "Modification_Mass_Shift": shift,
+                "Candidate_Modification_Position_In_Parent": position,
+                "Candidate_Modification_Base": sequence[position - 1],
+                "Ion_Type": "precursor", "Ion_Sequence": sequence,
+                "Ion_Start": 1, "Ion_End": len(sequence), "Ion_Length": len(sequence),
+                "Informative_Ion": True,
+                "Ion_Contains_Modification": True,
+                "Modification_Mass_Shift_Applied": shift,
+                "Charge": charge, "Theoretical_Mass": mass,
+                "Theoretical_mz": theoretical_mz_from_mass(mass, charge, polarity),
+                "Parent_Start": parent.get("Candidate_Parent_Start"),
+                "Parent_End": parent.get("Candidate_Parent_End"),
+                "Comment": "modified full-length precursor ion; base-loss generation input only",
+            })
+    return rows
+
+
+def generate_modified_base_loss_ions(
+    modified_ions: list[dict[str, Any]],
+    config: Any,
+    base_loss_masses: dict[str, float],
+) -> list[dict[str, Any]]:
+    """Expand each modified d/w/a/z/precursor ion into one row per base-loss
+    position. A position matching the candidate's own modified base uses the
+    modification's own base-loss mass; every other position uses the plain
+    canonical-base loss mass."""
+    ms2 = getattr(config, "ms2_annotation", {}) or {}
+    if not _as_bool(ms2.get("include_base_loss"), False):
+        return []
+    min_length = _positive_int(ms2.get("base_loss_min_ion_length"), 2)
+    max_rows = _positive_int(ms2.get("base_loss_max_rows"), 50000)
+    polarity = str(getattr(config, "instrument", {}).get("polarity", "negative") or "negative").lower()
+
+    rows: list[dict[str, Any]] = []
+    for ion in modified_ions:
+        sequence = ion.get("Ion_Sequence") or ""
+        if len(sequence) < min_length:
+            continue
+        try:
+            mod_position = int(ion.get("Candidate_Modification_Position_In_Parent"))
+            ion_start = int(ion.get("Ion_Start"))
+            mass = float(ion.get("Theoretical_Mass"))
+            charge = int(ion.get("Charge"))
+        except (TypeError, ValueError):
+            continue
+        contains_mod = bool(ion.get("Ion_Contains_Modification"))
+        modification_id = ion.get("Modification_ID")
+        for offset, base in enumerate(sequence):
+            parent_position = ion_start + offset
+            is_modified_position = contains_mod and parent_position == mod_position
+            key = modification_id if is_modified_position else base
+            loss_mass = base_loss_masses.get(key)
+            if loss_mass is None:
+                continue
+            new_mass = mass - loss_mass
+            rows.append({
+                **ion,
+                "Ion_ID": f"MBL_{len(rows) + 1:08d}",
+                "Theoretical_Mass": new_mass,
+                "Theoretical_mz": theoretical_mz_from_mass(new_mass, charge, polarity),
+                "Base_Loss_Applied": True,
+                "Base_Loss_Position_In_Parent": parent_position,
+                "Base_Loss_Is_Modified_Base": is_modified_position,
+                "Base_Loss_Base_Or_Modification_ID": key,
+                "Comment": f"base loss: {key} at parent position {parent_position}"
+                           + (" (modified base)" if is_modified_position else ""),
+            })
+            if len(rows) >= max_rows:
+                return rows
+    return rows
+
+
+def match_modified_base_loss_ions(
+    spectra: list[Any], ions: list[dict[str, Any]], config: Any,
+) -> list[dict[str, Any]]:
+    ms2 = getattr(config, "ms2_annotation", {}) or {}
+    tolerance = float(ms2.get("mz_tolerance_ppm", 20) or 20)
+    spectrum_lookup = {spectrum.spectrum_id: spectrum for spectrum in spectra}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for ion in ions:
+        grouped.setdefault(str(ion.get("Spectrum_ID")), []).append(ion)
+    rows: list[dict[str, Any]] = []
+    for spectrum_id, group_ions in grouped.items():
+        spectrum = spectrum_lookup.get(spectrum_id)
+        if spectrum is None:
+            continue
+        for observed_mz, intensity in spectrum.peaks:
+            candidates = []
+            for ion in group_ions:
+                error_ppm = ppm_error(observed_mz, float(ion["Theoretical_mz"]))
+                if abs(error_ppm) <= tolerance:
+                    candidates.append((abs(error_ppm), error_ppm, ion))
+            if not candidates:
+                continue
+            candidates.sort(key=lambda item: (item[0], not item[2].get("Base_Loss_Is_Modified_Base"), item[2]["Ion_ID"]))
+            _, error_ppm, ion = candidates[0]
+            status = (
+                "multiple_candidates" if len(candidates) > 1
+                else "matched_modified_base_loss_ion" if ion.get("Base_Loss_Is_Modified_Base")
+                else "matched_unmodified_base_loss_ion"
+            )
+            relative = float(intensity) / float(spectrum.base_peak_intensity or intensity or 1.0)
+            confidence = "High" if abs(error_ppm) <= tolerance * 0.25 and relative >= 0.05 else "Medium" if abs(error_ppm) <= tolerance * 0.5 else "Low"
+            rows.append({
+                **ion,
+                "Scan_Index": spectrum.scan_index, "RT": spectrum.rt,
+                "Precursor_mz": spectrum.precursor_mz, "Precursor_Charge": spectrum.precursor_charge,
+                "Observed_mz": observed_mz, "Observed_Intensity": intensity,
+                "Mass_Error_Da": observed_mz - float(ion["Theoretical_mz"]),
+                "Mass_Error_ppm": error_ppm, "Match_Status": status, "Confidence": confidence,
+            })
     return rows
 
 

@@ -8,10 +8,21 @@ from rna_masshunter.masses import (
     calculate_unmodified_rna_mass,
     fragment_ion_series_offsets,
 )
+from rna_masshunter.base_loss_masses import build_base_loss_masses
+from rna_masshunter.base_loss_ions import (
+    base_loss_ion_row,
+    base_loss_match_row,
+    generate_base_loss_ions,
+    generate_precursor_ions_for_base_loss,
+    match_base_loss_ions,
+)
 from rna_masshunter.modified_precursor import find_modified_parent_candidates
 from rna_masshunter.modified_fragment_ions import (
     build_localization_evidence,
+    generate_modified_base_loss_ions,
+    generate_modified_precursor_ions_for_base_loss,
     generate_modified_theoretical_ions,
+    match_modified_base_loss_ions,
     match_modified_ions,
 )
 from rna_masshunter.models import Fragment, MS2IonMatch, MS2SpectrumInfo, TheoreticalMS2Ion
@@ -52,6 +63,10 @@ MS2_SUMMARY_COLUMNS = [
     "Moderate_Evidence_Fragments",
     "Weak_Evidence_Fragments",
     "Best_Matched_Parent_Fragments",
+    "Total_Base_Loss_Theoretical_Ions",
+    "Total_Base_Loss_Ion_Matches",
+    "Total_Modified_Base_Loss_Theoretical_Ions",
+    "Total_Modified_Base_Loss_Ion_Matches",
     "Notes",
 ]
 
@@ -263,6 +278,19 @@ def annotate_ms2(
         spectra, modified_ions, modified_matches, config, enabled=True,
     )
 
+    base_loss_masses_table = build_base_loss_masses(modifications or [], base_masses, warnings)
+    precursor_ions_for_base_loss = generate_precursor_ions_for_base_loss(
+        theoretical_fragments, config, base_masses, warnings,
+    )
+    base_loss_ions = generate_base_loss_ions(ions + precursor_ions_for_base_loss, config, base_loss_masses_table)
+    base_loss_matches = match_base_loss_ions(spectra, base_loss_ions, config)
+
+    modified_precursor_ions_for_base_loss = generate_modified_precursor_ions_for_base_loss(parent_rows, config)
+    modified_base_loss_ions = generate_modified_base_loss_ions(
+        modified_ions + modified_precursor_ions_for_base_loss, config, base_loss_masses_table,
+    )
+    modified_base_loss_matches = match_modified_base_loss_ions(spectra, modified_base_loss_ions, config)
+
     if not spectra:
         spectrum_rows = [{
             "Spectrum_ID": "",
@@ -297,6 +325,7 @@ def annotate_ms2(
         "MS2_Summary": build_ms2_summary(
             spectra, ions, matches, unmatched_rows, parent_rows, evidence_rows,
             modified_ions, modified_matches, localization_rows,
+            base_loss_ions, base_loss_matches, modified_base_loss_ions, modified_base_loss_matches,
         ),
         "MS2_Spectra": spectrum_rows,
         "MS2_Parent_Candidates": parent_rows,
@@ -314,6 +343,10 @@ def annotate_ms2(
         "MS2_Ion_Matches": match_rows,
         "MS2_Unmatched_Peaks": unmatched_rows,
         "MS2_Fragment_Evidence": evidence_rows,
+        "MS2_Base_Loss_Theoretical_Ions": [base_loss_ion_row(ion, config) for ion in base_loss_ions],
+        "MS2_Base_Loss_Ion_Matches": [base_loss_match_row(match, config) for match in base_loss_matches],
+        "MS2_Mod_Base_Loss_Theo_Ions": modified_base_loss_ions,
+        "MS2_Mod_Base_Loss_Ion_Matches": modified_base_loss_matches,
     }
     if _as_bool(ms2_config.get("output_all_peak_annotations"), False):
         results["MS2_Peak_Annotations"] = match_rows + [_unmatched_match_row(row) for row in unmatched_rows]
@@ -784,10 +817,18 @@ def build_ms2_summary(
     modified_ions: list[dict[str, Any]] | None = None,
     modified_matches: list[dict[str, Any]] | None = None,
     localization_rows: list[dict[str, Any]] | None = None,
+    base_loss_ions: list[TheoreticalMS2Ion] | None = None,
+    base_loss_matches: list[MS2IonMatch] | None = None,
+    modified_base_loss_ions: list[dict[str, Any]] | None = None,
+    modified_base_loss_matches: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     modified_ions = modified_ions or []
     modified_matches = modified_matches or []
     localization_rows = localization_rows or []
+    base_loss_ions = base_loss_ions or []
+    base_loss_matches = base_loss_matches or []
+    modified_base_loss_ions = modified_base_loss_ions or []
+    modified_base_loss_matches = modified_base_loss_matches or []
     parent_counts: dict[str, int] = {}
     for match in matches:
         parent_counts[match.parent_fragment_id] = parent_counts.get(match.parent_fragment_id, 0) + 1
@@ -829,6 +870,10 @@ def build_ms2_summary(
         "Moderate_Evidence_Fragments": sum(1 for row in evidence_rows if row.get("Evidence_Level") == "Moderate"),
         "Weak_Evidence_Fragments": sum(1 for row in evidence_rows if row.get("Evidence_Level") == "Weak"),
         "Best_Matched_Parent_Fragments": "; ".join(f"{fragment_id} ({count})" for fragment_id, count in best_parents),
+        "Total_Base_Loss_Theoretical_Ions": len(base_loss_ions),
+        "Total_Base_Loss_Ion_Matches": len(base_loss_matches),
+        "Total_Modified_Base_Loss_Theoretical_Ions": len(modified_base_loss_ions),
+        "Total_Modified_Base_Loss_Ion_Matches": len(modified_base_loss_matches),
         "Notes": notes,
     }]
 

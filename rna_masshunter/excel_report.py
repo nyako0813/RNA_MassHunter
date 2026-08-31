@@ -87,6 +87,14 @@ from rna_masshunter.ms2_annotation import (
     MS2_THEORETICAL_ION_COLUMNS,
     MS2_UNMATCHED_COLUMNS,
 )
+from rna_masshunter.base_loss_ions import (
+    BASE_LOSS_ION_MATCH_COLUMNS,
+    BASE_LOSS_THEORETICAL_ION_COLUMNS,
+)
+from rna_masshunter.modified_fragment_ions import (
+    MODIFIED_BASE_LOSS_ION_MATCH_COLUMNS,
+    MODIFIED_BASE_LOSS_THEORETICAL_ION_COLUMNS,
+)
 from rna_masshunter.evidence_ranking import AMBIGUITY_GROUP_COLUMNS, RANKING_COLUMNS, SUMMARY_COLUMNS
 from rna_masshunter.biological_context import CONTEXT_PRIORITY_COLUMNS
 from rna_masshunter.biological_position_prior import (
@@ -939,6 +947,10 @@ SHEET_DESCRIPTIONS = {
     "MS2_Unmatched_Peaks": "Observed MS2 peaks outside tolerance retained for review.",
     "MS2_Fragment_Evidence": "Spectrum-parent fragment evidence summary from matched MS2 ions.",
     "MS2_Peak_Annotations": "Optional all-peak MS2 annotation sheet, disabled by default.",
+    "MS2_Base_Loss_Theoretical_Ions": "Theoretical base-loss variants of unmodified d/w/a/z/precursor ions, disabled by default.",
+    "MS2_Base_Loss_Ion_Matches": "Matched observed MS2 peaks against unmodified base-loss theoretical ions.",
+    "MS2_Mod_Base_Loss_Theo_Ions": "Theoretical base-loss variants of modified d/w/a/z/precursor ions, disabled by default.",
+    "MS2_Mod_Base_Loss_Ion_Matches": "Matched observed MS2 peaks against modified base-loss theoretical ions.",
     "Warnings": "Warnings and errors recorded during startup, loading, and analysis.",
     "Compound_Mod_Candidates": "Known modification plus an additional simple mass shift (e.g. ncm5s2U + S), not present as a single catalog entry.",
     "Compound_Mod_Summary": "Grouped summary of compound (known modification + extra shift) candidates.",   
@@ -2063,6 +2075,10 @@ def write_excel_report(
         "MS2_Modified_Theoretical_Ions": MS2_MODIFIED_THEORETICAL_ION_COLUMNS,
         "MS2_Modified_Ion_Matches": MS2_MODIFIED_ION_MATCH_COLUMNS,
         "MS2_Modification_Localization_Evidence": MS2_LOCALIZATION_EVIDENCE_COLUMNS,
+        "MS2_Base_Loss_Theoretical_Ions": BASE_LOSS_THEORETICAL_ION_COLUMNS,
+        "MS2_Base_Loss_Ion_Matches": BASE_LOSS_ION_MATCH_COLUMNS,
+        "MS2_Mod_Base_Loss_Theo_Ions": MODIFIED_BASE_LOSS_THEORETICAL_ION_COLUMNS,
+        "MS2_Mod_Base_Loss_Ion_Matches": MODIFIED_BASE_LOSS_ION_MATCH_COLUMNS,
         "Modification_Evidence_Summary": SUMMARY_COLUMNS,
         "Modification_Evidence_Ranking": RANKING_COLUMNS + SHADOW_RANKING_COLUMNS + IDENTITY_SHADOW_COLUMNS,
         "Modification_Ambiguity_Groups": AMBIGUITY_GROUP_COLUMNS,

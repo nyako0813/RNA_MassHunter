@@ -351,6 +351,8 @@ class TheoreticalMS2Ion:
     modification_id: str = ""
     modification_name: str = ""
     comment: str = ""
+    base_loss_position: int = 0
+    base_loss_base: str = ""
 
 
 @dataclass
@@ -375,6 +377,8 @@ class MS2IonMatch:
     confidence: str
     alternative_candidates: str = ""
     comment: str = ""
+    base_loss_position: int = 0
+    base_loss_base: str = ""
 
 
 @dataclass

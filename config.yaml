@@ -117,6 +117,9 @@ ms2_annotation:
   ion_series: [d, w, a, z]
   include_neutral_loss: false
   include_base_loss: false
+  base_loss_min_ion_length: 2
+  base_loss_max_rows: 50000
+  base_loss_include_precursor: true
   min_ion_length: 1
   max_ion_length: null
   min_ion_length_for_evidence: 2

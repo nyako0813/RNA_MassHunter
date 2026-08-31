@@ -84,6 +84,8 @@ FORMAL_OPTIONAL_SHEETS = {
     "MS2_Peak_Annotations", "MS2_Modified_Precursor_Candidates",
     "MS2_Modified_Theoretical_Ions", "MS2_Modified_Ion_Matches",
     "MS2_Modification_Localization_Evidence",
+    "MS2_Base_Loss_Theoretical_Ions", "MS2_Base_Loss_Ion_Matches",
+    "MS2_Mod_Base_Loss_Theo_Ions", "MS2_Mod_Base_Loss_Ion_Matches",
     # Explicit Excel 31-character aliases used by the report writer.
     "MS2_Modified_Precursor_Candidat", "MS2_Modification_Localization_E",
 }
