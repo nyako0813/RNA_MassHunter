@@ -49,7 +49,7 @@ def _ambiguity(mz_values, mod="M", position=36, statuses=None):
     cluster = {
         "Peak_Cluster_ID": "CL1", "Spectrum_ID": "S1", "Modification_ID": mod,
         "Parent_Fragment_ID": "P", "Candidate_tRNA_Position": position,
-        "Candidate_Position_In_Parent": 1, "Ion_Series": "y", "Ion_Number": 3,
+        "Candidate_Position_In_Parent": 1, "Ion_Series": "w", "Ion_Number": 3,
     }
     details = []
     for index, mz in enumerate(mz_values):
@@ -136,7 +136,7 @@ def _zero_modified_match():
     return {
         "Spectrum_ID": "S1", "RT": 1.0, "Observed_mz": 100.0, "Observed_Intensity": 0.0,
         "Modification_ID": "M", "Parent_Fragment_ID": "P",
-        "Candidate_Modification_Position_In_Parent": 1, "Ion_Type": "y", "Ion_End": 3,
+        "Candidate_Modification_Position_In_Parent": 1, "Ion_Type": "w", "Ion_End": 3,
         "Mass_Error_ppm": 1.0, "Discriminates_Position": True,
     }
 

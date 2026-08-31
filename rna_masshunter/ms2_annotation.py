@@ -2,7 +2,12 @@ from typing import Any
 
 import numpy as np
 
-from rna_masshunter.masses import calculate_unmodified_rna_mass
+from rna_masshunter.masses import (
+    C_TERMINAL_ION_TYPES,
+    N_TERMINAL_ION_TYPES,
+    calculate_unmodified_rna_mass,
+    fragment_ion_series_offsets,
+)
 from rna_masshunter.modified_precursor import find_modified_parent_candidates
 from rna_masshunter.modified_fragment_ions import (
     build_localization_evidence,
@@ -177,8 +182,10 @@ MS2_FRAGMENT_EVIDENCE_COLUMNS = [
     "Match_Approximation",
     "Num_Matched_Ions",
     "Num_Informative_Ions",
-    "Num_c_Ions",
-    "Num_y_Ions",
+    "Num_d_Ions",
+    "Num_w_Ions",
+    "Num_a_Ions",
+    "Num_z_Ions",
     "Best_Mass_Error_ppm",
     "Median_Abs_Error_ppm",
     "Total_Matched_Intensity",
@@ -418,6 +425,10 @@ def generate_theoretical_ms2_ions(
     max_length = _optional_positive_int(ms2_config.get("max_ion_length"), None)
     polarity = str(getattr(config, "instrument", {}).get("polarity", "negative") or "negative").lower()
     charges = _ion_charges(ms2_config)
+    ion_series = _ion_series(ms2_config)
+    offsets = fragment_ion_series_offsets(base_masses, warnings=warnings)
+    n_terminal_series = [ion_type for ion_type in ion_series if ion_type in N_TERMINAL_ION_TYPES]
+    c_terminal_series = [ion_type for ion_type in ion_series if ion_type in C_TERMINAL_ION_TYPES]
 
     ions: list[TheoreticalMS2Ion] = []
     for fragment in theoretical_fragments or []:
@@ -425,32 +436,39 @@ def generate_theoretical_ms2_ions(
         if len(sequence) < 2:
             continue
         for cut in range(1, len(sequence)):
-            candidates = [("c", sequence[:cut], 1, cut), ("y", sequence[cut:], cut + 1, len(sequence))]
-            for ion_type, ion_sequence, ion_start, ion_end in candidates:
+            termini = [
+                (n_terminal_series, sequence[:cut], 1, cut),
+                (c_terminal_series, sequence[cut:], cut + 1, len(sequence)),
+            ]
+            for series_types, ion_sequence, ion_start, ion_end in termini:
+                if not series_types:
+                    continue
                 ion_length = len(ion_sequence)
                 if ion_length < min_length:
                     continue
                 if max_length is not None and ion_length > max_length:
                     continue
-                mass = calculate_unmodified_rna_mass(ion_sequence, base_masses, warnings=warnings, terminal_form="default")
-                if mass is None:
+                base_mass = calculate_unmodified_rna_mass(ion_sequence, base_masses, warnings=warnings, terminal_form="default")
+                if base_mass is None:
                     continue
-                for charge in charges:
-                    ions.append(TheoreticalMS2Ion(
-                        ion_id=f"MS2ION_{len(ions) + 1:06d}",
-                        parent_fragment_id=fragment.fragment_id,
-                        parent_sequence=sequence,
-                        ion_type=ion_type,
-                        ion_sequence=ion_sequence,
-                        ion_start=ion_start,
-                        ion_end=ion_end,
-                        charge=charge,
-                        theoretical_mass=float(mass),
-                        theoretical_mz=theoretical_mz_from_mass(float(mass), charge, polarity),
-                        modification_id="",
-                        modification_name="",
-                        comment="unmodified c/y series ion",
-                    ))
+                for ion_type in series_types:
+                    mass = float(base_mass) + offsets.get(ion_type, 0.0)
+                    for charge in charges:
+                        ions.append(TheoreticalMS2Ion(
+                            ion_id=f"MS2ION_{len(ions) + 1:06d}",
+                            parent_fragment_id=fragment.fragment_id,
+                            parent_sequence=sequence,
+                            ion_type=ion_type,
+                            ion_sequence=ion_sequence,
+                            ion_start=ion_start,
+                            ion_end=ion_end,
+                            charge=charge,
+                            theoretical_mass=mass,
+                            theoretical_mz=theoretical_mz_from_mass(mass, charge, polarity),
+                            modification_id="",
+                            modification_name="",
+                            comment="unmodified d/w/a/z series ion",
+                        ))
     return ions
 
 
@@ -504,7 +522,7 @@ def match_ms2_spectra(
                     nearest_error_da,
                     nearest_error_ppm,
                     _possible_interpretation(nearest_error_ppm),
-                    "No precursor-scoped theoretical c/y ion was within tolerance.",
+                    "No precursor-scoped theoretical d/w/a/z ion was within tolerance.",
                 ))
                 continue
 
@@ -720,7 +738,7 @@ def build_fragment_evidence(
         abs_errors = [abs(match.mass_error_ppm) for match in group]
         coverage = _sequence_coverage(group, len(first.parent_fragment_sequence or ""))
         score = len(informative) * 2.0 + (len(group) - len(informative)) * 0.25
-        if {"c", "y"} <= ion_types:
+        if (N_TERMINAL_ION_TYPES & ion_types) and (C_TERMINAL_ION_TYPES & ion_types):
             score += 1.0
         level = _evidence_level(group, informative, ion_types)
         rows.append({
@@ -741,8 +759,10 @@ def build_fragment_evidence(
             "Match_Approximation": "modified_parent_unmodified_ions_approximation" if modified else "unmodified_parent_ions",
             "Num_Matched_Ions": len(group),
             "Num_Informative_Ions": len(informative),
-            "Num_c_Ions": sum(1 for match in group if match.best_ion_type == "c"),
-            "Num_y_Ions": sum(1 for match in group if match.best_ion_type == "y"),
+            "Num_d_Ions": sum(1 for match in group if match.best_ion_type == "d"),
+            "Num_w_Ions": sum(1 for match in group if match.best_ion_type == "w"),
+            "Num_a_Ions": sum(1 for match in group if match.best_ion_type == "a"),
+            "Num_z_Ions": sum(1 for match in group if match.best_ion_type == "z"),
             "Best_Mass_Error_ppm": min(abs_errors) if abs_errors else "",
             "Median_Abs_Error_ppm": float(np.median(abs_errors)) if abs_errors else "",
             "Total_Matched_Intensity": sum(match.observed_intensity for match in group),
@@ -780,7 +800,7 @@ def build_ms2_summary(
     elif not ions:
         notes = "MS2 spectra were found, but no theoretical ions were generated."
     else:
-        notes = "Precursor-constrained MS2 c/y ion annotation against theoretical digestion fragments."
+        notes = "Precursor-constrained MS2 d/w/a/z ion annotation against theoretical digestion fragments."
     return [{
         "Total_MS2_Spectra": len(spectra),
         "Annotated_Spectra": len({match.spectrum_id for match in matches}),
@@ -1003,6 +1023,17 @@ def _ion_charges(ms2_config: dict[str, Any]) -> list[int]:
     return charges or [1]
 
 
+def _ion_series(ms2_config: dict[str, Any]) -> list[str]:
+    raw = ms2_config.get("ion_series") or ["d", "w", "a", "z"]
+    values = raw if isinstance(raw, list) else [raw]
+    series = []
+    for value in values:
+        ion_type = str(value).strip().lower()
+        if ion_type in (N_TERMINAL_ION_TYPES | C_TERMINAL_ION_TYPES) and ion_type not in series:
+            series.append(ion_type)
+    return series or ["d", "w", "a", "z"]
+
+
 def _confidence(error_ppm: float, tolerance_ppm: float, intensity: float, base_intensity: float | None, status: str) -> str:
     if status == "multiple_candidates":
         return "Low"
@@ -1029,7 +1060,7 @@ def _is_informative_ion(sequence: str, config: Any) -> bool:
 
 
 def _evidence_level(group: list[MS2IonMatch], informative: list[MS2IonMatch], ion_types: set[str]) -> str:
-    if len(informative) >= 3 and {"c", "y"} <= ion_types:
+    if len(informative) >= 3 and (N_TERMINAL_ION_TYPES & ion_types) and (C_TERMINAL_ION_TYPES & ion_types):
         return "Strong"
     if len(informative) >= 2:
         return "Moderate"
@@ -1044,9 +1075,9 @@ def _sequence_coverage(group: list[MS2IonMatch], parent_length: int) -> float:
     covered: set[int] = set()
     for match in group:
         ion_length = len(match.best_ion_sequence or "")
-        if match.best_ion_type == "c":
+        if match.best_ion_type in N_TERMINAL_ION_TYPES:
             covered.update(range(1, ion_length + 1))
-        elif match.best_ion_type == "y":
+        elif match.best_ion_type in C_TERMINAL_ION_TYPES:
             covered.update(range(max(1, parent_length - ion_length + 1), parent_length + 1))
     return round(len(covered) / parent_length, 4)
 

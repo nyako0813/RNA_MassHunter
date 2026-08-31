@@ -22,7 +22,7 @@ def candidate(mod="mA", pos=1, rank=1, score=7.0):
     }
 
 
-def match(mod="mA", pos=1, spectrum="S1", ion="c2", observed=500.0, theoretical=500.001):
+def match(mod="mA", pos=1, spectrum="S1", ion="d2", observed=500.0, theoretical=500.001):
     return {
         "Spectrum_ID": spectrum, "Scan_Index": 5, "Parent_Fragment_ID": "F1",
         "Modification_ID": mod, "Candidate_Modification_Position_In_Parent": pos,
@@ -58,13 +58,13 @@ def test_duplicate_match_is_counted_once():
 
 
 def test_unique_ion_count_and_series():
-    enriched, _ = run(matches=[match(ion="c2"), match(ion="y3", spectrum="S2", observed=600)])
+    enriched, _ = run(matches=[match(ion="d2"), match(ion="w3", spectrum="S2", observed=600)])
     assert enriched[0]["Unique_Modified_Fragment_Ion_Count"] == 2
-    assert enriched[0]["Modified_Fragment_Ion_Series"] == "c;y"
+    assert enriched[0]["Modified_Fragment_Ion_Series"] == "d;w"
 
 
 def test_same_observed_peak_multiple_assignments_warns():
-    enriched, _ = run(matches=[match(ion="c2"), match(ion="y3", theoretical=500.002)])
+    enriched, _ = run(matches=[match(ion="d2"), match(ion="w3", theoretical=500.002)])
     assert "multiple theoretical ion assignments" in enriched[0]["MS2_Identity_Warnings"]
 
 
@@ -186,7 +186,7 @@ def test_sheet_name_and_required_columns_contract():
 
 def test_physical_key_ignores_theoretical_ion_id():
     from rna_masshunter.ms2_identity_evidence import physical_observed_peak_key
-    first, second = match(ion="c2"), match(ion="y9", theoretical=501.0)
+    first, second = match(ion="d2"), match(ion="w9", theoretical=501.0)
     first["RT"] = second["RT"] = 1.234567
     assert physical_observed_peak_key(first) == physical_observed_peak_key(second)
 

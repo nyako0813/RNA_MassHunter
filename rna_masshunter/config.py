@@ -314,6 +314,7 @@ DEFAULT_CONFIG: dict[str, dict[str, Any]] = {
         "constrain_by_precursor": True,
         "fallback_to_all_ions_if_no_precursor_match": False,
         "use_theoretical_fragments": True,
+        "ion_series": ["d", "w", "a", "z"],
         "include_neutral_loss": False,
         "include_base_loss": False,
         "min_ion_length": 1,

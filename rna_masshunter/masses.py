@@ -51,6 +51,29 @@ def _constant(
         return default
 
 
+N_TERMINAL_ION_TYPES = {"d", "a", "c", "b"}
+C_TERMINAL_ION_TYPES = {"w", "z", "x", "y"}
+
+
+def fragment_ion_series_offsets(
+    base_masses: dict[str, Any],
+    warnings: list[dict[str, Any]] | None = None,
+) -> dict[str, float]:
+    """Mass offset of each McLuckey-nomenclature ion type relative to the
+    d/w value (residue-mass sum + water, i.e. a fragment terminus that
+    retains a complete phosphate group). Only d/w/a/z are used today; b/c/x/y
+    are provided for a future CID/HCD refinement.
+    """
+    phosphate = _constant(base_masses, "phosphate", DEFAULT_PHOSPHATE_MASS, warnings)
+    water = _constant(base_masses, "water", DEFAULT_WATER_MASS, warnings)
+    return {
+        "d": 0.0, "w": 0.0,
+        "a": -(phosphate + water), "z": -(phosphate + water),
+        "c": -water, "x": -water,
+        "b": -phosphate, "y": -phosphate,
+    }
+
+
 def calculate_unmodified_rna_mass(
     sequence: str,
     base_masses: dict[str, Any],

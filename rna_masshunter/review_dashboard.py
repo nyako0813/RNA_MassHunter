@@ -586,8 +586,8 @@ def _build_checklist(top: pd.DataFrame) -> pd.DataFrame:
     for _, row in top.iterrows():
         warnings = str(row.get("Key_Warnings") or "")
         ambiguity_status = str(row.get("Position_Ambiguity_Status") or "")
-        has_c = _contains_any(row.get("Evidence_Summary"), ["c-ion", "c ion", "c_ion"])
-        has_y = _contains_any(row.get("Evidence_Summary"), ["y-ion", "y ion", "y_ion"])
+        has_c = _contains_any(row.get("Evidence_Summary"), ["d-ion", "d ion", "d_ion"])
+        has_y = _contains_any(row.get("Evidence_Summary"), ["w-ion", "w ion", "w_ion"])
         rows.append(
             {
                 "Review_Rank": row.get("Review_Rank"),
@@ -604,9 +604,9 @@ def _build_checklist(top: pd.DataFrame) -> pd.DataFrame:
                 "MS2_Precursor_Evidence": bool(row.get("Has_MS2_Precursor_Evidence")),
                 "Modified_Ion_Evidence": bool(row.get("Has_Modified_Ion_Evidence")),
                 "Informative_Modified_Ion": bool(row.get("Has_Modified_Ion_Evidence")) and not _contains_any(warnings, ["low-information"]),
-                "c_Ion_Support": has_c,
-                "y_Ion_Support": has_y,
-                "Both_c_y_Series": has_c and has_y,
+                "d_Ion_Support": has_c,
+                "w_Ion_Support": has_y,
+                "Both_d_w_Series": has_c and has_y,
                 "Position_Discriminating_Ion": bool(row.get("Has_Position_Discriminating_Evidence")),
                 "Ambiguity_Group": bool(row.get("Ambiguity_Group_ID")),
                 "Ambiguous_Position": _contains_any(ambiguity_status, ["ambiguous", "unresolved"]),

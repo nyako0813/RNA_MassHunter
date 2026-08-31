@@ -1,10 +1,15 @@
-"""Modified c/y ion generation and localization evidence for MVP-5.3."""
+"""Modified d/w/a/z ion generation and localization evidence for MVP-5.3."""
 
 from typing import Any
 
 import numpy as np
 
-from rna_masshunter.masses import calculate_unmodified_rna_mass
+from rna_masshunter.masses import (
+    C_TERMINAL_ION_TYPES,
+    N_TERMINAL_ION_TYPES,
+    calculate_unmodified_rna_mass,
+    fragment_ion_series_offsets,
+)
 from rna_masshunter.ms1_mapping import ppm_error, theoretical_mz_from_mass
 
 
@@ -22,6 +27,17 @@ def _positive_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _ion_series(ms2_config: dict[str, Any]) -> list[str]:
+    raw = ms2_config.get("ion_series") or ["d", "w", "a", "z"]
+    values = raw if isinstance(raw, list) else [raw]
+    series = []
+    for value in values:
+        ion_type = str(value).strip().lower()
+        if ion_type in (N_TERMINAL_ION_TYPES | C_TERMINAL_ION_TYPES) and ion_type not in series:
+            series.append(ion_type)
+    return series or ["d", "w", "a", "z"]
 
 
 def _target_positions(sequence: str, target_bases: Any, require_target: bool, limit: int) -> list[int]:
@@ -50,6 +66,10 @@ def generate_modified_theoretical_ions(
     informative_length = _positive_int(ms2.get("modified_fragment_min_ion_length_for_localization"), 2)
     max_rows = _positive_int(ms2.get("modified_fragment_max_rows"), 100000)
     polarity = str(getattr(config, "instrument", {}).get("polarity", "negative") or "negative").lower()
+    ion_series = _ion_series(ms2)
+    offsets = fragment_ion_series_offsets(base_masses)
+    n_terminal_series = [ion_type for ion_type in ion_series if ion_type in N_TERMINAL_ION_TYPES]
+    c_terminal_series = [ion_type for ion_type in ion_series if ion_type in C_TERMINAL_ION_TYPES]
     rows: list[dict[str, Any]] = []
     seen_parents: set[tuple[Any, ...]] = set()
     for parent in parent_rows:
@@ -68,10 +88,12 @@ def generate_modified_theoretical_ions(
             continue
         for position in positions:
             for cut in range(1, len(sequence)):
-                for ion_type, ion_sequence, ion_start, ion_end in (
-                    ("c", sequence[:cut], 1, cut), ("y", sequence[cut:], cut + 1, len(sequence))
-                ):
-                    if len(ion_sequence) < min_length:
+                termini = [
+                    (n_terminal_series, sequence[:cut], 1, cut),
+                    (c_terminal_series, sequence[cut:], cut + 1, len(sequence)),
+                ]
+                for series_types, ion_sequence, ion_start, ion_end in termini:
+                    if not series_types or len(ion_sequence) < min_length:
                         continue
                     contains = ion_start <= position <= ion_end
                     if not contains and not include_counterparts:
@@ -80,31 +102,32 @@ def generate_modified_theoretical_ions(
                     if unmodified_mass is None:
                         continue
                     applied_shift = shift if contains else 0.0
-                    mass = float(unmodified_mass) + applied_shift
-                    rows.append({
-                        "Ion_ID": f"M53ION_{len(rows) + 1:08d}",
-                        "Spectrum_ID": parent.get("Spectrum_ID"),
-                        "Parent_Fragment_ID": parent.get("Candidate_Parent_Fragment_ID"),
-                        "Parent_Sequence": sequence, "Candidate_Type": "modified",
-                        "Modification_ID": parent.get("Modification_ID"),
-                        "Modification_Name": parent.get("Modification_Name"),
-                        "Modification_Target_Base": parent.get("Modification_Target_Base"),
-                        "Modification_Mass_Shift": shift,
-                        "Candidate_Modification_Position_In_Parent": position,
-                        "Candidate_Modification_Base": sequence[position - 1],
-                        "Ion_Type": ion_type, "Ion_Sequence": ion_sequence,
-                        "Ion_Start": ion_start, "Ion_End": ion_end, "Ion_Length": len(ion_sequence),
-                        "Informative_Ion": len(ion_sequence) >= informative_length,
-                        "Ion_Contains_Modification": contains,
-                        "Modification_Mass_Shift_Applied": applied_shift,
-                        "Charge": charge, "Theoretical_Mass": mass,
-                        "Theoretical_mz": theoretical_mz_from_mass(mass, charge, polarity),
-                        "Parent_Start": parent.get("Candidate_Parent_Start"),
-                        "Parent_End": parent.get("Candidate_Parent_End"),
-                        "Comment": "modified c/y ion" if contains else "unmodified counterpart for position candidate",
-                    })
-                    if len(rows) >= max_rows:
-                        return rows
+                    for ion_type in series_types:
+                        mass = float(unmodified_mass) + offsets.get(ion_type, 0.0) + applied_shift
+                        rows.append({
+                            "Ion_ID": f"M53ION_{len(rows) + 1:08d}",
+                            "Spectrum_ID": parent.get("Spectrum_ID"),
+                            "Parent_Fragment_ID": parent.get("Candidate_Parent_Fragment_ID"),
+                            "Parent_Sequence": sequence, "Candidate_Type": "modified",
+                            "Modification_ID": parent.get("Modification_ID"),
+                            "Modification_Name": parent.get("Modification_Name"),
+                            "Modification_Target_Base": parent.get("Modification_Target_Base"),
+                            "Modification_Mass_Shift": shift,
+                            "Candidate_Modification_Position_In_Parent": position,
+                            "Candidate_Modification_Base": sequence[position - 1],
+                            "Ion_Type": ion_type, "Ion_Sequence": ion_sequence,
+                            "Ion_Start": ion_start, "Ion_End": ion_end, "Ion_Length": len(ion_sequence),
+                            "Informative_Ion": len(ion_sequence) >= informative_length,
+                            "Ion_Contains_Modification": contains,
+                            "Modification_Mass_Shift_Applied": applied_shift,
+                            "Charge": charge, "Theoretical_Mass": mass,
+                            "Theoretical_mz": theoretical_mz_from_mass(mass, charge, polarity),
+                            "Parent_Start": parent.get("Candidate_Parent_Start"),
+                            "Parent_End": parent.get("Candidate_Parent_End"),
+                            "Comment": "modified d/w/a/z ion" if contains else "unmodified counterpart for position candidate",
+                        })
+                        if len(rows) >= max_rows:
+                            return rows
     return rows
 
 
@@ -221,7 +244,7 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
         non_discriminating = [row for row in modified if not row.get("Position_Discriminating_Ion")]
         types = {row["Ion_Type"] for row in informative}
         errors = [abs(float(row["Mass_Error_ppm"])) for row in modified]
-        if len(informative) >= 3 and {"c", "y"} <= types:
+        if len(informative) >= 3 and (N_TERMINAL_ION_TYPES & types) and (C_TERMINAL_ION_TYPES & types):
             level = "Strong"
         elif len(informative) >= 2:
             level = "Moderate"
@@ -231,7 +254,10 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
             level = "None"
         discrimination_types = {row["Ion_Type"] for row in informative_discriminating}
         discrimination_cuts = {(row.get("Ion_Type"), row.get("Ion_Start"), row.get("Ion_End")) for row in informative_discriminating}
-        if len(informative_discriminating) >= 2 and ({"c", "y"} <= discrimination_types or len(discrimination_cuts) >= 2):
+        if len(informative_discriminating) >= 2 and (
+            ((N_TERMINAL_ION_TYPES & discrimination_types) and (C_TERMINAL_ION_TYPES & discrimination_types))
+            or len(discrimination_cuts) >= 2
+        ):
             discrimination_level = "Strong"
         elif informative_discriminating:
             discrimination_level = "Moderate"
@@ -239,7 +265,7 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
             discrimination_level = "Weak"
         else:
             discrimination_level = "None"
-        score = len(informative) * 2.0 + (len(modified) - len(informative)) * 0.25 + (1.0 if {"c", "y"} <= types else 0.0) - len(counterparts) * 0.1
+        score = len(informative) * 2.0 + (len(modified) - len(informative)) * 0.25 + (1.0 if (N_TERMINAL_ION_TYPES & types) and (C_TERMINAL_ION_TYPES & types) else 0.0) - len(counterparts) * 0.1
         parent_start = ion.get("Parent_Start")
         try:
             trna_position = int(parent_start) + key[3] - 1
@@ -256,8 +282,10 @@ def build_localization_evidence(ions: list[dict[str, Any]], matches: list[dict[s
             "Candidate_Modification_Base": ion["Candidate_Modification_Base"],
             "Num_Modified_Ion_Matches": len(modified), "Num_Unmodified_Counterpart_Matches": len(counterparts),
             "Num_Informative_Modified_Ion_Matches": len(informative),
-            "Num_c_Modified_Ions": sum(row["Ion_Type"] == "c" for row in modified),
-            "Num_y_Modified_Ions": sum(row["Ion_Type"] == "y" for row in modified),
+            "Num_d_Modified_Ions": sum(row["Ion_Type"] == "d" for row in modified),
+            "Num_w_Modified_Ions": sum(row["Ion_Type"] == "w" for row in modified),
+            "Num_a_Modified_Ions": sum(row["Ion_Type"] == "a" for row in modified),
+            "Num_z_Modified_Ions": sum(row["Ion_Type"] == "z" for row in modified),
             "Num_Position_Discriminating_Modified_Ions": len(discriminating),
             "Num_Informative_Position_Discriminating_Modified_Ions": len(informative_discriminating),
             "Num_Non_Discriminating_Modified_Ions": len(non_discriminating),

@@ -31,7 +31,7 @@ def audit(modification="cnm5U", position=2, ion_id="I1", theoretical=100.0):
     return {
         "Modification_ID": modification, "Parent_Fragment_ID": "F1", "Spectrum_ID": "S1",
         "Candidate_tRNA_Position": 36, "Candidate_Position_In_Parent": position,
-        "Theoretical_Ion_ID": ion_id, "Ion_Series": "c", "Ion_Number": 2,
+        "Theoretical_Ion_ID": ion_id, "Ion_Series": "d", "Ion_Number": 2,
         "Ion_Charge": 1, "Theoretical_mz": theoretical,
         "Unmatched_Reason_Status": "ambiguous_multiple_nearby_peaks",
         "Matching_Tolerance_ppm": 20.0, "Matching_Tolerance_Da": theoretical * 20 / 1_000_000,
@@ -43,7 +43,7 @@ def ion(modification="cnm5U", position=2, ion_id="I1", theoretical=100.0):
     return {
         "Spectrum_ID": "S1", "Parent_Fragment_ID": "F1", "Modification_ID": modification,
         "Candidate_Modification_Position_In_Parent": position, "Ion_ID": ion_id,
-        "Ion_Type": "c", "Ion_Start": 1, "Ion_End": 2, "Charge": 1,
+        "Ion_Type": "d", "Ion_Start": 1, "Ion_End": 2, "Charge": 1,
         "Theoretical_mz": theoretical, "Ion_Contains_Modification": True,
     }
 

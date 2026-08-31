@@ -1,4 +1,4 @@
-"""Propagate complete position and bond state into c/y shadow ions."""
+"""Propagate complete position and bond state into d/w shadow ions."""
 from __future__ import annotations
 from typing import Any
 from rna_masshunter.masses import mz_from_neutral_mass
@@ -26,7 +26,7 @@ def generate_composite_theoretical_ions(structures: list[Any], fragments: list[A
                 terminal_form=str(parent.terminal_form),
             )
             for cut in range(1, len(parent_sequence)):
-                for ion_series, ion_start, ion_end in (("c", 1, cut), ("y", cut + 1, len(parent_sequence))):
+                for ion_series, ion_start, ion_end in (("d", 1, cut), ("w", cut + 1, len(parent_sequence))):
                     ion_sequence = parent_sequence[ion_start-1:ion_end]
                     if len(ion_sequence) < min_length:
                         continue

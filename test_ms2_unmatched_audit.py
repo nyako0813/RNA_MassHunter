@@ -36,7 +36,7 @@ def ion(mz=100.0, ion_id="I1", modification="cnm5U", position=2, charge=1):
         "Ion_ID": ion_id, "Spectrum_ID": "S1", "Parent_Fragment_ID": "F1",
         "Parent_Start": 35, "Parent_Sequence": "UUU", "Modification_ID": modification,
         "Modification_Name": modification, "Candidate_Modification_Position_In_Parent": position,
-        "Candidate_Modification_Base": "U", "Ion_Type": "c", "Ion_Start": 1,
+        "Candidate_Modification_Base": "U", "Ion_Type": "d", "Ion_Start": 1,
         "Ion_End": 2, "Ion_Length": 2, "Charge": charge, "Theoretical_mz": mz,
         "Ion_Contains_Modification": True,
     }

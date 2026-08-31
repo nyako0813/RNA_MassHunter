@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
+from rna_masshunter.masses import N_TERMINAL_ION_TYPES
 from rna_masshunter.ms1_mapping import ppm_error
 from rna_masshunter.ms2_identity_evidence import physical_observed_peak_key
 
@@ -131,7 +132,7 @@ def _trna_position(ion: dict[str, Any]) -> int | None:
 
 def _ion_number(ion: dict[str, Any]) -> int | None:
     ion_type = str(ion.get("Ion_Type") or "")
-    if ion_type == "c":
+    if ion_type in N_TERMINAL_ION_TYPES:
         return _position(ion.get("Ion_End"))
     return _position(ion.get("Ion_Length"))
 

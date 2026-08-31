@@ -12,7 +12,7 @@ organism:
   species: Methanosarcina acetivorans
   rule_set: methanosarcina_acetivorans
 sequence:
-  name: target_tRNA
+  name: MA_tRNA^Gln-UUG
   type: RNA
   sequence: 'GCUCCGGUAGUGUAGUCCGGCCAAUCAUUCCGGCCUUUCGAGCCGAAGACUCGGGUUCGAAUCCCGGCCGGAGCACCA'
   anticodon: 'UUC'
@@ -31,7 +31,7 @@ instrument:
 reconstruction:
   # For RNase_T1 / RNase digestion fragment analysis, set enabled: false
   # to omit full-length intact reconstruction sheets from the Excel report.
-  enabled: true
+  enabled: false
   rt_min: null
   rt_max: null
   mz_min: 500
@@ -96,7 +96,7 @@ fragment_mapping:
   summary_best_match_by: fragment_id
 p1_annotation:
   # Used only when digestion.enzyme is P1 / Nuclease_P1.
-  enabled: true
+  enabled: false
   include_unmatched_peaks: true
   include_modified_monomers: true
   include_phosphate_forms: true
@@ -114,6 +114,7 @@ ms2_annotation:
   constrain_by_precursor: true
   fallback_to_all_ions_if_no_precursor_match: false
   use_theoretical_fragments: true
+  ion_series: [d, w, a, z]
   include_neutral_loss: false
   include_base_loss: false
   min_ion_length: 1
