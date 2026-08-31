@@ -1372,6 +1372,40 @@ modifications:
   curation:
     status: manually_checked
     notes: User confirmed symbol, Mass(mono), and mass_shift_from_unmodified against PDF on 2026-07-05.
+- id: m4_4C
+  symbol: m4,4C
+  name: N4,N4-dimethylcytidine
+  short_name: m4,4C
+  target_bases:
+  - C
+  category: biological
+  modified_nucleoside_mass_mono: 271.1168
+  mass_shift_from_unmodified: 28.0313
+  mass_basis: nucleoside_delta
+  detectability:
+    ms1: true
+    ms2: true
+  isobaric_group: dimethylation_group
+  chemical_group: dimethylation
+  near_isobaric_group: ''
+  candidate_policy:
+    include_by_mass_search: true
+    include_if_position_rule_exists: true
+    include_if_literature_supported: true
+    include_if_user_specified: true
+  source_priority:
+    mass_shift: derived_calculation
+    modified_nucleoside_mass: derived_calculation
+    base_mass: mongo_oligo
+    biological_context: literature_or_rule_set
+  sources:
+  - type: derived_calculation
+    derived_from: m4_4Cm
+    method: Subtracted the 2'-O-methylation mass shift (+14.0157 Da) from the existing PDF-sourced m4_4Cm (N4,N4,2'-O-trimethylcytidine) mass shift. The resulting 28.0313 Da matches the dimethylation shift already used elsewhere in this catalog for m2_2G and m6_6A, cross-validating the derivation.
+    curation_status: calculated_not_pdf_verified
+  curation:
+    status: calculated_not_pdf_verified
+    notes: Not directly confirmed against a PDF. modified_nucleoside_mass_mono and mass_shift_from_unmodified were calculated as m4_4Cm minus 14.0157 (the 2'-O-methylation shift). This is the base-only (non-2'-O-methylated) counterpart of m4_4Cm, added to support base-loss ion mass decomposition for compound base+sugar modifications. Verify against literature before high-confidence use.
 - id: m4_4Cm
   symbol: m4,4Cm
   name: N4,N4,2'-O-trimethylcytidine
