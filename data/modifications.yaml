@@ -3332,6 +3332,40 @@ modifications:
   curation:
     status: manually_checked
     notes: User confirmed symbol, Mass(mono), and mass_shift_from_unmodified against PDF on 2026-07-05.
+- id: ncm5s2U
+  symbol: ncm5s2U
+  name: 5-carbamoylmethyl-2-thiouridine
+  short_name: ncm5s2U
+  target_bases:
+  - U
+  category: biological
+  modified_nucleoside_mass_mono: 317.0682
+  mass_shift_from_unmodified: 72.9987
+  mass_basis: nucleoside_delta
+  detectability:
+    ms1: true
+    ms2: true
+  isobaric_group: null
+  chemical_group: methylation
+  near_isobaric_group: ''
+  candidate_policy:
+    include_by_mass_search: true
+    include_if_position_rule_exists: true
+    include_if_literature_supported: true
+    include_if_user_specified: true
+  source_priority:
+    mass_shift: derived_calculation
+    modified_nucleoside_mass: derived_calculation
+    base_mass: mongo_oligo
+    biological_context: literature_or_rule_set
+  sources:
+  - type: derived_calculation
+    derived_from: ncm5U
+    method: Applied the O->S thio-substitution mass shift (+15.9772 Da), already used in this catalog for s2U/s4U, to the existing PDF-sourced ncm5U mass.
+    curation_status: calculated_not_pdf_verified
+  curation:
+    status: calculated_not_pdf_verified
+    notes: Not directly confirmed against a PDF. modified_nucleoside_mass_mono and mass_shift_from_unmodified were calculated as ncm5U + 15.9772 (the O->S shift already used for s2U/s4U in this catalog). Verify against literature before high-confidence use.
 - id: ncm5Um
   symbol: ncm5Um
   name: 5-carbamoylmethyl-2'-O-methyluridine
@@ -3962,6 +3996,40 @@ modifications:
   curation:
     status: manually_checked
     notes: User confirmed symbol, Mass(mono), and mass_shift_from_unmodified against PDF on 2026-07-05.
+- id: cnm5s2U
+  symbol: cnm5s2U
+  name: 5-cyanomethyl-2-thiouridine
+  short_name: cnm5s2U
+  target_bases:
+  - U
+  category: biological
+  modified_nucleoside_mass_mono: 299.0576
+  mass_shift_from_unmodified: 54.9881
+  mass_basis: nucleoside_delta
+  detectability:
+    ms1: true
+    ms2: true
+  isobaric_group: null
+  chemical_group: methylation
+  near_isobaric_group: ''
+  candidate_policy:
+    include_by_mass_search: true
+    include_if_position_rule_exists: true
+    include_if_literature_supported: true
+    include_if_user_specified: true
+  source_priority:
+    mass_shift: derived_calculation
+    modified_nucleoside_mass: derived_calculation
+    base_mass: mongo_oligo
+    biological_context: literature_or_rule_set
+  sources:
+  - type: derived_calculation
+    derived_from: cnm5U
+    method: Applied the O->S thio-substitution mass shift (+15.9772 Da), already used in this catalog for s2U/s4U, to the existing PDF-sourced cnm5U mass.
+    curation_status: calculated_not_pdf_verified
+  curation:
+    status: calculated_not_pdf_verified
+    notes: Not directly confirmed against a PDF. modified_nucleoside_mass_mono and mass_shift_from_unmodified were calculated as cnm5U + 15.9772 (the O->S shift already used for s2U/s4U in this catalog). Verify against literature before high-confidence use.
 - id: yW_86
   symbol: yW-86
   name: yW-86

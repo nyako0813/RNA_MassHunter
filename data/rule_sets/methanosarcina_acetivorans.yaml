@@ -22,6 +22,7 @@ position_rules:
   - U
   preferred_modifications:
   - cnm5U
+  - cnm5s2U
   - cmnm5U
   - mnm5U
   - mnm5s2U
@@ -30,6 +31,7 @@ position_rules:
   - mcm5U
   - mcm5s2U
   - ncm5U
+  - ncm5s2U
   - ncm5Um
   score_boost: 3.0
   position_penalty_if_unlisted: 0.6
