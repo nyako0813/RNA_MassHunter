@@ -33,3 +33,7 @@ data/modification_position_hypotheses.yaml
 
 # Local real-data alternate configs
 config.local.*.yaml
+.aider*
+
+# Local reference data (raw mzML/txt/xlsx, not for redistribution)
+data/reference/
