@@ -5,7 +5,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 import json
-import resource
 import time
 import tracemalloc
 
@@ -20,6 +19,7 @@ from rna_masshunter.p1_sap_dinucleotide_feature_audit import (
 from rna_masshunter.p1_sap_dinucleotide_evidence_synthesis import (
     build_p1_sap_dinucleotide_evidence_synthesis,
 )
+from rna_masshunter.resource_utils import get_maximum_rss_mib
 
 TARGET_COLUMNS = [
     "Target_Label", "Target_mz", "Tolerance_ppm", "Matched_Group_Count", "Matched_Group_IDs",
@@ -151,7 +151,7 @@ def build_p1_sap_dinucleotide_audit(project_root: str | Path, sequence: str, pea
     targets = build_target_results(dinucleotide_settings(config)["targets"], candidate.candidates, audit.features)
     _current, peak_bytes = tracemalloc.get_traced_memory()
     if owns_tracemalloc: tracemalloc.stop()
-    maximum_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    maximum_rss = get_maximum_rss_mib()
     performance = {
         "Candidate_Generation_Runtime": candidate_runtime, **audit.performance,
         "Interpretation_Runtime": interpretation_runtime,

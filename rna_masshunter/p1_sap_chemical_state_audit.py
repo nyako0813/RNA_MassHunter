@@ -13,7 +13,6 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
-import resource
 import subprocess
 import time
 import tracemalloc
@@ -23,6 +22,7 @@ from rna_masshunter.elemental_composition import ElementalComposition
 from rna_masshunter.enzymes import normalize_enzyme_name
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.modification_constraints import load_transformations
+from rna_masshunter.resource_utils import get_maximum_rss_mib
 from rna_masshunter.p1_sap_feature_quality import build_p1_sap_feature_quality
 from rna_masshunter.p1_sap_dinucleotide_interpretation import build_p1_sap_dinucleotide_audit
 from rna_masshunter.mzml_diagnostics import _rt_minutes
@@ -585,7 +585,7 @@ def build_p1_sap_chemical_state_audit(project_root: str|Path, sequence: str, pea
     else:final="NO_PT_LIKE_SUPPORT_IN_CURRENT_DATA" if any(x["Chemical_Family"]=="PHOSPHOROTHIOATE" and x["Observable"] for x in candidates) else "NOT_EVALUABLE"
     eligible_features=[x for x in features if x.get("Feature_Eligible_For_Support",False)]
     physical={x["Physical_Feature_ID"] for x in eligible_features};raw_total=sum(raw_counts.values());runtime=time.perf_counter()-started;_,peak_bytes=tracemalloc.get_traced_memory();tracemalloc.stop()
-    maximum_rss_mib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024.0
+    maximum_rss_mib=get_maximum_rss_mib()
     count_family=lambda family:len({x["Physical_Feature_ID"] for x in eligible_features if x["Chemical_Family"]==family})
     summary={"Configured_Enzyme":normalize_enzyme_name((getattr(config,"digestion",{}) or {}).get("enzyme","")),
         "Rule_ID":"Nuclease_P1","Cleavage_Specificity":"nonspecific_all_standard_RNA_bonds","Cleavage_Side":"3prime_of_each_residue",

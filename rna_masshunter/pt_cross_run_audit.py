@@ -6,7 +6,6 @@ from pathlib import Path
 import bisect
 import os
 import re
-import resource
 import statistics
 import time
 import tracemalloc
@@ -18,6 +17,7 @@ from rna_masshunter.mzml_diagnostics import _rt_minutes
 from rna_masshunter.ms2_annotation import extract_ms2_spectra
 from rna_masshunter.composite_ms2_matcher import match_composite_ms2
 from rna_masshunter.composite_ms2_propagation import generate_composite_theoretical_ions
+from rna_masshunter.resource_utils import get_maximum_rss_mib
 from rna_masshunter.masses import mz_from_neutral_mass
 from rna_masshunter.mzml_reader import iter_spectra
 from rna_masshunter.peak_filtering import classify_peak_tiers
@@ -277,7 +277,7 @@ def build_pt_cross_run_audit(manifest_path, pairs, config, *, audit_level="audit
         "Decoy_Candidate_Count":len(decoy_groups),"Decoy_Recurrent_Count":decoy_recurrent,"Target_Candidate_Specific_Recurrent_Count":sum(r["Recurrence_Evidence_Class"] in {"RECURRENT_PT_MS1_SUPPORT","RECURRENT_INDEPENDENT_PT_MS1_SUPPORT"} for r in summary),
         "Decoy_Candidate_Specific_Recurrent_Count":decoy_specific_recurrent,"Decoy_Status":"reference_only_not_FDR","Decoy_Recurrence_Rate":decoy_recurrent/len(decoy_groups) if decoy_groups else 0.0,**FALSE_FLAGS}]
     current,peak=tracemalloc.get_traced_memory();tracemalloc.stop();metrics={"Run_Count":len(runs),"Total_Wall_Time":time.perf_counter()-started,"Per_Run_Runtime":per_run,
-        "Cross_Run_Aggregation_Runtime":time.perf_counter()-aggregation_started,"Maximum_RSS_MiB":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024,
+        "Cross_Run_Aggregation_Runtime":time.perf_counter()-aggregation_started,"Maximum_RSS_MiB":get_maximum_rss_mib(),
         "Cross_Run_Tracemalloc_Peak_MiB":peak/1024/1024,"Detail_Row_Count":len(all_detail) if audit_level=="full" else 0,"Summary_Row_Count":len(summary)}
     ms2_evaluable=sum(int(row.get("MS2_Spectrum_Count") or 0)>0 for row in run_rows)
     for row in summary:
